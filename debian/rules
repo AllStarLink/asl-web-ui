@@ -1,0 +1,20 @@
+#!/usr/bin/make -f
+
+# Provides DEB_VERSION_UPSTREAM.
+include /usr/share/dpkg/pkg-info.mk
+
+%:
+	dh $@
+
+# The frontend is built before dpkg-buildpackage runs (see "make frontend"),
+# so the package build itself never needs Node.js.
+override_dh_auto_build:
+	test -f frontend/dist/index.html || { echo "frontend/dist missing: run 'make frontend' first" >&2; exit 1; }
+
+override_dh_auto_install:
+	$(MAKE) install DESTDIR=$(CURDIR)/debian/asl-web-ui RELVER=$(DEB_VERSION_UPSTREAM)
+
+# The service is started by its socket; enable and start the socket only.
+override_dh_installsystemd:
+	dh_installsystemd asl-web-ui.socket
+	dh_installsystemd --no-enable --no-start asl-web-ui.service

@@ -1,0 +1,34 @@
+Source: asl-web-ui
+Section: hamradio
+Priority: optional
+Maintainer: Jason McCormick <jason@mfamily.org>
+Build-Depends: debhelper-compat (= 13),
+ pandoc,
+ python3 (>= 3.13),
+ python3-aiohttp,
+ python3-aiohttp-session,
+ python3-pytest,
+ python3-pytest-aiohttp
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Homepage: https://github.com/AllStarLink/asl3-web-ui
+Vcs-Browser: https://github.com/AllStarLink/asl3-web-ui
+Vcs-Git: https://github.com/AllStarLink/asl3-web-ui.git
+
+Package: asl-web-ui
+Architecture: all
+Depends: ${misc:Depends},
+ python3 (>= 3.13),
+ python3-aiohttp,
+ python3-aiohttp-session,
+ apache2 | nginx,
+ polkitd,
+ asl3-asterisk,
+ asl3-menu,
+ adduser
+Recommends: allmon3
+Description: Web management interface for AllStarLink 3
+ A browser-based interface for managing an AllStarLink 3 node server:
+ node configuration, interface tuning, diagnostics, backups and the
+ Asterisk console. It is served by Apache at /asl-web-ui/ and uses the
+ server's Linux accounts (PAM) for login.

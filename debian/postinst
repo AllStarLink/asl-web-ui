@@ -1,0 +1,63 @@
+#!/bin/sh
+# postinst script for asl-web-ui
+
+set -e
+
+if [ -e /usr/share/apache2/apache2-maintscript-helper ]; then
+	. /usr/share/apache2/apache2-maintscript-helper
+fi
+
+do_configure() {
+	# Only members of this group may log in to the web UI.
+	if ! getent group asl-web-ui >/dev/null; then
+		addgroup --system --quiet asl-web-ui
+	fi
+
+	if [ -e /usr/share/apache2/apache2-maintscript-helper ]; then
+		apache2_invoke enmod proxy || exit $?
+		apache2_invoke enmod proxy_http || exit $?
+		apache2_invoke enmod headers || exit $?
+		apache2_invoke enconf asl-web-ui || exit $?
+	fi
+
+	# nginx cannot enable snippets automatically: the admin includes our file in a site.
+	if [ -d /etc/nginx ] && ! grep -rqs 'include /etc/asl-web-ui/nginx.conf' /etc/nginx/; then
+		cat <<'EOF'
+
+asl-web-ui: to serve it with nginx, add this line inside the server { }
+block of your site (preferably the HTTPS one), then reload nginx:
+
+    include /etc/asl-web-ui/nginx.conf;
+
+EOF
+	fi
+
+	if [ -z "$(getent group asl-web-ui | cut -d: -f4)" ]; then
+		cat <<'EOF'
+
+asl-web-ui: no users can log in yet. Add each user who should manage
+this node to the asl-web-ui group, for example:
+
+    sudo usermod -aG asl-web-ui <username>
+
+Then open https://<this-server>/asl-web-ui/
+
+EOF
+	fi
+}
+
+case "$1" in
+	configure)
+		do_configure
+		;;
+	abort-upgrade|abort-remove|abort-deconfigure)
+		;;
+	*)
+		echo "postinst called with unknown argument \`$1'" >&2
+		exit 1
+		;;
+esac
+
+#DEBHELPER#
+
+exit 0

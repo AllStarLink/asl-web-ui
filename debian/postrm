@@ -1,0 +1,29 @@
+#!/bin/sh
+# postrm script for asl-web-ui
+
+set -e
+
+if [ -e /usr/share/apache2/apache2-maintscript-helper ]; then
+	. /usr/share/apache2/apache2-maintscript-helper
+fi
+
+case "$1" in
+	remove)
+		if [ -e /usr/share/apache2/apache2-maintscript-helper ]; then
+			apache2_invoke disconf asl-web-ui || true
+		fi
+		;;
+	purge)
+		rm -rf /var/lib/asl-web-ui
+		;;
+	upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+		;;
+	*)
+		echo "postrm called with unknown argument \`$1'" >&2
+		exit 1
+		;;
+esac
+
+#DEBHELPER#
+
+exit 0

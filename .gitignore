@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Frontend build
+frontend/node_modules/
+frontend/dist/
+
+# Debian package build output
+debian/asl-web-ui/
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+debian/*.debhelper
+debian/*.debhelper.log
+_debs/
+
+# Editors
+.vscode/
+.DS_Store

@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+"""Start the asl-web-ui service (installed in /usr/libexec/asl-web-ui)."""
+
+import sys
+
+sys.path.insert(0, "/usr/share/asl-web-ui/python")
+
+from asl_web_ui.server import main  # noqa: E402
+
+main()

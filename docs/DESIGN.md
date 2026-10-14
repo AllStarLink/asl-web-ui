@@ -21,7 +21,7 @@ https://claude.ai/artifact/38FoRhoem3VfmuXvcbhEVD (source in [mockup/](mockup/))
 |---|---|
 | Everything asl3-menu does | Section 9 maps every menu item to a screen. |
 | PatternFly, Cockpit look | React + PatternFly 6, a Cockpit-style shell |
-| Runs behind Apache on Debian | Apache serves the frontend and proxies the API to a Unix socket. TLS stays in Apache. |
+| Runs behind Apache on Debian | Apache (or nginx) serves the frontend and proxies the API to a Unix socket. TLS stays in the web server. |
 | Debian package with an ASL-style Makefile | Section 8 |
 | Login with Linux accounts through PAM | A root auth helper runs the full PAM conversation, so MFA works through PAM configuration. |
 | All actions run as `asterisk` | The web service runs as `asterisk`. Root actions go through polkit. |
@@ -245,7 +245,7 @@ indicator, help, and the user menu, and a dark navigation column on the left.
 - **Package:** `asl-web-ui`, `Architecture: all`. Built for Debian 13 (trixie) now,
   and Debian 14 (forky) once AllStarLink builds for it.
 - **Depends:** `python3 (>= 3.13)`, `python3-aiohttp`, `python3-aiohttp-session`,
-  `apache2`, `polkitd`, `asl3-asterisk`, `asl3-menu`, `adduser`.
+  `apache2 | nginx`, `polkitd`, `asl3-asterisk`, `asl3-menu`, `adduser`.
 - **Recommends:** `allmon3`.
 - **Build:**
   - The Makefile follows the asl3-menu and Allmon3 conventions (`RELVER`/`DEBVER`,
@@ -263,6 +263,10 @@ indicator, help, and the user menu, and a dark navigation column on the left.
   - prints how to add a user to the group.
 
   It never changes Apache virtual hosts or SSL settings.
+- **nginx:** `/etc/asl-web-ui/nginx.conf` is included by the admin inside a
+  `server { }` block, as Allmon3's nginx support works. postinst prints the
+  `include` line when nginx is installed. WebSocket endpoints live under
+  `/api/v1/ws/`.
 - **CI:** the asl3-workflows packaging template, plus lintian (warnings don't fail
   the build at first).
 

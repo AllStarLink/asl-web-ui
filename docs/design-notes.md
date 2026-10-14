@@ -9,6 +9,8 @@ decisions come before any code. Last updated 2026-10-14 (session 2).
 
 ## Where we left off
 
+**M0 (skeleton) is complete** on branch `m0-skeleton`. Next is M1 (login and shell).
+
 Every design topic is decided (sections 9, 12, 13 and 14 on 2026-10-14). The
 consolidated design document, [DESIGN.md](DESIGN.md), is awaiting the user's
 approval. This file remains the working log.
@@ -479,6 +481,46 @@ flake8, black, mypy, pylint. ruff is not packaged in trixie.
   output with a **fake login backend** and talks to the private test Asterisk.
   - It refuses to start when running from `/usr/share/asl-web-ui` or as `asterisk`.
   - A packaged install can never enable it.
+
+## 15. Implementation decisions during M0 (2026-10-14)
+
+- **nginx is supported as well as Apache** (user decision).
+  - The package ships `/etc/asl-web-ui/nginx.conf`, to be included inside the
+    admin's `server { }` block, following Allmon3's pattern. postinst prints the
+    `include` line when nginx is installed.
+  - Depends: `apache2 | nginx`.
+  - Both servers must be tested.
+- **WebSocket endpoints live under `/api/v1/ws/`.** nginx needs per-location
+  upgrade headers, and a `map` cannot go in an include. Apache uses
+  `ProxyPass … upgrade=websocket`, so `proxy_wstunnel` is not needed.
+- **Client IP:** Apache's mod_proxy *appends* to a client-supplied
+  `X-Forwarded-For`, and the nginx snippet *replaces* it. The backend must use
+  only the **last** entry.
+- **The API socket comes from `asl-web-ui.socket`** (asterisk:www-data 0660), via
+  systemd socket activation. The socket is enabled on install; the service starts
+  on demand.
+- **`/var/lib/asl-web-ui`** is created by `StateDirectory=` (asterisk, 0750), not by
+  postinst.
+- **The version string** is substituted at install time (`RELVER`), not by editing
+  source files in place. `make deb` restores `debian/changelog` after `debchange`
+  without needing git.
+- **Local builds:** `builder/localbuild.sh` (`make podman-deb`) builds only, with
+  Podman. `builder/dockerbuild.sh` stays the CI build-and-publish script, with an
+  engine override.
+- **Pinned toolchain:**
+  - Node 24.21.0 (published SHA-256 for x64 and arm64; Node 24 has no armv7l
+    build);
+  - npm 11.19.0;
+  - the lockfile is generated with `npm install --before=2026-09-30`, so the
+    two-week rule covers transitive dependencies too (`make -C frontend lock`);
+  - React 19.3.0, PatternFly 6.6.2, esbuild 0.28.2, TypeScript 7.0.2.
+- **Tests run during the package build** (`dh_auto_test` → `make check`), so pytest
+  is a Build-Depends.
+- **Dev box:**
+  - Apache runs on 8080/8443, because the user's nginx owns 80/443 (approved);
+  - nginx is tested with a temporary private nginx process that includes the
+    packaged snippet, never by editing the system nginx;
+  - test builds are installed with `dpkg -i` or `--no-install-recommends`.
 
 ## Mockup
 

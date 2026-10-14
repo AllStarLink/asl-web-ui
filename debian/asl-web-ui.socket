@@ -1,0 +1,14 @@
+[Unit]
+Description=ASL Web UI API socket
+Documentation=man:asl-web-ui(8)
+
+[Socket]
+ListenStream=/run/asl-web-ui/web.sock
+SocketUser=asterisk
+SocketGroup=www-data
+SocketMode=0660
+DirectoryMode=0755
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target
