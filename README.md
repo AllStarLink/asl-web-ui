@@ -67,15 +67,67 @@ from a checkout, run every test suite, and build and try the package.
       sudo apt install python3 python3-aiohttp python3-aiohttp-session \
           python3-pytest python3-pytest-aiohttp python3-hypothesis pandoc
 
-- **Node.js 24 and npm 11**, only to build the browser code. Use the
-  upstream release from nodejs.org that `builder/Dockerfile` pins
-  (`NODE_VERSION`); Debian's `nodejs` package is too old. Packages built
-  with `make podman-deb` get Node.js from the builder image, so you need it
+- **Node.js and npm**, only to build the browser code (see
+  [Installing Node.js](#installing-nodejs) below). Packages built with
+  `make podman-deb` get Node.js from the builder image, so you need it
   locally only for frontend work.
 - **Podman** (or Docker), to build the Debian package:
   `sudo apt install podman`.
 - **Firefox** (`firefox-esr`), for `tests/e2e/screenshot.py`.
 - To try an installed package: **Apache or nginx with HTTPS**.
+
+### Installing Node.js
+
+The package builds use one pinned Node.js release, installed by
+`builder/install-node.sh`. Use the same script on your machine, so that
+`node` and `npm` match the builds exactly; the version and the SHA-256
+checksums of the release archives are kept in that script and nowhere else.
+
+1. Install the tools the script uses (most systems have them):
+
+       sudo apt install curl xz-utils
+
+2. From the top of your checkout (`git clone`, step 2 below), install
+   Node.js into */opt/node*:
+
+       sudo builder/install-node.sh
+
+   The script downloads the release for your architecture (amd64 or arm64)
+   from nodejs.org, refuses it unless its checksum matches the pinned one,
+   and unpacks it. It ends by printing the installed versions, for example
+   `Installed: node v24.21.0, npm 11.19.0 in /opt/node`. To use another
+   directory, give it as an argument (`sudo builder/install-node.sh
+   /opt/node-24`).
+
+3. Put it first on your `PATH`, for your account:
+
+       echo 'export PATH=/opt/node/bin:$PATH' >> ~/.profile
+
+   then log out and back in (or run `. ~/.profile`).
+
+4. Check:
+
+       node --version     # v24.21.0
+       npm --version      # 11.19.0
+
+**Updating:** when the pinned version changes in `builder/install-node.sh`,
+run `sudo builder/install-node.sh` again. It replaces the earlier
+installation in */opt/node* (and refuses to touch a directory that holds
+anything other than a Node.js installation).
+
+**Removing:** `sudo rm -rf /opt/node` and delete the `PATH` line from
+*~/.profile*.
+
+Debian's own `nodejs` package (Node.js 20, npm 9) also builds the frontend;
+the bundle comes out the same, because the dependencies come from the lock
+file. Use the pinned release anyway when you change dependencies or the
+build, so that you see what the package builds see. With */opt/node/bin*
+first on your `PATH`, Debian's package can stay installed.
+
+To move to a newer Node.js: change `NODE_VERSION` and both checksums in
+`builder/install-node.sh` (from the release's `SHASUMS256.txt`, after checking
+that file's signature as described in Node.js's README), rebuild with
+`make podman-deb`, and rerun the script on your machine.
 
 ### 2. Get the code and build the frontend
 
