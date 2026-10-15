@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """Screenshots of asl-web-ui pages with headless Firefox over WebDriver BiDi.
 
-    tests/e2e/screenshot.py URL OUT.png [--cookie NAME=VALUE] [--wait 3]
+    tests/e2e/screenshot.py URL OUT.png [--cookie NAME=VALUE [--cookie-path /asl-web-ui/]] [--wait 3]
                             [--size 1280x820] [--dark] [--insecure]
                             [--before JS ...] [--click CSS-SELECTOR ...] [--eval JS]
 
@@ -64,7 +64,7 @@ class BiDi:
 
 async def capture(url: str, out: str, cookie: str | None, wait: float, size: str, dark: bool, insecure: bool,
                   clicks: list[str] | None = None, js: str | None = None,
-                  before: list[str] | None = None) -> None:
+                  before: list[str] | None = None, cookie_path: str = "/") -> None:
     width, height = (int(x) for x in size.split("x"))
     port = free_port()
     profile = tempfile.mkdtemp(prefix="asl-ff-")
@@ -97,7 +97,7 @@ async def capture(url: str, out: str, cookie: str | None, wait: float, size: str
                 name, value = cookie.split("=", 1)
                 host = urlsplit(url).hostname
                 await bidi.call("storage.setCookie", {"cookie": {
-                    "name": name, "value": {"type": "string", "value": value}, "domain": host, "path": "/",
+                    "name": name, "value": {"type": "string", "value": value}, "domain": host, "path": cookie_path,
                     "secure": url.startswith("https:"),
                 }})
             await bidi.call("browsingContext.navigate", {"context": ctx, "url": url, "wait": "complete"})
@@ -135,6 +135,7 @@ if __name__ == "__main__":
     p.add_argument("url")
     p.add_argument("out")
     p.add_argument("--cookie")
+    p.add_argument("--cookie-path", default="/", help="as the server sets it: /asl-web-ui/ behind Apache or nginx")
     p.add_argument("--wait", type=float, default=3.0)
     p.add_argument("--size", default="1280x820")
     p.add_argument("--dark", action="store_true")
@@ -143,5 +144,5 @@ if __name__ == "__main__":
     p.add_argument("--eval")
     p.add_argument("--before", action="append", help="JS to run before the clicks (repeatable)")
     a = p.parse_args()
-    asyncio.run(capture(a.url, a.out, a.cookie, a.wait, a.size, a.dark, a.insecure, a.click, a.eval, a.before))
+    asyncio.run(capture(a.url, a.out, a.cookie, a.wait, a.size, a.dark, a.insecure, a.click, a.eval, a.before, a.cookie_path))
     print(f"wrote {a.out}")
