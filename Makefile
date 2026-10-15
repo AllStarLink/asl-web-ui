@@ -5,7 +5,7 @@
 SRCNAME = $(notdir $(CURDIR))
 PKGNAME = asl-web-ui
 RELVER = 0.1
-DEBVER = 3
+DEBVER = 4
 RELPLAT ?= deb$(shell lsb_release -rs 2> /dev/null)
 
 BUILDABLES = backend conf doc frontend
