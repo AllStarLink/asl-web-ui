@@ -198,3 +198,8 @@ html, body, #root { height: 100%; }
 .asl-level-input { width: 5.5rem; }
 .asl-select { max-width: 22rem; }
 .asl-flush { margin: 0; }
+@media (max-width: 40rem) {
+  .asl-level { grid-template-columns: 5.5rem auto; }
+  .asl-level > :first-child { grid-column: 1 / -1; }
+}
+.asl-filename { overflow-wrap: anywhere; font-size: .85rem; }

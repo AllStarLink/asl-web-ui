@@ -8,8 +8,10 @@ Restoring is stricter than asl-backup-menu (which untars over /):
 - only members under a path in the include list are written;
 - absolute names, ".." and anything resolving outside those paths are refused;
 - only regular files, directories and symbolic links that stay inside the
-  listed paths are extracted (no hard links, devices or FIFOs), and set-id
-  bits are dropped;
+  listed paths are extracted (no hard links, devices or FIFOs);
+- ownership is never taken from the archive (existing files keep theirs,
+  new ones get their directory's), and modes lose set-id bits and group or
+  other write access;
 - a parent directory that is a symbolic link elsewhere is not followed;
 - a backup of the current state is made first.
 """
@@ -18,7 +20,6 @@ import grp
 import hashlib
 import os
 import posixpath
-import pwd
 import re
 import stat
 import subprocess
@@ -352,16 +353,21 @@ def _restore_plan(path: str) -> dict:
     return {"files": files, "skipped": skipped, "members": members, "asl3": MARKER in [n for n, _ in members]}
 
 
-def _ids(m: tarfile.TarInfo) -> tuple[int, int]:
+def _owner_for(dest: str, parent: str) -> tuple[int, int]:
+    """Ownership for a restored file: never taken from the archive (a crafted
+    archive could hand a configuration file to another local user). An
+    existing file keeps its owner; a new one gets its directory's."""
     try:
-        uid = pwd.getpwnam(m.uname).pw_uid if m.uname else m.uid
-    except KeyError:
-        uid = m.uid
-    try:
-        gid = grp.getgrnam(m.gname).gr_gid if m.gname else m.gid
-    except KeyError:
-        gid = m.gid
-    return uid, gid
+        st = os.lstat(dest)
+    except FileNotFoundError:
+        st = os.stat(parent)
+    return st.st_uid, st.st_gid
+
+
+def _safe_mode(mode: int, directory: bool) -> int:
+    """No set-id bits, no write access for group or others."""
+    mode &= 0o755
+    return mode | (0o700 if directory else 0o600)
 
 
 def _safe_parent(rel: str) -> str | None:
@@ -388,8 +394,8 @@ def backup_restore(args: dict, output: Output) -> dict:
                 skipped.append({"name": rel, "reason": "a parent directory is a link"})
                 continue
             dest = os.path.join(parent, posixpath.basename(rel))
-            uid, gid = _ids(m)
-            mode = m.mode & 0o1777  # no set-uid/set-gid
+            uid, gid = _owner_for(dest, parent)
+            mode = _safe_mode(m.mode, m.isdir())
             if m.isdir():
                 if os.path.lexists(dest) and not os.path.isdir(dest):
                     skipped.append({"name": rel, "reason": "a file is in the way"})

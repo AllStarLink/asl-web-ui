@@ -195,7 +195,7 @@ function ThisServer({ list, reload }: { list: BackupList; reload: () => Promise<
               <Tbody>
                 {list.local.map((b) => (
                   <Tr key={b.name}>
-                    <Td dataLabel="Backup"><code>{b.name}</code></Td>
+                    <Td dataLabel="Backup"><code className="asl-filename">{b.name}</code></Td>
                     <Td dataLabel="Made">{when(b.modified)}</Td>
                     <Td dataLabel="Size">{size(b.size)}</Td>
                     <Td isActionCell>

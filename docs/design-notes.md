@@ -9,7 +9,7 @@ decisions come before any code. Last updated 2026-10-14 (session 2).
 
 ## Where we left off
 
-**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes), M4 (privileged helper, backups), M5 (diagnostics) and M6 (tuning, pending a hardware check) are complete** on `main`. Next is M7 (hardening and release).
+**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes), M4 (privileged helper, backups), M5 (diagnostics), M6 (tuning, pending a hardware check) and M7 (hardening) are complete** on `main`. Remaining: the hardware tuning check, a VM/container install test, and the upstream changes in upstream-changes.md.
 
 Every design topic is decided (sections 9, 12, 13 and 14 on 2026-10-14). The
 consolidated design document, [DESIGN.md](DESIGN.md), is awaiting the user's
@@ -821,6 +821,37 @@ flake8, black, mypy, pylint. ruff is not packaged in trixie.
   shell. Verified on the dev box through the hardened service.
 - **Still to check on real hardware** (the user's instance): meter and
   status with a radio, levels, test tone, calibrations.
+
+## 22. M7: hardening and release work (2026-10-15)
+
+- **Security review** of everything added in M2-M6:
+  - every API route goes through the middleware (HTTPS, origin check
+    including WebSockets, login, group re-check on every request, CSRF on
+    POST/PUT/PATCH/DELETE); names from URLs are matched against strict
+    patterns before use (node numbers, backup names, configuration files);
+  - Asterisk CLI arguments built from user input are validated (access list
+    entries and reasons, tuning values);
+  - the classic tune menus only ever exec `asterisk -rx` (no shell);
+  - **fixed:** restores took file ownership and modes from the archive, so a
+    crafted archive could give a configuration file to another local user
+    or make it world-writable. Ownership now comes from the existing file
+    or its directory, and modes lose group/other write and set-id bits.
+  - (found in M4) the password re-entry check on restores was skipped
+    because an aiohttp Response is falsy; fixed and tested.
+- **Man page** rewritten: users and the group, the three processes, polkit
+  actions and rules (and how to restrict them), all files including
+  backups, snapshots and the audit log, and the security notes.
+- **Phone layout** checked for every new page (390 px); fixed the level
+  sliders and long backup names.
+- **Package lifecycle** on the dev box: remove (sockets stop, Apache
+  configuration and polkit rule go), purge (state directory goes; the
+  asl-web-ui group and /var/asl-backups stay), install, reinstall over
+  itself; then both smoke tests. Several package operations within seconds
+  can trip Apache's systemd start limit through apache2-maintscript-helper's
+  restarts; a single install does not.
+- **Not done here:** a clean-VM or container install test (needs the ASL
+  repository), ESLint/Vitest and Playwright (the BiDi screenshot tool and
+  the smoke test cover the flows), and the tuning check on real hardware.
 
 ## Mockup
 

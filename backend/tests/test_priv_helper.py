@@ -120,7 +120,7 @@ def test_restore_writes_only_safe_listed_paths(root):
     outside.write_text("untouched")
     _archive(root, "ASL_evil.tgz", [
         _file("etc/asterisk/rpt_http_registrations.conf", b"[registrations]\nregister => 2701:pw@x\n"),
-        _file("etc/asterisk/rpt.conf", b"[2701]\n", mode=0o4755),
+        _file("etc/asterisk/rpt.conf", b"[2701]\n", mode=0o4777),
         _file("/etc/passwd", b"root::0:0"),
         _file("etc/asterisk/../passwd", b"root::0:0"),
         _file("etc/passwd", b"root::0:0"),
@@ -133,7 +133,8 @@ def test_restore_writes_only_safe_listed_paths(root):
     assert res["ok"], res
     assert outside.read_text() == "untouched"
     assert (root / "etc" / "asterisk" / "rpt.conf").read_text() == "[2701]\n"
-    assert stat.S_IMODE((root / "etc" / "asterisk" / "rpt.conf").stat().st_mode) == 0o755  # set-uid dropped
+    # set-uid and group/other write dropped
+    assert stat.S_IMODE((root / "etc" / "asterisk" / "rpt.conf").stat().st_mode) == 0o755
     assert os.readlink(root / "etc" / "asterisk" / "ok-link") == "rpt.conf"
     for name in ("evil-link", "hard", "fifo"):
         assert not os.path.lexists(root / "etc" / "asterisk" / name)
