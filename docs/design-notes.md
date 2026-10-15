@@ -9,7 +9,7 @@ decisions come before any code. Last updated 2026-10-14 (session 2).
 
 ## Where we left off
 
-**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes) and M4 (privileged helper, backups) are complete** on `main`. Next is M5 (diagnostics).
+**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes), M4 (privileged helper, backups) and M5 (diagnostics) are complete** on `main`. Next is M6 (tuning).
 
 Every design topic is decided (sections 9, 12, 13 and 14 on 2026-10-14). The
 consolidated design document, [DESIGN.md](DESIGN.md), is awaiting the user's
@@ -766,6 +766,28 @@ flake8, black, mypy, pylint. ruff is not packaged in trixie.
   `if denied:` was always false and skipped the password re-entry check; now
   `is not None`. PatternFly's focus trap crashes a dialog with no focusable
   element (progress dialogs); the button stays focusable (`isAriaDisabled`).
+
+## 20. Implementation decisions during M5 (2026-10-15)
+
+- **Connectivity check** (`asl_web_ui/authcheck.py`): runs
+  `asl-node-auth-check` as the service user (it allows asterisk), as a job,
+  and caches the result in `/var/lib/asl-web-ui/connectivity.json`; the
+  Overview's Health card shows the cached result. `--json` is used when
+  `--help` mentions it; until then the text output is parsed into the same
+  structure (sections config / public_ip / node, findings with level,
+  message, the upstream spec's ids and their data). Patterns follow the
+  tool's own format strings; the raw output is kept and shown.
+- **Fix-it hints** in the page are keyed on finding ids (stock `1234:abcdef`
+  placeholder, CGNAT, port forwarding, password, ...).
+- **Basic checks** from asl-menu's System Diagnostics Menu: ping 8.8.8.8 (a
+  job; ICMP datagram sockets work inside the sandbox because Debian's
+  `ping_group_range` covers all groups), the registration server (HTTP GET
+  with a 5 s connect limit, as asl-menu's `wget --spider`), Asterisk version
+  and registrations (on the Asterisk page), the node list service
+  (`asl3-update-nodelist`: shown as not installed when absent, which is the
+  case on current ASL3 with DNS lookups; restart through polkit), and the
+  installed packages (asl-show-version's `dpkg-query` patterns).
+- Verified on the dev box through the hardened service.
 
 ## Mockup
 

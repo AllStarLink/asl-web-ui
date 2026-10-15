@@ -1,0 +1,105 @@
+"""Parsing asl-node-auth-check's text output (until its --json mode exists)."""
+
+from asl_web_ui import authcheck
+
+FULL = """
+-----===== AllStarLink Node Authentication Check =====-----
+
+Checking configuration:
+      Info: Skipping evaluation of private node 1999
+      Info: rpt.conf has configuration for: 2701, 2702
+      Info: /etc/asterisk/iax.conf contains no registration lines.
+      Info: /etc/asterisk/rpt_http_registrations.conf contains 2 registration line(s)
+      Info: Registrations present for configured node(s): 2701, 2702
+      Info: IP from https://conntest-east1.allstarlink.org/ip reports: 203.0.113.7
+      Info: IP from https://conntest-west1.allstarlink.org/ip reports: 203.0.113.7
+   Warning: IP test to https://conntest-west2.allstarlink.org/ip failed
+      Info: IP from udp://conntest-east1.allstarlink.org:4570 reports: 203.0.113.7
+      Info: IP from udp://conntest-west1.allstarlink.org:4569 reports: 203.0.113.7
+      Info: IP from udp://conntest-west2.allstarlink.org:4569 reports: 203.0.113.7
+        OK: HTTP IP probes have consensus on the same perceived IP
+        OK: IAX IP probes have consensus on the same perceived IP
+
+Testing node 2701:
+        OK: Node registration config is well-formed
+        OK: Node registration type is HTTP
+        OK: register.allstarlink.org is reachable (via HTTP)
+        OK: HTTP registration state is Registered
+        OK: Perceived IAX IP:PORT for this node is: 203.0.113.7:4569
+        OK: Registered to register-east - 192.0.2.10
+        OK: Server-set UDP port matches bindport in iax.conf
+        OK: Node registration within 10 minutes: 2026-10-15 06:01:02
+      Info: Last time IP changed was 2026-10-01 12:00:00 UTC
+        OK: Incoming connections to IAX from other nodes is successful
+      Info: IAX ping test has a roundtrip time of 42ms
+        OK: No problems detected with node 2701
+
+Testing node 2702:
+        OK: Node registration config is well-formed
+        OK: Node registration type is HTTP
+        OK: register.allstarlink.org is reachable (via HTTP)
+     Error: HTTP registration state is Rejected
+      Info: Stopping node checks due to registration failure
+      Info: as further information will be unreliable
+
+     Error: Node 2702 has 1 error(s)!
+"""
+
+ABORTED = """
+-----===== AllStarLink Node Authentication Check =====-----
+
+Checking configuration:
+      Info: Skipping evaluation of private node 1999
+      Info: rpt.conf has configuration for:
+      Info: /etc/asterisk/iax.conf contains no registration lines.
+      Info: /etc/asterisk/rpt_http_registrations.conf contains 1 registration line(s)
+      Info: Registrations present for configured node(s): 1234
+     Error: No configuration present for registrations for node(s): 1234
+     Error: Cannot continue; reconcile configuration before proceeding
+"""
+
+
+def test_full_run_sections_and_ids():
+    r = authcheck.parse_text(FULL)
+    assert [(s["id"], s["node"]) for s in r["sections"]] == [
+        ("config", None), ("public_ip", None), ("node", "2701"), ("node", "2702")]
+    assert r["result"] == "error"
+    assert all(f["id"] != "unknown" for s in r["sections"] for f in s["findings"])
+    config = r["sections"][0]["findings"]
+    assert config[1] == {"id": "config.nodes", "level": "info", "message": "rpt.conf has configuration for: 2701, 2702",
+                         "data": {"nodes": ["2701", "2702"]}}
+    public = r["sections"][1]["findings"]
+    assert public[2]["id"] == "public_ip.http_probe" and public[2]["level"] == "warning"
+    n1 = {f["id"]: f for f in r["sections"][2]["findings"]}
+    assert n1["node.perceived_address"]["data"] == {"address": "203.0.113.7:4569"}
+    assert n1["node.registrar"]["data"] == {"name": "register-east", "ip": "192.0.2.10"}
+    assert r["sections"][2]["complete"] is True
+    n2 = r["sections"][3]
+    assert n2["complete"] is False
+    assert {"id": "node.registration_state", "level": "error", "message": "HTTP registration state is Rejected",
+            "data": {"type": "HTTP", "state": "Rejected"}} in n2["findings"]
+
+
+def test_aborted_run():
+    r = authcheck.parse_text(ABORTED)
+    assert r["result"] == "aborted"
+    ids = [f["id"] for f in r["sections"][0]["findings"]]
+    assert "config.missing_configuration" in ids and "config.cannot_continue" in ids
+    assert r["counts"]["error"] == 2
+
+
+async def test_run_uses_text_mode_without_json(tmp_path):
+    tool = tmp_path / "asl-node-auth-check"
+    tool.write_text("#!/bin/sh\nif [ \"$1\" = --help ]; then echo usage; exit 0; fi\ncat <<'EOF'\n" + ABORTED + "EOF\n")
+    tool.chmod(0o755)
+    r = await authcheck.run(str(tool))
+    assert r["result"] == "aborted" and "raw" in r and r["exit_code"] == 0
+
+
+async def test_run_prefers_json_mode(tmp_path):
+    tool = tmp_path / "asl-node-auth-check"
+    tool.write_text('#!/bin/sh\nif [ "$1" = --help ]; then echo "--json"; exit 0; fi\n'
+                    'echo \'{"schema": 1, "result": "ok", "counts": {}, "sections": []}\'\n')
+    tool.chmod(0o755)
+    r = await authcheck.run(str(tool))
+    assert r["result"] == "ok" and "raw" not in r

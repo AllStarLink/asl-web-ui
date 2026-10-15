@@ -173,3 +173,8 @@ html, body, #root { height: 100%; }
 .asl-mono textarea, textarea.asl-mono { font-family: "Red Hat Mono", "DejaVu Sans Mono", monospace; font-size: .85rem; }
 .asl-danger-zone { border: 1px solid var(--pf-t--global--border--color--status--danger--default); }
 .asl-end { justify-content: flex-end; }
+
+/* ---- diagnostics ---- */
+.asl-findings { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+.asl-findings li { display: grid; grid-template-columns: 1.25rem 1fr; gap: .5rem; align-items: baseline; }
+.asl-hint { display: block; }

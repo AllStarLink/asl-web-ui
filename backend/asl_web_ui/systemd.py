@@ -6,10 +6,10 @@ SYSTEMCTL = "/usr/bin/systemctl"
 
 
 async def unit_state(unit: str, systemctl: str = SYSTEMCTL) -> dict[str, str]:
-    """Return ActiveState, SubState and ActiveEnterTimestamp for a unit."""
+    """Return ActiveState, SubState, ActiveEnterTimestamp, LoadState, UnitFileState and Result."""
     proc = await asyncio.create_subprocess_exec(
         systemctl, "show", unit,
-        "--property=ActiveState,SubState,ActiveEnterTimestamp,LoadState",
+        "--property=ActiveState,SubState,ActiveEnterTimestamp,LoadState,UnitFileState,Result",
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,

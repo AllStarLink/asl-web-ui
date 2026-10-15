@@ -6,7 +6,8 @@ browser UI in the style of Cockpit, built with PatternFly.
 
 **Status:** early development. Milestones M0 (package skeleton), M1 (login,
 shell, status and console), M2 (Manual Config Edit), M3 (nodes, Asterisk
-settings and restart) and M4 (backups, privileged helper) are done;
+settings and restart), M4 (backups, privileged helper) and M5 (diagnostics)
+are done;
 see [docs/DESIGN.md](docs/DESIGN.md) for the design and the milestone plan.
 
 ## Installing

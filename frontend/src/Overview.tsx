@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Card,
@@ -25,10 +25,12 @@ import {
 } from "@patternfly/react-core";
 import CheckCircleIcon from "@patternfly/react-icons/dist/esm/icons/check-circle-icon";
 import ExclamationTriangleIcon from "@patternfly/react-icons/dist/esm/icons/exclamation-triangle-icon";
+import InfoCircleIcon from "@patternfly/react-icons/dist/esm/icons/info-circle-icon";
 import LockIcon from "@patternfly/react-icons/dist/esm/icons/lock-icon";
 import TimesCircleIcon from "@patternfly/react-icons/dist/esm/icons/times-circle-icon";
 
-import { message, Status, SystemInfo } from "./api";
+import { get, message, Status, SystemInfo } from "./api";
+import { Connectivity, ResultLabel, when } from "./Diagnostics";
 import { duration } from "./format";
 import { FirstRun, useNodeList, useNodeWizard } from "./Nodes";
 import { systemAction } from "./nodesApi";
@@ -99,6 +101,10 @@ export function RegistrationLabel({ node }: { node: Status["nodes"][number] }) {
 }
 
 function Health({ status }: { status: Status | null }) {
+  const [check, setCheck] = useState<Connectivity | null | undefined>(undefined);
+  useEffect(() => {
+    get<{ connectivity: Connectivity | null }>("diagnostics").then((d) => setCheck(d.connectivity), () => setCheck(null));
+  }, []);
   if (!status) return <Spinner size="md" aria-label="Loading" />;
   const items: { ok: boolean; text: string; sub?: string }[] = [];
   const a = status.asterisk;
@@ -116,6 +122,16 @@ function Health({ status }: { status: Status | null }) {
   }
   return (
     <List isPlain className="asl-health">
+      {check !== undefined && (
+        <ListItem icon={check ? undefined : <InfoCircleIcon className="asl-info" />}>
+          <div className="asl-buttons">
+            {check ? <ResultLabel result={check.result} /> : null}
+            <Button variant="link" isInline onClick={() => go("diagnostics")}>
+              {check ? `Connectivity check, ${when(check.checked_at)}` : "Run the connectivity check"}
+            </Button>
+          </div>
+        </ListItem>
+      )}
       {items.map((i) => (
         <ListItem key={i.text} icon={i.ok ? <CheckCircleIcon className="asl-ok" /> : <ExclamationTriangleIcon className="asl-warn" />}>
           {i.text}
