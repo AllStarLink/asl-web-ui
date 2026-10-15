@@ -75,6 +75,20 @@ async def main(base: str, user: str, password: str, verify: bool) -> int:
             msg = await asyncio.wait_for(ws.receive_json(), 15)
         check("events socket pushes status", msg.get("type") == "status", str(msg)[:200])
 
+        # Safari may not send the cookie with WebSocket handshakes: a one-time
+        # ticket from an ordinary request must be enough on its own.
+        async with http.post(api + "auth/ws-ticket", json={}, headers=headers) as r:
+            ticket = (await r.json()).get("ticket", "")
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=tls)) as cookieless:
+            async with cookieless.ws_connect(api + f"ws/events?ticket={ticket}", headers={"Origin": origin}) as ws:
+                msg = await asyncio.wait_for(ws.receive_json(), 15)
+            check("events socket opens with a ticket and no cookie", msg.get("type") == "status", str(msg)[:200])
+            try:
+                await cookieless.ws_connect(api + f"ws/events?ticket={ticket}", headers={"Origin": origin})
+                check("a ticket works only once", False, "connected")
+            except aiohttp.WSServerHandshakeError as exc:
+                check("a ticket works only once", exc.status == 401, str(exc.status))
+
         try:
             await http.ws_connect(api + "ws/events", headers={"Origin": "https://evil.example"})
             check("events socket refuses a foreign origin", False, "connected")

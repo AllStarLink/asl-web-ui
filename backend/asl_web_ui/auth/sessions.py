@@ -15,6 +15,13 @@ from aiohttp_session import AbstractStorage, Session
 from ..config import Settings
 
 COOKIE_NAME = "asl_web_ui_session"
+# WebSocket tickets: Safari does not reliably send SameSite=Strict cookies
+# with WebSocket handshakes (worse with "Prevent cross-site tracking"), so a
+# page gets a one-time ticket over an ordinary request and opens the
+# WebSocket with ?ticket=. A ticket is valid once, briefly, and only on
+# WebSocket paths.
+TICKET_LIFETIME = 30  # seconds
+WS_PREFIX = "/api/v1/ws/"
 
 
 @dataclass
@@ -36,6 +43,7 @@ class MemoryStorage(AbstractStorage):
         self.settings = settings
         self._clock = clock
         self._entries: dict[str, _Entry] = {}
+        self._tickets: dict[str, tuple[str, float]] = {}  # ticket -> (session key, expiry)
 
     def _limits(self, entry: _Entry) -> tuple[int, int]:
         if entry.data.get("keep"):
@@ -65,8 +73,31 @@ class MemoryStorage(AbstractStorage):
         for key in [k for k, e in self._entries.items() if e.data.get("user") == user]:
             del self._entries[key]
 
+    def issue_ticket(self, key: str) -> str:
+        now = self._clock()
+        for t in [t for t, (_, expiry) in self._tickets.items() if expiry < now]:
+            del self._tickets[t]
+        ticket = secrets.token_urlsafe(32)
+        self._tickets[ticket] = (key, now + TICKET_LIFETIME)
+        return ticket
+
+    def _redeem(self, request: web.Request) -> str | None:
+        """The session key for a WebSocket handshake's ?ticket= (used up here)."""
+        ticket = request.query.get("ticket")
+        if not ticket or not request.path.startswith(WS_PREFIX):
+            return None
+        if request.headers.get("Upgrade", "").lower() != "websocket":
+            return None
+        found = self._tickets.pop(ticket, None)
+        if found is None or found[1] < self._clock():
+            return None
+        return found[0]
+
     async def load_session(self, request: web.Request) -> Session:
         key = self.load_cookie(request)
+        ticket_key = self._redeem(request)
+        if ticket_key and (not key or key not in self._entries):
+            key = ticket_key
         entry = self._entries.get(key) if key else None
         now = self._clock()
         if entry is None or self._expired(entry, now):

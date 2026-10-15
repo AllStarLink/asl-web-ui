@@ -5,7 +5,7 @@ import { Alert, Button, Modal, ModalBody, ModalFooter, ModalHeader } from "@patt
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 
-import { Status, wsUrl } from "./api";
+import { openSocket, Status } from "./api";
 import { go } from "./useRoute";
 
 // Commands that make app_rpt read rpt.conf again. app_rpt 3.10 disables every
@@ -61,20 +61,31 @@ export function Console({ status, path = "ws/console", note }: { status: Status 
     term.open(host.current);
     fit.fit();
 
-    const socket = new WebSocket(wsUrl(path));
-    socket.binaryType = "arraybuffer";
+    let socket: WebSocket | null = null;
+    let cancelled = false;
     const sendSize = () => {
-      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
     };
-    socket.onopen = () => {
-      setState("open");
-      sendSize();
-      term.focus();
-    };
-    socket.onmessage = (event) => term.write(new Uint8Array(event.data as ArrayBuffer));
-    socket.onclose = () => setState("closed");
+    openSocket(path).then(
+      (s) => {
+        if (cancelled) {
+          s.close();
+          return;
+        }
+        socket = s;
+        s.binaryType = "arraybuffer";
+        s.onopen = () => {
+          setState("open");
+          sendSize();
+          term.focus();
+        };
+        s.onmessage = (event) => term.write(new Uint8Array(event.data as ArrayBuffer));
+        s.onclose = () => setState("closed");
+      },
+      () => setState("closed"),
+    );
     const send = (data: string) => {
-      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "input", data }));
+      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "input", data }));
     };
     const tracker = new LineTracker();
     const input = term.onData((data) => {
@@ -103,7 +114,8 @@ export function Console({ status, path = "ws/console", note }: { status: Status 
     return () => {
       observer.disconnect();
       input.dispose();
-      socket.close();
+      cancelled = true;
+      socket?.close();
       term.dispose();
     };
   }, [attempt, path, isConsole]);

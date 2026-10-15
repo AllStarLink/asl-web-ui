@@ -940,6 +940,31 @@ new options), reached through SSH tunnels; nothing was installed and
   so a code that would shadow or be shadowed by an existing one (e.g. `81`)
   is refused with its name; the review says which nodes share the stanza.
 
+## 25. WebSockets without cookies (Safari, 2026-10-15)
+
+- **Report:** a Safari user on a Mac had to turn off "Prevent cross-site
+  tracking" for the UI to work properly.
+- **Cause (most likely):** Safari does not reliably send `SameSite=Strict`
+  cookies with WebSocket handshakes while it does send them with ordinary
+  requests (WebKit bugs 200345 and 232666; tracking prevention has also been
+  reported to affect WebSocket handshakes, bug 298616). Logging in works,
+  but every WebSocket (live status, console, tuning displays) is refused as
+  not logged in. Not reproduced here (no Safari); to be confirmed by the
+  reporter.
+- **Fix:** WebSockets no longer depend on the cookie. The page asks
+  `POST /api/v1/auth/ws-ticket` (an ordinary request: cookie, CSRF token,
+  origin check) for a ticket and opens the WebSocket with `?ticket=`. The
+  session store accepts a ticket only on a WebSocket upgrade under
+  `/api/v1/ws/`, once, within 30 seconds, for the session that asked for it;
+  a valid cookie still works too. HTTPS, the origin check and the group
+  re-check apply as before. The endpoint is under `/api/v1/auth/`, not
+  `/api/v1/ws/`, because the web servers proxy that prefix as WebSockets.
+- Tickets appear in web server access logs; they are single-use and expire
+  in 30 seconds, so a logged ticket is useless.
+- Tests: `test_ws_ticket.py` (no cookie + ticket works, once only, never on
+  ordinary requests, expires); smoke test checks it through Apache and
+  nginx.
+
 ## Mockup
 
 [mockup/](mockup/) holds the source of the published mockup. To rebuild:

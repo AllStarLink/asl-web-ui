@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Status, wsUrl } from "./api";
+import { ApiError, openSocket, Status } from "./api";
 
 // Live status pushed by the server over /api/v1/ws/events. Reconnects with a
 // growing delay. Calls onSessionEnded when the server closes with 4401.
@@ -16,8 +16,26 @@ export function useStatus(onSessionEnded: () => void): { status: Status | null; 
     let timer: number | undefined;
     let stopped = false;
 
-    const connect = () => {
-      socket = new WebSocket(wsUrl("ws/events"));
+    const retryLater = () => {
+      timer = window.setTimeout(connect, retry);
+      retry = Math.min(retry * 2, 30000);
+    };
+
+    const connect = async () => {
+      let s: WebSocket;
+      try {
+        s = await openSocket("ws/events");
+      } catch (err) {
+        if (stopped) return;
+        if (err instanceof ApiError && err.status === 401) ended.current();
+        else retryLater();
+        return;
+      }
+      if (stopped) {
+        s.close();
+        return;
+      }
+      socket = s;
       socket.onopen = () => {
         setConnected(true);
         retry = 1000;
@@ -33,11 +51,10 @@ export function useStatus(onSessionEnded: () => void): { status: Status | null; 
           ended.current();
           return;
         }
-        timer = window.setTimeout(connect, retry);
-        retry = Math.min(retry * 2, 30000);
+        retryLater();
       };
     };
-    connect();
+    void connect();
     return () => {
       stopped = true;
       window.clearTimeout(timer);

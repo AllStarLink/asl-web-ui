@@ -66,6 +66,15 @@ export function wsUrl(path: string): string {
   return url.toString();
 }
 
+// Open a WebSocket to an API path. Safari does not reliably send the session
+// cookie with WebSocket handshakes, so a one-time ticket from an ordinary
+// (cookie-carrying) request goes in the URL. Rejects with ApiError when the
+// session has ended (status 401).
+export async function openSocket(path: string): Promise<WebSocket> {
+  const { ticket } = await post<{ ticket: string }>("auth/ws-ticket");
+  return new WebSocket(`${wsUrl(path)}?ticket=${encodeURIComponent(ticket)}`);
+}
+
 // ---- types ---------------------------------------------------------------
 
 export type Session = {

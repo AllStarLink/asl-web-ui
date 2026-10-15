@@ -210,6 +210,15 @@ async def _finish_reauth(request: web.Request, step: Step, conv_id: str) -> web.
     return web.json_response(body)
 
 
+@routes.post("/api/v1/auth/ws-ticket")
+async def ws_ticket(request: web.Request) -> web.Response:
+    """A one-time ticket for opening a WebSocket (see auth/sessions.py)."""
+    session = await get_session(request)
+    if not session.identity:
+        return web.json_response({"error": "not_logged_in", "message": "Log in to continue."}, status=401)
+    return web.json_response({"ticket": request.app[STORAGE_KEY].issue_ticket(session.identity)})
+
+
 def recently_authenticated(session, settings) -> bool:
     """For destructive actions: was the password entered recently?"""
     return time.time() - session.get("last_auth", 0) < settings.recent_auth

@@ -25,7 +25,7 @@ import {
   TextInput,
 } from "@patternfly/react-core";
 
-import { get, message, post, Status, wsUrl } from "./api";
+import { get, message, openSocket, post, Status } from "./api";
 import { Started } from "./backupsApi";
 import { Console } from "./Console";
 import { DiffView } from "./DiffView";
@@ -67,16 +67,30 @@ function useLive<T>(node: string, display: "meter" | "status", on: boolean): [T 
       return;
     }
     setProblem(null);
-    const socket = new WebSocket(wsUrl(`ws/tune/${node}/${display}`));
-    socket.onmessage = (e) => {
-      const msg = JSON.parse(e.data as string);
-      if (msg.error) setProblem(msg.message ?? msg.error);
-      else setReading(msg as T);
+    let socket: WebSocket | null = null;
+    let cancelled = false;
+    openSocket(`ws/tune/${node}/${display}`).then(
+      (s) => {
+        if (cancelled) {
+          s.close();
+          return;
+        }
+        socket = s;
+        s.onmessage = (e) => {
+          const msg = JSON.parse(e.data as string);
+          if (msg.error) setProblem(msg.message ?? msg.error);
+          else setReading(msg as T);
+        };
+        s.onclose = (e) => {
+          if (e.code !== 1000 && e.code !== 1005) setProblem("The live display stopped.");
+        };
+      },
+      (err) => setProblem(message(err)),
+    );
+    return () => {
+      cancelled = true;
+      socket?.close();
     };
-    socket.onclose = (e) => {
-      if (e.code !== 1000 && e.code !== 1005) setProblem("The live display stopped.");
-    };
-    return () => socket.close();
   }, [node, display, on]);
   return [reading, problem];
 }
