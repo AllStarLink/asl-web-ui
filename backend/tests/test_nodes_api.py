@@ -341,3 +341,25 @@ async def test_permanent_link_commands_refuse_clashes(api):
     a = await api.make()
     status_, body = await a.post("nodes/plan", {"op": "permanent_links", "node": "1999"})
     assert status_ == 409 and "clash with code 81" in body["message"]
+
+
+async def test_several_operations_as_one_change(api):
+    _with_functions(api)
+    a = await api.make()
+    # The rename is listed first but runs last, so the others still find node 1999.
+    plan, status_, res = await a.change({"ops": [
+        {"op": "rename", "node": "1999", "number": "2000"},
+        {"op": "callsign", "node": "1999", "callsign": "N0CALL"},
+        {"op": "permanent_links", "node": "1999"},
+        {"op": "startup_link", "node": "1999", "target": "2001", "permanent": True},
+    ]})
+    assert status_ == 200 and res["applied"]
+    assert plan["action"] == ("node 1999: call sign, add permanent link commands, connect at startup; "
+                              "change node number 1999 to 2000")
+    _, node = await a.get("nodes/2000")
+    assert node["callsign"] == "N0CALL" and node["startup"]["target"] == "2001" and node["startup"]["permanent"]
+    status_, body = await a.post("nodes/plan", {"ops": [{"op": "callsign", "node": "2000", "callsign": "N0CALL"},
+                                                        {"op": "duplex", "node": "2000", "duplex": 9}]})
+    assert status_ == 400 and body["op"] == "duplex" and body["field"] == "duplex"
+    status_, _ = await a.post("nodes/plan", {"ops": []})
+    assert status_ == 400

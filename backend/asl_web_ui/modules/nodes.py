@@ -3,6 +3,7 @@
     GET    /api/v1/nodes                              nodes, first-run state, choices
     GET    /api/v1/nodes/{node}                       one node in detail
     POST   /api/v1/nodes/plan          {"op", ...}    plan a change -> diffs, notes, plan id
+    POST   /api/v1/nodes/plan          {"ops": [...]} several of them as one change
     GET    /api/v1/nodes/{node}/access                allow/deny lists (AstDB)
     POST   /api/v1/nodes/{node}/access {"list", "entry", "reason"}
     DELETE /api/v1/nodes/{node}/access/{list}/{entry}
@@ -67,9 +68,9 @@ def _number(value: str) -> str:
     return value
 
 
-def _plan_error(exc: PlanError) -> web.Response:
+def _plan_error(exc: PlanError, op: str | None = None) -> web.Response:
     status = 404 if exc.code == "not_found" else 409 if exc.code in ("requirement", "custom_id", "custom_macro") else 400
-    return error(status, exc.code, exc.message, field=exc.field)
+    return error(status, exc.code, exc.message, field=exc.field, op=op)
 
 
 @routes.get("/api/v1/nodes")
@@ -162,6 +163,26 @@ def _describe(op: str, body: dict) -> str:
     }.get(op, op)
 
 
+def _ops(body: dict) -> list[dict] | None:
+    """One operation ({"op": ...}) or several ({"ops": [...]}), planned together
+    so that each sees the files as the ones before it left them. A rename goes
+    last, so the others can name the node by its current number."""
+    ops = body.get("ops", [body])
+    if not isinstance(ops, list) or not ops or not all(isinstance(o, dict) and isinstance(o.get("op"), str)
+                                                       for o in ops):
+        return None
+    return sorted(ops, key=lambda o: o["op"] == "rename")
+
+
+def _describe_all(ops: list[dict]) -> str:
+    """"node 1999: call sign, radio interface" for several changes to one node."""
+    groups: dict[str, list[str]] = {}
+    for o in ops:
+        head, sep, what = _describe(o["op"], o).partition(": ")
+        groups.setdefault(head + sep, []).append(what)
+    return "; ".join(head + ", ".join(whats) for head, whats in groups.items())
+
+
 def _run(planner: Planner, op: str, body: dict) -> None:
     node = _str(body, "node") if op not in ("add", "first_run", "iax_port", "ami_secret", "enable_customizations") \
         else None
@@ -246,16 +267,18 @@ def _disk(ws: Workspace, path: str) -> bytes:
 @routes.post("/api/v1/nodes/plan")
 async def plan(request: web.Request) -> web.Response:
     body = await read_json(request)
-    op = body.get("op")
-    if not isinstance(op, str):
+    ops = _ops(body)
+    if ops is None:
         return error(400, "invalid", "op is required.")
     settings = request.app[SETTINGS_KEY]
     ws = _ws(request)
     planner = Planner(ws)
-    try:
-        _run(planner, op, body)
-    except PlanError as exc:
-        return _plan_error(exc)
+    for o in ops:
+        try:
+            _run(planner, o["op"], o)
+        except PlanError as exc:
+            return _plan_error(exc, o["op"])
+    reauth = any(o["op"] == "remove" for o in ops)
     fx = planner.effects
     changes = ws.changes()
     if not changes:
@@ -272,7 +295,8 @@ async def plan(request: web.Request) -> web.Response:
         old = {(f.code, f.message) for f in before.get(name, [])}
         new_errors += [f.as_dict() for f in findings if (f.code, f.message) not in old]
     session = await get_session(request)
-    stored = request.app[STORE_KEY].plan(session.identity or "", request[USER_KEY], _describe(op, body), changes)
+    stored = request.app[STORE_KEY].plan(session.identity or "", request[USER_KEY],
+                                               _describe_all(ops), changes)
     stored.errors = len(new_errors)
     after_steps = [("astdb", list(a)) for a in fx.astdb]
     files = [{"name": os.path.relpath(c.path, settings.config_dir), "diff": c.diff(
@@ -295,7 +319,7 @@ async def plan(request: web.Request) -> web.Response:
                         f"a{allmon3.PATH}", f"b{allmon3.PATH}"))})
                     after_steps.append(("allmon3", {"content": new, "hash": current["hash"]}))
                     fx.note("Allmon3 is restarted after its settings change.")
-    stored.meta = {"after": after_steps, "reauth": op == "remove", "restart": fx.restart}
+    stored.meta = {"after": after_steps, "reauth": reauth, "restart": fx.restart}
     return web.json_response({
         "id": stored.id,
         "action": stored.action,
@@ -305,7 +329,7 @@ async def plan(request: web.Request) -> web.Response:
         "restart": fx.restart,
         "tune": fx.tune,
         "errors": new_errors,
-        "reauth": op == "remove",
+        "reauth": reauth,
     })
 
 

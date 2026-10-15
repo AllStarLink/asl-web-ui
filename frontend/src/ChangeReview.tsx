@@ -46,6 +46,7 @@ type Review = { plan: ChangePlan; resolve: (result: Applied | null) => void };
 export function useChange(): [
   ReactNode,
   (op: string, params: Record<string, unknown>) => Promise<Applied | null>,
+  (ops: Record<string, unknown>[]) => Promise<Applied | null>,
 ] {
   const [review, setReview] = useState<Review | null>(null);
   const [busy, setBusy] = useState(false);
@@ -58,10 +59,10 @@ export function useChange(): [
   const [fix, setFix] = useState<{ files: string[]; resolve: (ok: boolean) => void } | null>(null);
   const [fixError, setFixError] = useState<string | null>(null);
 
-  const propose = useCallback(async (op: string, params: Record<string, unknown>) => {
+  const run = useCallback(async (body: Record<string, unknown>) => {
     let plan;
     try {
-      plan = await planChange(op, params);
+      plan = await planChange(body);
     } catch (err) {
       // Root-owned files (edited with sudo): offer to give them back, then plan again.
       if (!(err instanceof ApiError && err.code === "not_writable")) throw err;
@@ -69,7 +70,7 @@ export function useChange(): [
       const ok = await new Promise<boolean>((resolve) => setFix({ files, resolve }));
       setFix(null);
       if (!ok) return null;
-      plan = await planChange(op, params);
+      plan = await planChange(body);
     }
     if ("unchanged" in plan) {
       setNothing(true);
@@ -78,6 +79,8 @@ export function useChange(): [
     setError(null);
     return await new Promise<Applied | null>((resolve) => setReview({ plan, resolve }));
   }, []);
+  const propose = useCallback((op: string, params: Record<string, unknown>) => run({ op, ...params }), [run]);
+  const proposeOps = useCallback((ops: Record<string, unknown>[]) => run({ ops }), [run]);
 
   const apply = async () => {
     if (!review) return;
@@ -234,5 +237,5 @@ export function useChange(): [
       </Modal>
     </>
   );
-  return [element, propose];
+  return [element, propose, proposeOps];
 }

@@ -160,6 +160,13 @@ html, body, #root { height: 100%; }
 .asl-settings { --pf-v6-c-description-list--m-horizontal__term--width: 11rem; }
 .asl-setting { display: flex; flex-wrap: wrap; gap: .75rem; align-items: baseline; }
 .asl-inline-form { max-width: 34rem; }
+.asl-node-form { max-width: 40rem; }
+.asl-dirty {
+  display: inline-block; width: .5rem; height: .5rem; margin-inline-start: .4rem; border-radius: 50%;
+  vertical-align: middle; background: var(--pf-t--global--color--status--warning--default);
+}
+.asl-save-bar { border-block-start: 1px solid var(--pf-t--global--border--color--default); }
+.asl-save-row { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; }
 .asl-form-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 1rem; }
 @media (max-width: 40rem) { .asl-form-row { grid-template-columns: minmax(0, 1fr); } }
 .asl-wizard-modal .pf-v6-c-wizard { height: min(560px, 85vh); }

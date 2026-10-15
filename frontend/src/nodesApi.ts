@@ -94,8 +94,8 @@ export type AsteriskSettings = { iax_port: number; ami_users: string[]; ami_admi
 
 export const listNodes = () => get<NodeList>("nodes");
 export const getNode = (n: string) => get<NodeDetail>(`nodes/${encodeURIComponent(n)}`);
-export const planChange = (op: string, params: Record<string, unknown>) =>
-  post<ChangePlan | Unchanged>("nodes/plan", { op, ...params });
+// One operation ({op, ...}) or several planned as one change ({ops: [...]}).
+export const planChange = (body: Record<string, unknown>) => post<ChangePlan | Unchanged>("nodes/plan", body);
 export const applyChange = (id: string, confirmErrors = false) =>
   post<Applied>(`changes/${encodeURIComponent(id)}/apply`, { confirm_errors: confirmErrors });
 

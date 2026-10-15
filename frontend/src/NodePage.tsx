@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActionGroup,
   Alert,
@@ -10,14 +10,13 @@ import {
   CardTitle,
   Checkbox,
   Content,
-  DescriptionList,
-  DescriptionListDescription,
-  DescriptionListGroup,
-  DescriptionListTerm,
   Form,
   FormGroup,
+  FormHelperText,
   FormSelect,
   FormSelectOption,
+  HelperText,
+  HelperTextItem,
   Label,
   PageSection,
   Radio,
@@ -44,248 +43,203 @@ import { TuningPanel } from "./Tuning";
 import { RegistrationLabel } from "./Overview";
 import { go } from "./useRoute";
 
-type Propose = (op: string, params: Record<string, unknown>) => Promise<unknown>;
+// The General, Radio interface and Customizations tabs edit one draft of the
+// node's settings. It survives switching tabs, and is reviewed and saved (or
+// discarded) as one change. Tuning and access lists take effect immediately.
+type Draft = {
+  number: string;
+  password: string;
+  callsign: string;
+  replaceId: boolean;
+  duplex: string;
+  l2l: string;
+  statpost: boolean;
+  linkOn: boolean;
+  target: string;
+  linkMode: "transceive" | "monitor";
+  permanent: boolean;
+  replaceMacro: boolean;
+  iface: string;
+  custom: string[];
+};
+type SetDraft = (change: Partial<Draft>) => void;
+type Problems = Partial<Record<keyof Draft, string>>;
+type Op = { op: string; node: string; [key: string]: unknown };
 
-// One setting: shows the value, and an editor after "Change".
-function Setting({ label, value, children, disabled }: {
-  label: string; value: ReactNode; disabled?: string; children?: (close: () => void) => ReactNode;
-}) {
-  const [editing, setEditing] = useState(false);
-  return (
-    <DescriptionListGroup>
-      <DescriptionListTerm>{label}</DescriptionListTerm>
-      <DescriptionListDescription>
-        {editing && children ? (
-          children(() => setEditing(false))
-        ) : (
-          <div className="asl-setting">
-            <span>{value}</span>
-            {children && !disabled && (
-              <Button variant="link" isInline onClick={() => setEditing(true)}>
-                Change
-              </Button>
-            )}
-            {disabled && <span className="asl-sub">{disabled}</span>}
-          </div>
-        )}
-      </DescriptionListDescription>
-    </DescriptionListGroup>
-  );
-}
-
-// A small form inside a Setting: runs the change, shows errors, closes when done.
-function Edit({ close, onSave, children, saveLabel = "Review change", valid = true }: {
-  close: () => void; onSave: () => Promise<unknown>; children: ReactNode; saveLabel?: string; valid?: boolean;
-}) {
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      if ((await onSave()) !== null) close();
-    } catch (err) {
-      setError(message(err));
-    } finally {
-      setBusy(false);
-    }
+function initial(node: NodeDetail): Draft {
+  const st = node.startup;
+  return {
+    number: node.number, password: "", callsign: node.callsign ?? "", replaceId: false,
+    duplex: String(node.duplex ?? 2), l2l: node.linktolink, statpost: node.statpost,
+    linkOn: st.target !== null || st.custom, target: st.target ?? "", linkMode: st.mode ?? "transceive",
+    permanent: st.permanent, replaceMacro: false,
+    iface: node.interface ?? "SimpleUSB", custom: node.customizations.selected,
   };
+}
+
+const sameSet = (a: string[], b: string[]) => [...a].sort().join() === [...b].sort().join();
+
+// The draft's differences from the node, as plan operations (with the tab
+// each belongs to), and what is wrong with the fields that changed.
+function changes(node: NodeDetail, list: NodeList, d: Draft): { ops: (Op & { tab: string })[]; problems: Problems } {
+  const ops: (Op & { tab: string })[] = [];
+  const problems: Problems = {};
+  const n = node.number;
+  const base = initial(node);
+  const add = (tab: string, op: string, params: Record<string, unknown> = {}) => ops.push({ tab, op, node: n, ...params });
+
+  if (d.callsign.trim().toUpperCase() !== (node.callsign ?? "")) {
+    if (!/^[0-9A-Za-z/-]{3,}$/.test(d.callsign.trim())) {
+      problems.callsign = "Letters, numbers, / and -, at least 3 characters.";
+    } else if (!node.id_simple && !d.replaceId) {
+      problems.replaceId = "Tick this to replace the custom ID.";
+    }
+    add("general", "callsign", { callsign: d.callsign, replace_custom: d.replaceId });
+  }
+  if (d.password) {
+    if (!/^[0-9a-zA-Z_-]{6,}$/.test(d.password)) problems.password = "At least 6 letters, numbers, _ or -.";
+    add("general", "password", { password: d.password });
+  }
+  if (d.duplex !== base.duplex || (d.duplex === "0" && d.l2l !== base.l2l)) {
+    add("general", "duplex", { duplex: Number(d.duplex), linktolink: d.duplex === "0" ? d.l2l : undefined });
+  }
+  if (d.statpost !== base.statpost) add("general", "statpost", { enabled: d.statpost });
+  const st = node.startup;
+  if (d.linkOn !== base.linkOn || (d.linkOn && (d.target.trim() !== base.target || d.linkMode !== base.linkMode ||
+                                                d.permanent !== base.permanent))) {
+    if (d.linkOn && !/^[0-9]{4,7}$/.test(d.target.trim())) problems.target = "Enter the node number to connect to.";
+    if (st.custom && !d.replaceMacro) problems.replaceMacro = "Tick this to replace the custom startup macro.";
+    if (d.linkOn && d.permanent && !st.permanent_available) add("general", "permanent_links");
+    add("general", "startup_link", {
+      target: d.linkOn ? d.target.trim() : null, mode: d.linkMode, permanent: d.linkOn && d.permanent,
+      replace_custom: d.replaceMacro,
+    });
+  }
+  if (d.iface !== base.iface) add("interface", "interface", { interface: d.iface });
+  if (!sameSet(d.custom, base.custom)) add("customizations", "customize", { names: d.custom });
+  if (d.number !== n) {
+    const problem = numberProblem(d.number, list.nodes.map((x) => x.number), n);
+    if (problem) problems.number = problem;
+    add("general", "rename", { number: d.number });
+  }
+  return { ops, problems };
+}
+
+function Help({ problem, hint }: { problem?: string; hint?: ReactNode }) {
+  if (!problem && !hint) return null;
   return (
-    <Form onSubmit={submit} className="asl-inline-form">
-      {children}
-      {error && <Alert variant="danger" isInline isPlain title={error} />}
-      <ActionGroup>
-        <Button type="submit" isLoading={busy} isDisabled={busy || !valid}>
-          {saveLabel}
-        </Button>
-        <Button variant="link" onClick={close}>
-          Cancel
-        </Button>
-      </ActionGroup>
-    </Form>
+    <FormHelperText>
+      <HelperText>
+        <HelperTextItem variant={problem ? "error" : "default"}>{problem ?? hint}</HelperTextItem>
+      </HelperText>
+    </FormHelperText>
   );
 }
 
-function Text({ id, label, value, onChange, type = "text" }: {
-  id: string; label: string; value: string; onChange: (v: string) => void; type?: "text" | "password";
+function General({ node, list, status, draft, set, problems }: {
+  node: NodeDetail; list: NodeList; status: Status | null; draft: Draft; set: SetDraft; problems: Problems;
 }) {
-  return (
-    <FormGroup label={label} fieldId={id}>
-      <PlainTextInput id={id} type={type} value={value} onChange={(_e, v) => onChange(v)} autoFocus autoComplete="off" />
-    </FormGroup>
-  );
-}
-
-function General({ node, list, propose, status }: {
-  node: NodeDetail; list: NodeList; propose: Propose; status: Status | null;
-}) {
-  const [number, setNumber] = useState(node.number);
-  const [password, setPassword] = useState("");
-  const [callsign, setCallsign] = useState(node.callsign ?? "");
-  const [replaceId, setReplaceId] = useState(false);
-  const [duplex, setDuplex] = useState(String(node.duplex ?? 2));
-  const [l2l, setL2l] = useState(node.linktolink);
   const running = status?.nodes.find((n) => n.node === node.number);
   const st = node.startup;
-  const [linkOn, setLinkOn] = useState(st.target !== null || st.custom);
-  const [target, setTarget] = useState(st.target ?? "");
-  const [linkMode, setLinkMode] = useState(st.mode ?? "transceive");
-  const [permanent, setPermanent] = useState(st.permanent);
-  const [replaceMacro, setReplaceMacro] = useState(false);
-  const [permError, setPermError] = useState<string | null>(null);
-  const startupText = st.custom ? <span>Custom startup macro: <code>{st.macro}</code></span>
-    : st.target ? `Node ${st.target}, ${st.mode === "monitor" ? "monitor only" : "transceive"}${st.permanent ? ", kept up" : ""}`
-    : "No";
-  const numberError = numberProblem(number, list.nodes.map((n) => n.number), node.number);
-
-  const rename = async () => {
-    const res = await propose("rename", { node: node.number, number });
-    if (res) go(`nodes/${number}`);
-    return res;
-  };
-
   return (
     <Card>
       <CardTitle>General</CardTitle>
       <CardBody>
-        <DescriptionList isHorizontal className="asl-settings">
-          <Setting label="Node number" value={<b>{node.number}</b>}>
-            {(close) => (
-              <Edit close={close} onSave={rename} valid={!numberError && number !== node.number}>
-                <Text id="node-number" label="New node number" value={number} onChange={setNumber} />
-                <Content component="p" className="asl-sub">
-                  {numberError && number !== node.number ? numberError :
-                    "Renames the node everywhere: its settings, registration, radio interface and access list."}
-                </Content>
-              </Edit>
-            )}
-          </Setting>
-          <Setting label="Registration" value={
-            node.private ? <Label>Private node, not registered</Label>
-              : running ? <RegistrationLabel node={running} />
-              : node.registered ? <Label color="blue">Configured</Label> : <Label color="orange">Not configured</Label>
-          } />
+        <Form className="asl-node-form" onSubmit={(e) => e.preventDefault()}>
+          <FormGroup label="Registration" fieldId="node-registration">
+            <div id="node-registration">
+              {node.private ? <Label>Private node, not registered</Label>
+                : running ? <RegistrationLabel node={running} />
+                : node.registered ? <Label color="blue">Configured</Label> : <Label color="orange">Not configured</Label>}
+            </div>
+          </FormGroup>
+          <FormGroup label="Node number" fieldId="node-number">
+            <PlainTextInput id="node-number" value={draft.number} onChange={(_e, v) => set({ number: v.trim() })}
+                            validated={problems.number ? "error" : "default"} inputMode="numeric" autoComplete="off" />
+            <Help problem={problems.number} hint={draft.number !== node.number &&
+              "Renames the node everywhere: its settings, registration, radio interface and access list."} />
+          </FormGroup>
           {!node.private && (
-            <Setting label="Node password" value={node.password_set ? "••••••••" : <Label color="orange">Not set</Label>}>
-              {(close) => (
-                <Edit close={close} onSave={() => propose("password", { node: node.number, password })}
-                      valid={/^[0-9a-zA-Z_-]{6,}$/.test(password)}>
-                  <Text id="node-password" label="Node password" type="password" value={password} onChange={setPassword} />
-                  <Content component="p" className="asl-sub">From allstarlink.org: Portal, Node Settings.</Content>
-                </Edit>
-              )}
-            </Setting>
+            <FormGroup label="Node password" fieldId="node-password">
+              <PlainTextInput id="node-password" type="password" value={draft.password} autoComplete="new-password"
+                              placeholder={node.password_set ? "Unchanged" : "Not set"}
+                              validated={problems.password ? "error" : "default"}
+                              onChange={(_e, v) => set({ password: v })} />
+              <Help problem={problems.password} hint="From allstarlink.org: Portal, Node Settings." />
+            </FormGroup>
           )}
-          <Setting label="Call sign" value={node.callsign ?? (node.id_simple ? <Label color="orange">Not set</Label> :
-            <span>Custom ID: <code>{node.idrecording}</code></span>)}>
-            {(close) => (
-              <Edit close={close} valid={/^[0-9A-Za-z/-]{3,}$/.test(callsign.trim()) && (node.id_simple || replaceId)}
-                    onSave={() => propose("callsign", { node: node.number, callsign, replace_custom: replaceId })}>
-                <Text id="node-callsign" label="Call sign" value={callsign} onChange={setCallsign} />
-                {!node.id_simple && (
-                  <Checkbox id="node-replace-id" isChecked={replaceId} onChange={(_e, v) => setReplaceId(v)}
-                            label={`Replace the custom ID (${node.idrecording}) with the call sign`} />
-                )}
-              </Edit>
+          <FormGroup label="Call sign" fieldId="node-callsign">
+            <PlainTextInput id="node-callsign" value={draft.callsign} onChange={(_e, v) => set({ callsign: v.toUpperCase() })}
+                            validated={problems.callsign ? "error" : "default"} autoComplete="off" />
+            <Help problem={problems.callsign} hint={!node.id_simple && <>Custom ID: <code>{node.idrecording}</code></>} />
+            {!node.id_simple && draft.callsign.trim() !== "" && (
+              <>
+                <Checkbox id="node-replace-id" isChecked={draft.replaceId} onChange={(_e, v) => set({ replaceId: v })}
+                          label={`Replace the custom ID (${node.idrecording}) with the call sign`} />
+                <Help problem={problems.replaceId} />
+              </>
             )}
-          </Setting>
-          <Setting label="Duplex" value={`${node.duplex ?? "—"}: ${list.duplex.find((d) => d.value === node.duplex)?.label ?? ""}` +
-            (node.duplex === 0 ? (node.linktolink === "yes" ? " (full duplex)" : " (half duplex)") : "")}>
-            {(close) => (
-              <Edit close={close}
-                    onSave={() => propose("duplex", { node: node.number, duplex: Number(duplex), linktolink: duplex === "0" ? l2l : undefined })}>
-                <FormGroup label="Duplex" fieldId="node-duplex">
-                  <FormSelect id="node-duplex" value={duplex} onChange={(_e, v) => setDuplex(v)}>
-                    {list.duplex.map((d) => <FormSelectOption key={d.value} value={String(d.value)} label={`${d.value}: ${d.label}`} />)}
-                  </FormSelect>
-                </FormGroup>
-                {duplex === "0" && (
-                  <FormGroup role="radiogroup" fieldId="node-l2l" label="With no telemetry, use" isInline>
-                    <Radio id="l2l-no" name="l2l" label="Half duplex" isChecked={l2l !== "yes"} onChange={() => setL2l("no")} />
-                    <Radio id="l2l-yes" name="l2l" label="Full duplex (for an external repeater controller)"
-                           isChecked={l2l === "yes"} onChange={() => setL2l("yes")} />
-                  </FormGroup>
-                )}
-              </Edit>
-            )}
-          </Setting>
-          <Setting label="Connect at startup" value={startupText}>
-            {(close) => (
-              <Edit close={close}
-                    valid={(!linkOn || /^[0-9]{4,7}$/.test(target.trim())) && (!st.custom || replaceMacro)}
-                    onSave={() => propose("startup_link", {
-                      node: node.number, target: linkOn ? target.trim() : null, mode: linkMode, permanent,
-                      replace_custom: replaceMacro,
-                    })}>
-                <FormGroup role="radiogroup" fieldId="startup-on" isStack>
-                  <Radio id="startup-off" name="startup-on" label="Don't connect to another node" isChecked={!linkOn}
-                         onChange={() => setLinkOn(false)} />
-                  <Radio id="startup-yes" name="startup-on" label="Connect to a node when Asterisk starts"
-                         isChecked={linkOn} onChange={() => setLinkOn(true)} />
-                </FormGroup>
-                {linkOn && (
-                  <>
-                    <Text id="startup-target" label="Node number" value={target} onChange={setTarget} />
-                    <FormGroup role="radiogroup" fieldId="startup-mode" label="Link" isInline>
-                      <Radio id="startup-tx" name="startup-mode" label="Transceive" isChecked={linkMode === "transceive"}
-                             onChange={() => setLinkMode("transceive")} />
-                      <Radio id="startup-mon" name="startup-mode" label="Monitor only" isChecked={linkMode === "monitor"}
-                             onChange={() => setLinkMode("monitor")} />
-                    </FormGroup>
-                    <Checkbox id="startup-permanent" label="Keep the link up (reconnect if it drops)" isChecked={permanent}
-                              isDisabled={!st.permanent_available} onChange={(_e, v) => setPermanent(v)}
-                              description={st.permanent_available ? undefined :
-                                "The node's function table has no permanent link commands (811-813 are commented out in the stock rpt.conf)."} />
-                    {!st.permanent_available && (
-                      <div>
-                        <Button variant="link" isInline onClick={async () => {
-                          setPermError(null);
-                          try {
-                            await propose("permanent_links", { node: node.number });
-                          } catch (err) {
-                            setPermError(message(err));
-                          }
-                        }}>
-                          Add the permanent link commands
-                        </Button>
-                        {permError && <Alert variant="danger" isInline isPlain title={permError} />}
-                      </div>
-                    )}
-                  </>
-                )}
-                {st.custom && (
-                  <Checkbox id="startup-replace" isChecked={replaceMacro} onChange={(_e, v) => setReplaceMacro(v)}
-                            label={`Replace the custom startup macro (${st.macro})`} />
-                )}
-                <Content component="p" className="asl-sub">
-                  Takes effect when Asterisk restarts, and then on every restart: the link is made automatically.
-                </Content>
-              </Edit>
-            )}
-          </Setting>
-          <Setting label="Post node status" value={
-            <Switch id="node-statpost" isChecked={node.statpost} isDisabled={node.private}
-                    label="Posting to stats.allstarlink.org"
-                    onChange={async (_e, v) => { await propose("statpost", { node: node.number, enabled: v }).catch(() => null); }} />
-          } disabled={node.private ? "Private nodes cannot post status." : undefined} />
-        </DescriptionList>
+          </FormGroup>
+          <FormGroup label="Duplex" fieldId="node-duplex">
+            <FormSelect id="node-duplex" value={draft.duplex} onChange={(_e, v) => set({ duplex: v })}>
+              {list.duplex.map((d) => <FormSelectOption key={d.value} value={String(d.value)} label={`${d.value}: ${d.label}`} />)}
+            </FormSelect>
+          </FormGroup>
+          {draft.duplex === "0" && (
+            <FormGroup role="radiogroup" fieldId="node-l2l" label="With no telemetry, use" isInline>
+              <Radio id="l2l-no" name="l2l" label="Half duplex" isChecked={draft.l2l !== "yes"} onChange={() => set({ l2l: "no" })} />
+              <Radio id="l2l-yes" name="l2l" label="Full duplex (for an external repeater controller)"
+                     isChecked={draft.l2l === "yes"} onChange={() => set({ l2l: "yes" })} />
+            </FormGroup>
+          )}
+          <FormGroup role="radiogroup" fieldId="startup-on" label="Connect at startup" isStack>
+            {st.custom && <Content component="p">Custom startup macro: <code>{st.macro}</code></Content>}
+            <Radio id="startup-off" name="startup-on" label="Don't connect to another node" isChecked={!draft.linkOn}
+                   onChange={() => set({ linkOn: false })} />
+            <Radio id="startup-yes" name="startup-on" label="Connect to a node when Asterisk starts"
+                   isChecked={draft.linkOn} onChange={() => set({ linkOn: true })} />
+          </FormGroup>
+          {draft.linkOn && (
+            <>
+              <FormGroup label="Node to connect to" fieldId="startup-target">
+                <PlainTextInput id="startup-target" value={draft.target} onChange={(_e, v) => set({ target: v })}
+                                validated={problems.target ? "error" : "default"} inputMode="numeric" autoComplete="off" />
+                <Help problem={problems.target} />
+              </FormGroup>
+              <FormGroup role="radiogroup" fieldId="startup-mode" label="Link" isInline>
+                <Radio id="startup-tx" name="startup-mode" label="Transceive" isChecked={draft.linkMode === "transceive"}
+                       onChange={() => set({ linkMode: "transceive" })} />
+                <Radio id="startup-mon" name="startup-mode" label="Monitor only" isChecked={draft.linkMode === "monitor"}
+                       onChange={() => set({ linkMode: "monitor" })} />
+              </FormGroup>
+              <FormGroup fieldId="startup-permanent">
+                <Checkbox id="startup-permanent" label="Keep the link up (reconnect if it drops)" isChecked={draft.permanent}
+                          onChange={(_e, v) => set({ permanent: v })}
+                          description={st.permanent_available ? undefined :
+                            "Adds the permanent link commands (811-813) to the node's function table; they are " +
+                            "commented out in the stock rpt.conf."} />
+              </FormGroup>
+            </>
+          )}
+          {st.custom && (
+            <FormGroup fieldId="startup-replace">
+              <Checkbox id="startup-replace" isChecked={draft.replaceMacro} onChange={(_e, v) => set({ replaceMacro: v })}
+                        label={`Replace the custom startup macro (${st.macro})`} />
+              <Help problem={problems.replaceMacro} />
+            </FormGroup>
+          )}
+          <FormGroup label="Post node status" fieldId="node-statpost">
+            <Switch id="node-statpost" isChecked={draft.statpost} isDisabled={node.private}
+                    label="Posting to stats.allstarlink.org" onChange={(_e, v) => set({ statpost: v })} />
+            <Help hint={node.private ? "Private nodes cannot post status." : undefined} />
+          </FormGroup>
+        </Form>
       </CardBody>
     </Card>
   );
 }
 
-function Interface({ node, list, propose }: { node: NodeDetail; list: NodeList; propose: Propose }) {
-  const [iface, setIface] = useState(node.interface ?? "SimpleUSB");
-  const [error, setError] = useState<string | null>(null);
-  const save = async () => {
-    setError(null);
-    try {
-      await propose("interface", { node: node.number, interface: iface });
-    } catch (err) {
-      setError(message(err));
-    }
-  };
+function Interface({ node, list, draft, set }: { node: NodeDetail; list: NodeList; draft: Draft; set: SetDraft }) {
   return (
     <Card>
       <CardTitle>Radio interface</CardTitle>
@@ -294,17 +248,13 @@ function Interface({ node, list, propose }: { node: NodeDetail; list: NodeList; 
           <Content component="p">
             Now: <b>{INTERFACE_NAMES[node.interface ?? ""] ?? "unknown"}</b> (<code>rxchannel = {node.rxchannel ?? "—"}</code>)
           </Content>
-          <Form onSubmit={(e) => { e.preventDefault(); void save(); }}>
+          <Form onSubmit={(e) => e.preventDefault()}>
             <FormGroup role="radiogroup" fieldId="iface" label="Radio interface" isStack>
               {list.interfaces.map((i) => (
-                <Radio key={i.id} id={`node-iface-${i.id}`} name="node-iface" label={i.label} isChecked={iface === i.id}
-                       onChange={() => setIface(i.id)} />
+                <Radio key={i.id} id={`node-iface-${i.id}`} name="node-iface" label={i.label} isChecked={draft.iface === i.id}
+                       onChange={() => set({ iface: i.id })} />
               ))}
             </FormGroup>
-            {error && <Alert variant="danger" isInline isPlain title={error} />}
-            <ActionGroup>
-              <Button type="submit" isDisabled={iface === node.interface}>Review change</Button>
-            </ActionGroup>
           </Form>
           <Content component="p" className="asl-sub">
             Changing the interface also loads the matching Asterisk channel driver. The old interface's settings are
@@ -445,26 +395,20 @@ function Access({ node }: { node: NodeDetail }) {
   );
 }
 
-function Customizations({ node, propose }: { node: NodeDetail; propose: Propose }) {
+function Customizations({ node, draft, set, enable }: {
+  node: NodeDetail; draft: Draft; set: SetDraft; enable: () => Promise<unknown>;
+}) {
   const status = node.customizations;
-  const [chosen, setChosen] = useState<string[]>(status.selected);
   const [error, setError] = useState<string | null>(null);
   const devices = status.options.filter((o) => o.device);
+  const chosen = draft.custom;
   const chosenDevice = devices.find((d) => chosen.includes(d.name));
-  const changed = [...chosen].sort().join() !== [...status.selected].sort().join();
+  const toggle = (name: string, on: boolean) => set({ custom: on ? [...chosen, name] : chosen.filter((n) => n !== name) });
 
-  const save = async () => {
+  const prepare = async () => {
     setError(null);
     try {
-      await propose("customize", { node: node.number, names: chosen });
-    } catch (err) {
-      setError(message(err));
-    }
-  };
-  const enable = async () => {
-    setError(null);
-    try {
-      await propose("enable_customizations", { node: node.number });
+      await enable();
     } catch (err) {
       setError(message(err));
     }
@@ -486,13 +430,13 @@ function Customizations({ node, propose }: { node: NodeDetail; propose: Propose 
                     before it is saved.
                   </Content>
                   <ActionGroup>
-                    <Button onClick={enable}>Prepare the files for customizations</Button>
+                    <Button onClick={prepare}>Prepare the files for customizations</Button>
                   </ActionGroup>
                 </>
               )}
             </>
           ) : (
-            <Form onSubmit={(e) => { e.preventDefault(); void save(); }}>
+            <Form onSubmit={(e) => e.preventDefault()}>
               <Content component="p">
                 Ready-made changes for common hardware and needs, from <code>/etc/asterisk/custom</code>.
               </Content>
@@ -502,19 +446,16 @@ function Customizations({ node, propose }: { node: NodeDetail; propose: Propose 
                     <Checkbox key={d.name} id={`dev-${d.name}`} label={d.description.replace(/\*/g, "")}
                               isChecked={chosen.includes(d.name)}
                               isDisabled={chosenDevice !== undefined && chosenDevice.name !== d.name}
-                              onChange={(_e, v) => setChosen((c) => (v ? [...c, d.name] : c.filter((n) => n !== d.name)))} />
+                              onChange={(_e, v) => toggle(d.name, v)} />
                   ))}
                 </FormGroup>
               )}
               <FormGroup label="Other" fieldId="custom-other" isStack>
                 {status.options.filter((o) => !o.device).map((o) => (
                   <Checkbox key={o.name} id={`opt-${o.name}`} label={o.description} isChecked={chosen.includes(o.name)}
-                            onChange={(_e, v) => setChosen((c) => (v ? [...c, o.name] : c.filter((n) => n !== o.name)))} />
+                            onChange={(_e, v) => toggle(o.name, v)} />
                 ))}
               </FormGroup>
-              <ActionGroup>
-                <Button type="submit" isDisabled={!changed}>Review changes</Button>
-              </ActionGroup>
             </Form>
           )}
         </div>
@@ -524,16 +465,25 @@ function Customizations({ node, propose }: { node: NodeDetail; propose: Propose 
 }
 
 const TABS = ["general", "interface", "tuning", "access", "customizations"] as const;
+const TAB_NAMES: Record<(typeof TABS)[number], string> = {
+  general: "General", interface: "Radio interface", tuning: "Tuning", access: "Access control",
+  customizations: "Customizations",
+};
+const DRAFT_TABS = ["general", "interface", "customizations"];
 
 export function NodePage({ number, tab, status }: { number: string; tab: string; status: Status | null }) {
   const [node, setNode] = useState<NodeDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [list, , reloadList] = useNodeList();
-  const [changeElement, rawPropose] = useChange();
+  const [changeElement, propose, proposeOps] = useChange();
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setNode(await getNode(number));
+      const n = await getNode(number);
+      setNode(n);
+      setDraft(initial(n));
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError && err.status === 404 ? `Node ${number} is not configured.` : message(err));
@@ -545,24 +495,68 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
     void load();
   }, [load]);
 
-  // Every change reloads the page's data once it is applied.
-  const propose: Propose = useCallback(async (op, params) => {
-    const res = await rawPropose(op, params);
-    if (res) {
+  const set: SetDraft = useCallback((change) => {
+    setSaveError(null);
+    setDraft((d) => (d ? { ...d, ...change } : d));
+  }, []);
+
+  const pending = useMemo(() => (node && list && draft ? changes(node, list, draft) : { ops: [], problems: {} }),
+    [node, list, draft]);
+  const dirty = pending.ops.length > 0;
+  const valid = Object.keys(pending.problems).length === 0;
+  const dirtyTabs = new Set(pending.ops.map((o) => o.tab));
+  const count = pending.ops.filter((o) => o.op !== "permanent_links").length;
+
+  // Closing or reloading the browser tab would lose the draft.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  const save = async () => {
+    setSaveError(null);
+    const renamed = draft && node && draft.number !== node.number ? draft.number : null;
+    try {
+      const res = await proposeOps(pending.ops.map(({ tab: _tab, ...op }) => op));
+      if (!res) return;
+      if (renamed) {
+        go(`nodes/${renamed}/${active}`);
+        return;
+      }
       await Promise.all([load(), reloadList()]);
+    } catch (err) {
+      setSaveError(message(err));
+      // Show the tab with the setting the server refused.
+      const op = err instanceof ApiError ? err.data.op : undefined;
+      const where = pending.ops.find((o) => o.op === op)?.tab;
+      if (where && where !== active) go(`nodes/${number}/${where}`);
     }
+  };
+
+  const discard = () => {
+    setSaveError(null);
+    if (node) setDraft(initial(node));
+  };
+
+  // Changes made outside the draft (removing the node, preparing customizations).
+  const now = async (op: string, params: Record<string, unknown>) => {
+    const res = await propose(op, params);
+    if (res) await Promise.all([load(), reloadList()]);
     return res;
-  }, [rawPropose, load, reloadList]);
+  };
 
   const remove = async () => {
     try {
-      if (await rawPropose("remove", { node: number })) go("nodes");
+      if (await propose("remove", { node: number })) go("nodes");
     } catch (err) {
       setError(message(err));
     }
   };
 
-  const active = (TABS as readonly string[]).includes(tab) ? tab : "general";
+  const active = (TABS as readonly string[]).includes(tab) ? (tab as (typeof TABS)[number]) : "general";
+  const showBar = node && list && draft && (dirty || DRAFT_TABS.includes(active));
   return (
     <>
       <PageSection className="asl-page-head">
@@ -582,28 +576,49 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
           )}
         </div>
         <Tabs activeKey={active} onSelect={(_e, key) => go(`nodes/${number}/${key}`)} className="asl-head-tabs">
-          <Tab eventKey="general" title={<TabTitleText>General</TabTitleText>} />
-          <Tab eventKey="interface" title={<TabTitleText>Radio interface</TabTitleText>} />
-          <Tab eventKey="tuning" title={<TabTitleText>Tuning</TabTitleText>} />
-          <Tab eventKey="access" title={<TabTitleText>Access control</TabTitleText>} />
-          <Tab eventKey="customizations" title={<TabTitleText>Customizations</TabTitleText>} />
+          {TABS.map((t) => (
+            <Tab key={t} eventKey={t} title={
+              <TabTitleText>
+                {TAB_NAMES[t]}
+                {dirtyTabs.has(t) && <span className="asl-dirty" title="Unsaved changes" aria-label="(unsaved changes)" />}
+              </TabTitleText>
+            } />
+          ))}
         </Tabs>
       </PageSection>
       <PageSection>
         {error && <Alert variant="danger" isInline title={error} />}
-        {(!node || !list) && !error && <Spinner aria-label="Loading" />}
-        {node && list && (
+        {(!node || !list || !draft) && !error && <Spinner aria-label="Loading" />}
+        {node && list && draft && (
           <>
-            {active === "general" && <General node={node} list={list} propose={propose} status={status} />}
-            {active === "interface" && <Interface key={node.interface} node={node} list={list} propose={propose} />}
+            {active === "general" && (
+              <General node={node} list={list} status={status} draft={draft} set={set} problems={pending.problems} />
+            )}
+            {active === "interface" && <Interface node={node} list={list} draft={draft} set={set} />}
             {active === "tuning" && <Tuning node={node} status={status} />}
             {active === "access" && <Access node={node} />}
             {active === "customizations" && (
-              <Customizations key={node.customizations.selected.join()} node={node} propose={propose} />
+              <Customizations node={node} draft={draft} set={set}
+                              enable={() => now("enable_customizations", { node: node.number })} />
             )}
           </>
         )}
       </PageSection>
+      {showBar && (
+        <PageSection className="asl-save-bar" stickyOnBreakpoint={{ default: "bottom" }} aria-label="Unsaved changes">
+          <div className="asl-save-row">
+            <Button onClick={save} isDisabled={!dirty || !valid}>Review and save</Button>
+            <Button variant="link" onClick={discard} isDisabled={!dirty}>Discard changes</Button>
+            <span className="asl-sub">
+              {!dirty ? "No unsaved changes." :
+                !valid ? "Correct the highlighted settings first." :
+                `${count} unsaved change${count === 1 ? "" : "s"}` +
+                ` (${[...dirtyTabs].map((t) => TAB_NAMES[t as (typeof TABS)[number]]).join(", ")}).`}
+            </span>
+          </div>
+          {saveError && <Alert variant="danger" isInline isPlain title={saveError} />}
+        </PageSection>
+      )}
       {changeElement}
     </>
   );
