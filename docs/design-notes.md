@@ -9,7 +9,7 @@ decisions come before any code. Last updated 2026-10-14 (session 2).
 
 ## Where we left off
 
-**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes), M4 (privileged helper, backups), M5 (diagnostics), M6 (tuning, pending a hardware check) and M7 (hardening) are complete** on `main`. Remaining: the hardware tuning check, a VM/container install test, and the upstream changes in upstream-changes.md.
+**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes), M4 (privileged helper, backups), M5 (diagnostics), M6 (tuning, pending a hardware check) and M7 (hardening) are complete** on `main`. Remaining: the hardware tuning check and the upstream changes in upstream-changes.md.
 
 Every design topic is decided (sections 9, 12, 13 and 14 on 2026-10-14). The
 consolidated design document, [DESIGN.md](DESIGN.md), is awaiting the user's
@@ -849,9 +849,14 @@ flake8, black, mypy, pylint. ruff is not packaged in trixie.
   itself; then both smoke tests. Several package operations within seconds
   can trip Apache's systemd start limit through apache2-maintscript-helper's
   restarts; a single install does not.
-- **Not done here:** a clean-VM or container install test (needs the ASL
-  repository), ESLint/Vitest and Playwright (the BiDi screenshot tool and
-  the smoke test cover the flows), and the tuning check on real hardware.
+- **Clean install** in a `debian:trixie` container with the AllStarLink
+  repository (`asl-apt-repos`): every dependency resolves (asl3-asterisk,
+  asl3-menu, polkitd, apache2), the sockets are enabled, Apache's
+  configuration is enabled, the group is created, the helpers' modules
+  import, and purge succeeds.
+- **Not done here:** ESLint/Vitest and Playwright (the BiDi screenshot tool
+  and the smoke test cover the flows), a full boot on a VM, and the tuning
+  check on real hardware.
 
 ## Mockup
 
