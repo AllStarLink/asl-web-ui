@@ -13,6 +13,7 @@ import { Login } from "./Login";
 import { NodePage } from "./NodePage";
 import { Nodes } from "./Nodes";
 import { Overview } from "./Overview";
+import { SA818Page } from "./SA818Page";
 import { Shell } from "./Shell";
 import { useRoute } from "./useRoute";
 import { useStatus } from "./useStatus";
@@ -36,12 +37,13 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   else if (base === "backups") page = <Backups tab={sub ?? "local"} />;
   else if (base === "asterisk") page = <AsteriskPage status={status} tab={sub ?? "status"} />;
   else if (base === "allmon3" && sub === "files" && third) page = <Allmon3Editor key={third} name={decodeURIComponent(third)} />;
+  else if (base === "sa818") page = <SA818Page />;
   else if (base === "allmon3") page = <Allmon3Page tab={sub ?? "status"} />;
   else if (base === "config" && sub) page = <ConfigEditor key={sub} name={decodeURIComponent(sub)} />;
   else if (base === "config") page = <ConfigFiles />;
   else page = <Overview status={status} system={system} />;
   return (
-    <Shell user={session.user ?? ""} hostname={system?.hostname ?? ""} route={route} status={status} onLogout={onLogout}>
+    <Shell user={session.user ?? ""} hostname={system?.hostname ?? ""} sa818={system?.sa818 ?? false} route={route} status={status} onLogout={onLogout}>
       {page}
       <Modal isOpen={leaving !== null} onClose={() => answer(false)} variant="small" aria-labelledby="leave-title">
         <ModalHeader title="Leave without saving?" labelId="leave-title" titleIconVariant="warning" />

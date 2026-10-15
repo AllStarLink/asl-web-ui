@@ -135,6 +135,33 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.allstarlink.asl-web-ui.sa818-read">
+    <description>Read the SA818 radio module settings</description>
+    <message>Authentication is required to: read the SA818 radio module settings</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.sa818-apply">
+    <description>Program the SA818 radio module</description>
+    <message>Authentication is required to: program the SA818 radio module</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.sa818-version">
+    <description>Read the SA818 radio module's firmware version</description>
+    <message>Authentication is required to: read the SA818 radio module's firmware version</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
   <action id="org.allstarlink.asl-web-ui.asterisk-fix-ownership">
     <description>Give a configuration file back to the asterisk user</description>
     <message>Authentication is required to: give a configuration file back to the asterisk user</message>

@@ -130,4 +130,5 @@ export type SystemInfo = {
   kernel: string;
   uptime: number | null;
   asl_web_ui: string;
+  sa818: boolean;
 };

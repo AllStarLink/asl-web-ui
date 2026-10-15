@@ -286,6 +286,10 @@ function Tuning({ node, status }: { node: NodeDetail; status: Status | null }) {
           Save settings writes them to the configuration file so that they survive a restart of Asterisk.
         </Immediate>
         <TuningPanel node={node.number} status={status} />
+        <Content component="p" className="asl-sub">
+          Does this interface have an SA818 radio module (SHARI and similar)? Its frequency, tones and filters are set
+          on the <Button variant="link" isInline onClick={() => go("sa818")}>SA818 radio</Button> page.
+        </Content>
       </div>
     );
   }

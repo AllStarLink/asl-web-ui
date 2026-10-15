@@ -48,8 +48,8 @@ earlier.
 **asl-web-ui-priv@.service**
 : One root process per privileged request (socket **asl-web-ui-priv.socket**,
   reachable only by **asterisk**): backups, restores, the default
-  configuration, Allmon3's settings and users, and ownership fixes in
-  */etc/asterisk*.
+  configuration, Allmon3's settings and users, the SA818 radio module, and
+  ownership fixes in */etc/asterisk*.
   Every request is authorized with polkit (**pkcheck**) for the calling
   process.
 
@@ -82,6 +82,10 @@ allowed for the **asterisk** user by the polkit rule below.
 : Allmon3's settings, changed on the Allmon3 page through the privileged
   helper. Each change restarts **allmon3**.
 
+*/etc/sa818.conf*
+: The SA818 radio module's settings, shared with **sa818-menu**(1) (same
+  format), and programmed into the module with **sa818**(1).
+
 */var/asl-backups/*
 : Backups, shared with **asl-backup-menu** (same names and format). The
   include list is */var/asl-backups/asl-backup-files*. Archives made by
@@ -112,7 +116,7 @@ backup first.
 
 # SEE ALSO
 **asl-menu**(1), **node-setup**(8), **asl-backup-menu**(1),
-**asl-node-auth-check**(1), **pkcheck**(1), **polkit**(8)
+**asl-node-auth-check**(1), **sa818-menu**(1), **pkcheck**(1), **polkit**(8)
 
 # BUGS
 Report bugs to https://github.com/AllStarLink/asl-web-ui/issues

@@ -30,6 +30,8 @@ import tempfile
 import time
 from collections.abc import Callable
 
+from . import sa818
+
 ROOT = "/"
 BACKUP_DIR = "/var/asl-backups"
 INCLUDE_LIST = "/var/asl-backups/asl-backup-files"
@@ -630,6 +632,71 @@ def fix_ownership(args: dict, output: Output) -> dict:
     return {"path": name}
 
 
+# ---- SA818 RF modules (as sa818-menu) --------------------------------------------------
+
+SA818_TOOL = sa818.TOOL
+
+
+def _sa818_saved() -> tuple[bool, dict[str, str]]:
+    data = _read(_path(sa818.CONF))
+    return data is not None, sa818.parse(data.decode("utf-8", "replace") if data else "")
+
+
+def sa818_read(args: dict, output: Output) -> dict:
+    exists, settings = _sa818_saved()
+    return {"saved": exists, "settings": settings, "ports": sa818.ports(ROOT),
+            "tool": os.path.exists(SA818_TOOL)}
+
+
+def _sa818_program(settings: dict[str, str], output: Output) -> tuple[bool, list[str]]:
+    log = []
+    for args in sa818.tool_args(settings):
+        log.append("# sa818 " + " ".join(args))
+        output(log[-1])
+        ok, lines = sa818.run(SA818_TOOL, args)
+        log += lines
+        for line in lines:
+            output(line)
+        if not ok:
+            return False, log
+    return True, log
+
+
+def sa818_apply(args: dict, output: Output) -> dict:
+    """Save the settings to /etc/sa818.conf (as sa818-menu does) and program the module."""
+    wanted = args.get("settings")
+    if not isinstance(wanted, dict):
+        raise CommandError("settings are required.", "invalid")
+    try:
+        settings = sa818.check(wanted, ports_exist=lambda p: os.path.exists(_path(p)))
+    except sa818.Invalid as exc:
+        raise CommandError(f"{exc.field}: {exc.message}", "invalid")
+    exists, saved = _sa818_saved()
+    changed = not exists or saved != settings
+    if changed:
+        path = _path(sa818.CONF)
+        st = os.lstat(path) if os.path.lexists(path) else None
+        if st is not None and not stat.S_ISREG(st.st_mode):
+            raise CommandError(f"{sa818.CONF} is not a regular file.", "invalid")
+        _atomic_write(path, sa818.render(settings).encode(), stat.S_IMODE(st.st_mode) if st else 0o644,
+                      st.st_uid if st else 0, st.st_gid if st else 0)
+    ok, log = _sa818_program(settings, output)
+    return {"saved": changed, "programmed": ok, "log": log, "settings": settings}
+
+
+def sa818_version(args: dict, output: Output) -> dict:
+    """Ask the module for its firmware version: shows the connection works."""
+    _, saved = _sa818_saved()
+    base = []
+    if saved["CURRENT_PORT"]:
+        base += ["--port", saved["CURRENT_PORT"]]
+    if saved["CURRENT_SPEED"]:
+        base += ["--speed", saved["CURRENT_SPEED"]]
+    ok, lines = sa818.run(SA818_TOOL, base + ["version"])
+    firmware = next((m.group(1).strip() for line in lines if (m := re.search(r"Firmware (.*)$", line))), None)
+    return {"ok": ok and firmware is not None, "firmware": firmware, "log": lines}
+
+
 COMMANDS = {
     "backup.create": backup_create,
     "backup.delete": backup_delete,
@@ -646,4 +713,7 @@ COMMANDS = {
     "allmon3.set_password": allmon3_set_password,
     "allmon3.delete_user": allmon3_delete_user,
     "asterisk.fix_ownership": fix_ownership,
+    "sa818.read": sa818_read,
+    "sa818.apply": sa818_apply,
+    "sa818.version": sa818_version,
 }

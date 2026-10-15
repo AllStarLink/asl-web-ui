@@ -20,6 +20,7 @@ import {
   MastheadLogo,
 } from "@patternfly/react-core";
 import AsteriskIcon from "@patternfly/react-icons/dist/esm/icons/asterisk-icon";
+import BroadcastTowerIcon from "@patternfly/react-icons/dist/esm/icons/broadcast-tower-icon";
 import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
 import FileCodeIcon from "@patternfly/react-icons/dist/esm/icons/file-code-icon";
 import NetworkIcon from "@patternfly/react-icons/dist/esm/icons/network-icon";
@@ -45,12 +46,17 @@ const NAV: NavEntry[] = [
   { route: "backups", label: "Backups", icon: <HistoryIcon /> },
 ];
 
+// Shown once sa818-menu or this page has saved SA818 settings (or while on it);
+// the node Tuning tab links to it for a first setup.
+const SA818: NavEntry = { route: "sa818", label: "SA818 radio", icon: <BroadcastTowerIcon /> };
+
 // Kept apart, at the bottom, so that newcomers reach for the guided pages first.
 const ADVANCED: NavEntry[] = [{ route: "config", label: "Manual Config Edit", icon: <FileCodeIcon />, expert: true }];
 
 type Props = {
   user: string;
   hostname: string;
+  sa818: boolean;
   route: string;
   status: Status | null;
   onLogout: () => void;
@@ -124,7 +130,7 @@ function RestartPending({ status }: { status: Status | null }) {
   );
 }
 
-export function Shell({ user, hostname, route, status, onLogout, children }: Props) {
+export function Shell({ user, hostname, sa818, route, status, onLogout, children }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const base = route.split("/")[0];
 
@@ -173,7 +179,7 @@ export function Shell({ user, hostname, route, status, onLogout, children }: Pro
     <PageSidebar className="asl-sidebar">
       <PageSidebarBody>
         <nav aria-label="Main">
-          <NavLinks base={base} entries={NAV} />
+          <NavLinks base={base} entries={sa818 || base === "sa818" ? [...NAV.slice(0, 4), SA818, ...NAV.slice(4)] : NAV} />
           <div className="asl-nav-section">Advanced</div>
           <NavLinks base={base} entries={ADVANCED} />
         </nav>

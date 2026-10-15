@@ -1040,6 +1040,41 @@ page's draft (#15: reviewed and saved with the other tabs).
 - Live client status (RSSI, connection) is left to Allmon3's voter page,
   which the tab links to (Allmon3 > Nodes > Voters).
 
+## 28. SA818 RF modules (2026-10-15, user request)
+
+Parity with sa818-menu (asl3 package, /usr/bin/sa818-menu), which wraps
+the sa818 command (W6BSD). The module cannot be read back, so both keep the
+settings in /etc/sa818.conf and program the module from them.
+
+- **Same file, same commands.** /etc/sa818.conf is written with sa818-menu's
+  17 keys in its order and value spellings (the menu loads it with "." as
+  root, so every value comes from a fixed list or a strict pattern: no
+  quoting, no shell characters). The module is programmed by running sa818
+  three times (radio, volume, filters) with the arguments sa818-menu builds.
+  tests/parity/test_sa818_parity.py runs the system's sa818-menu --apply
+  under fakeroot next to a stand-in sa818 and compares the commands for
+  five configurations (simplex, offset with CTCSS and reverse burst, split
+  CTCSS, CTCSS without tones, split DCS with port and speed).
+- **Validation:** sa818-menu's band limits (VHF 134-174, UHF 400-480 MHz,
+  whole MHz compared), plus sa818's own receive rule (above 144 and below
+  148, or above 420 and below 450 MHz), which the menu does not check and
+  which makes sa818 exit with an argument error. Choosing a tone for one
+  direction while both are None sets both, as in the menu.
+- **Errors:** sa818 exits 0 when the module rejects a command and only logs
+  "ERROR", so the log lines are checked as well as the exit status; the
+  first failing command stops the rest. As in the menu, the settings are
+  saved before programming. "Test the connection" runs sa818 version.
+- **Root:** the helper (`sa818.read`, `sa818.apply`, `sa818.version`; polkit
+  actions of the same names) owns the file and the serial port; the web
+  service runs with PrivateDevices and never sees /dev/tty*. Serial ports
+  offered: /dev/serial[0-9], ttyAMA*, ttyUSB*, ttyACM*, ttyS0, or sa818's
+  automatic choice (/dev/serial0, then /dev/ttyUSB0).
+- **Where:** an "SA818 radio" page, in the sidebar once /etc/sa818.conf
+  exists, and linked from the Tuning tab of SimpleUSB and USBRadio nodes.
+  /etc/sa818.conf is already in the backup include list.
+- **To verify on hardware:** the firmware line of sa818 version, the
+  module's replies, and the result on the air.
+
 ## Mockup
 
 [mockup/](mockup/) holds the source of the published mockup. To rebuild:
