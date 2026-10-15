@@ -65,7 +65,7 @@ from a checkout, run every test suite, and build and try the package.
   uses):
 
       sudo apt install python3 python3-aiohttp python3-aiohttp-session \
-          python3-pytest python3-pytest-aiohttp python3-hypothesis pandoc
+          python3-pytest python3-pytest-aiohttp python3-hypothesis python3-argon2 pandoc
 
 - **Node.js and npm**, only to build the browser code (see
   [Installing Node.js](#installing-nodejs) below). Packages built with

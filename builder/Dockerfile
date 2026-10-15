@@ -16,7 +16,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get -y install \
 	apt-utils build-essential devscripts fakeroot debhelper git lsb-release \
 	libterm-readline-gnu-perl libterm-readline-perl-perl libdistro-info-perl \
 	gh ca-certificates curl wget xz-utils lintian pandoc \
-	python3 python3-aiohttp python3-aiohttp-session python3-pytest python3-pytest-aiohttp python3-hypothesis \
+	python3 python3-aiohttp python3-aiohttp-session python3-pytest python3-pytest-aiohttp python3-hypothesis python3-argon2 \
 	--no-install-recommends
 
 # Node.js, used only to build the frontend: pinned and checksum-verified by
