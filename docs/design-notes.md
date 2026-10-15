@@ -1072,8 +1072,11 @@ settings in /etc/sa818.conf and program the module from them.
 - **Where:** an "SA818 radio" page, in the sidebar once /etc/sa818.conf
   exists, and linked from the Tuning tab of SimpleUSB and USBRadio nodes.
   /etc/sa818.conf is already in the backup include list.
-- **To verify on hardware:** the firmware line of sa818 version, the
-  module's replies, and the result on the air.
+- **Verified on hardware** (node40608, SA818S firmware V1.1 on a USB
+  programming cable, 2026-10-15): the connection test, and save and program
+  through the installed helper (UHF, wide, DCS 051N both ways, filters on,
+  volume 4 -> 5 -> 4); the module accepted every command. Effects on the air
+  were not tested (the module's cable is moved between programming and use).
 
 ## Mockup
 
