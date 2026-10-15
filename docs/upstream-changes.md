@@ -203,6 +203,41 @@ It detects support by sending `B` and checking for the numeric line.
 
 ---
 
+## 3. app_rpt: saving tune settings rewrites every included file
+
+Repository: `AllStarLink/app_rpt`. Files: `channels/chan_simpleusb.c` and
+`channels/chan_usbradio.c`, `tune_write()`, which saves with
+`ast_config_text_file_save2()`.
+
+### Observed (asl3-asterisk 3.10.8, nodes 2102 and 2104, 2026-10-15)
+
+Saving tune settings (`menu-support j`, used by the classic tune menus and
+by asl-web-ui) rewrites not only `simpleusb.conf` / `usbradio.conf` but also
+every file they include: all of `custom/simpleusb/*.conf` (or
+`custom/usbradio/*.conf`), which asl3-menu ships. In each rewritten file:
+
+- the "Automatically generated configuration file" header is added or its
+  date updated;
+- two more blank lines are inserted after the header, on every save, so
+  the customization files grow with each save;
+- the main file's own formatting changes (`devstr=` becomes `devstr = `,
+  keys the file did not have, such as `rxctcssadj`, `fever` and `txslimsp`,
+  are added).
+
+### Change
+
+Write only the tune settings, in the main file: either update the existing
+`key = value` lines of the device's section in place, or save with the
+flags that keep included files untouched. The blank-line growth should not
+happen in any case.
+
+### What asl-web-ui does meanwhile
+
+The tuning page shows the diff of every file the save changed, and none of
+them count as "restart needed".
+
+---
+
 ## Version-dependent behavior asl-web-ui already accounts for
 
 **app_rpt 3.10.5** (verified 2026-10-13 against a private Asterisk instance):

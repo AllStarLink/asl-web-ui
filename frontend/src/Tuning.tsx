@@ -129,7 +129,7 @@ export function TuningPanel({ node, status }: { node: string; status: Status | n
   const [notice, setNotice] = useState<string | null>(null);
   const [meterOn, setMeterOn] = useState(false);
   const [statusOn, setStatusOn] = useState(false);
-  const [saved, setSaved] = useState<{ diff: string; file: string } | null>(null);
+  const [saved, setSaved] = useState<{ diff: string; file: string; files?: string[] } | null>(null);
   const [classic, setClassic] = useState(false);
   const [toning, setToning] = useState(false);
   const [jobElement, runJob] = useJob();
@@ -178,13 +178,13 @@ export function TuningPanel({ node, status }: { node: string; status: Status | n
     });
   const save = () =>
     act(async () => {
-      const res = await post<{ diff: string; file: string }>(`tuning/${node}/save`, {});
+      const res = await post<{ diff: string; file: string; files: string[] }>(`tuning/${node}/save`, {});
       setSaved(res);
       setState((s) => (s ? { ...s, unsaved: false } : s));
     });
   const revert = () =>
     act(async () => {
-      const res = await post<{ diff: string; file: string; settings: TuneSetting[] }>(`tuning/${node}/revert`, {});
+      const res = await post<{ diff: string; file: string; files: string[]; settings: TuneSetting[] }>(`tuning/${node}/revert`, {});
       setSaved(res);
       setState((s) => (s ? { ...s, settings: res.settings, unsaved: false } : s));
     });
@@ -339,7 +339,17 @@ export function TuningPanel({ node, status }: { node: string; status: Status | n
       </Card>
       <Modal isOpen={saved !== null} onClose={() => setSaved(null)} variant="large" aria-labelledby="tune-saved">
         <ModalHeader title={`Saved to ${saved?.file ?? ""}`} labelId="tune-saved" titleIconVariant="success" />
-        <ModalBody>{saved?.diff ? <DiffView diff={saved.diff} /> : "The file did not change."}</ModalBody>
+        <ModalBody>
+          <div className="asl-stack">
+            {saved && (saved.files?.length ?? 0) > 1 && (
+              <Content component="p" className="asl-sub">
+                The driver saves through Asterisk, which also rewrites the files {saved.file} includes
+                ({saved.files?.filter((f) => f !== saved.file).join(", ")}).
+              </Content>
+            )}
+            {saved?.diff ? <DiffView diff={saved.diff} /> : "The file did not change."}
+          </div>
+        </ModalBody>
         <ModalFooter>
           <Button onClick={() => setSaved(null)}>Close</Button>
         </ModalFooter>

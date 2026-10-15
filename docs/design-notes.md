@@ -9,7 +9,7 @@ decisions come before any code. Last updated 2026-10-14 (session 2).
 
 ## Where we left off
 
-**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes), M4 (privileged helper, backups), M5 (diagnostics), M6 (tuning, pending a hardware check) and M7 (hardening) are complete** on `main`. Remaining: the hardware tuning check and the upstream changes in upstream-changes.md.
+**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes), M4 (privileged helper, backups), M5 (diagnostics), M6 (tuning, pending a hardware check) and M7 (hardening) are complete** on `main`. Remaining: the upstream changes in upstream-changes.md, and tuning with a radio connected.
 
 Every design topic is decided (sections 9, 12, 13 and 14 on 2026-10-14). The
 consolidated design document, [DESIGN.md](DESIGN.md), is awaiting the user's
@@ -857,6 +857,34 @@ flake8, black, mypy, pylint. ruff is not packaged in trixie.
 - **Not done here:** ESLint/Vitest and Playwright (the BiDi screenshot tool
   and the smoke test cover the flows), a full boot on a VM, and the tuning
   check on real hardware.
+
+## 23. Tuning on real hardware (2026-10-15)
+
+Nodes 2102 (SimpleUSB, card 1-4:1.0) and 2104 (USBRadio, card 1-1.3:1.0),
+asl3-asterisk 3.10.8, sound cards but no radios. The current code ran there
+as a dev server (`--asterisk-cmd "sudo -n /usr/sbin/asterisk" --state-dir`,
+new options), reached through SSH tunnels; nothing was installed and
+`/etc/asterisk` was copied first and restored byte for byte afterwards.
+
+- Settings, every level (SimpleUSB: receive, transmit A/B; USBRadio: receive
+  voice, squelch, transmit voice, CTCSS), a toggle, save and undo: correct,
+  values read back from the driver; undo returns every setting.
+- Live displays: about 10 meter and 5 status readings per second; the
+  displays end inside Asterisk when the client is killed (no extra CPU,
+  no stray process).
+- Test tone: 6 s (three 1 s bursts with 1 s gaps); PTT shows keyed in the
+  status display for about half of it.
+- USBRadio receive-voice calibration with no signal: fails with the
+  driver's "ADJUST FAILED" line, shown as a failed job; undo afterwards
+  restores the settings.
+- A classic tune menu running over SSH is detected.
+- **Found:** the driver's save rewrites every included file (customization
+  files get a new header and two more blank lines per save). The save view
+  now diffs all of them, the restart banner ignores them, and the issue is
+  in upstream-changes.md section 3.
+- The recordings are test fixtures (`backend/tests/data/tune-*.txt`).
+- Not testable without a radio: a moving meter, COS/CTCSS from a real
+  receiver, successful calibrations.
 
 ## Mockup
 

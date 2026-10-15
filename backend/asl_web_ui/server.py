@@ -15,6 +15,7 @@ import dataclasses
 import logging
 import os
 import pwd
+import shlex
 import shutil
 import signal
 import socket
@@ -60,16 +61,20 @@ def dev_root(settings: config.Settings) -> str:
     root = os.path.join(settings.state_dir, "dev-root")
     etc = os.path.join(root, "etc", "asterisk")
     if not os.path.isdir(etc):
-        shutil.copytree(settings.config_dir, etc, symlinks=True)
+        def unreadable(directory: str, names: list[str]) -> list[str]:
+            return [n for n in names if not os.access(os.path.join(directory, n), os.R_OK)]
+        shutil.copytree(settings.config_dir, etc, symlinks=True, ignore=unreadable)
     os.makedirs(os.path.join(root, "var", "lib", "asl-web-ui", "staging"), exist_ok=True)
     return root
 
 
-def dev_app(settings: config.Settings, asterisk_conf: str | None) -> web.Application:
+def dev_app(settings: config.Settings, asterisk_conf: str | None, asterisk_cmd: list[str] | None = None) -> web.Application:
     overrides: dict = {PRIV_KEY: InProcessClient(dev_root(settings))}
-    if asterisk_conf:
-        overrides[status.CLI_KEY] = AsteriskCLI(extra_args=["-C", asterisk_conf])
-        overrides[console.COMMAND_KEY] = [ASTERISK, "-C", asterisk_conf, "-rvvv"]
+    cmd = asterisk_cmd or [ASTERISK]
+    extra = cmd[1:] + (["-C", asterisk_conf] if asterisk_conf else [])
+    if asterisk_conf or asterisk_cmd:
+        overrides[status.CLI_KEY] = AsteriskCLI(binary=cmd[0], extra_args=extra)
+        overrides[console.COMMAND_KEY] = [cmd[0], *extra, "-rvvv"]
     app = create_app(settings, overrides=overrides)
     index = FRONTEND_DIST / "index.html"
 
@@ -114,6 +119,9 @@ def main() -> None:
     parser.add_argument("--dev", action="store_true", help="development server with a fake login")
     parser.add_argument("--port", type=int, default=8099, help="--dev: TCP port on 127.0.0.1")
     parser.add_argument("--asterisk-conf", metavar="FILE", help="--dev: asterisk.conf of a private test instance")
+    parser.add_argument("--asterisk-cmd", metavar="CMD",
+                        help='--dev: how to run asterisk, e.g. "sudo -n /usr/sbin/asterisk" (test machines)')
+    parser.add_argument("--state-dir", metavar="DIR", help="--dev: where to keep state (default next to --asterisk-conf)")
     args = parser.parse_args()
 
     settings = config.load(args.config)
@@ -125,11 +133,16 @@ def main() -> None:
             # Use the test instance's configuration, and keep snapshots next to it.
             etc = os.path.dirname(os.path.abspath(args.asterisk_conf))
             settings = dataclasses.replace(settings, config_dir=etc, state_dir=os.path.join(os.path.dirname(etc), "web-ui-state"))
+        if args.state_dir:
+            settings = dataclasses.replace(settings, state_dir=os.path.abspath(args.state_dir))
+        elif not args.asterisk_conf:
+            raise SystemExit("--dev needs --asterisk-conf or --state-dir")
         root = os.path.join(settings.state_dir, "dev-root")
         settings = dataclasses.replace(settings, backup_dir=os.path.join(root, "var", "asl-backups"),
                                        staging_dir=os.path.join(root, "var", "lib", "asl-web-ui", "staging"))
         log.warning("DEVELOPMENT MODE: fake login (dev/dev) on http://127.0.0.1:%d/", args.port)
-        asyncio.run(serve(dev_app(settings, args.asterisk_conf), None, None, args.port))
+        cmd = shlex.split(args.asterisk_cmd) if args.asterisk_cmd else None
+        asyncio.run(serve(dev_app(settings, args.asterisk_conf, cmd), None, None, args.port))
         return
     asyncio.run(serve(create_app(settings), systemd_socket(), args.unix, None))
 

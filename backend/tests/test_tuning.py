@@ -102,3 +102,29 @@ def test_driver_saves_do_not_ask_for_a_restart(tmp_path):
     (etc / "simpleusb.conf").write_text("edited by hand afterwards\n")
     os.utime(etc / "simpleusb.conf")
     assert sorted(restart.changed_since(str(etc), started, str(state))) == ["rpt.conf", "simpleusb.conf"]
+
+
+# Recordings from real nodes (asl3-asterisk 3.10.8): a SimpleUSB and a
+# USBRadio sound card, no radio attached, three seconds of each display.
+DATA = __import__("pathlib").Path(__file__).parent / "data"
+
+
+@pytest.mark.parametrize("driver", ["susb", "radio"])
+def test_recorded_meter(driver):
+    readings = tuning.DisplayParser("meter").feed((DATA / f"tune-{driver}-b.txt").read_text())
+    assert len(readings) >= 25 and all(r == {"keyed": False, "level": 0, "columns": 75} for r in readings)
+
+
+@pytest.mark.parametrize("driver,cos,ctcss", [("susb", "clear", "off"), ("radio", "keyed", "clear")])
+def test_recorded_status(driver, cos, ctcss):
+    readings = tuning.DisplayParser("status").feed((DATA / f"tune-{driver}-v.txt").read_text())
+    assert len(readings) >= 12
+    assert all(r == {"cos": cos, "ctcss": ctcss, "rx_keyed": False, "ptt": False} for r in readings)
+
+
+def test_recorded_hardware_settings():
+    susb = tuning.parse_settings(tuning.SIMPLEUSB, "500,500,0,0,0,0,1,0,4,0,0,0,500,127,151,16\n")
+    assert (susb["sidetone_max"], susb["tx_max"], susb["rx_max"]) == (127, 151, 16)
+    radio = tuning.parse_settings(tuning.USBRADIO,
+                                  "1,1,0,1,0,1,3,0,0,1,1,2,3,0,500,0.500000,500,500,500,200,127,151,16,12000\n")
+    assert (radio["rxvoice"], radio["txvoice"], radio["micmax"]) == (100, 500, 16)

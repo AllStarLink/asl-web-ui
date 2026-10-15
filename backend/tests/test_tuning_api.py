@@ -27,7 +27,11 @@ class FakeDriverCLI:
         if arg == "0+4":
             return ",".join(map(str, self.values)) + "\n"
         if arg == "j":
-            self.conf.write_text(f"[1999]\nrxboost = {'yes' if self.values[3] else 'no'}\n")
+            # Like Asterisk's config writer: the file and everything it includes.
+            self.conf.write_text(f'#tryinclude "custom.conf"\n[1999]\nrxboost = {"yes" if self.values[3] else "no"}\n')
+            custom = self.conf.parent / "custom.conf"
+            if custom.exists():
+                custom.write_text(custom.read_text() + "\n")
             return "Saved radio tuning settings to simpleusb.conf\n"
         if arg.startswith("m"):
             self.values[3] = int(arg[1:])
@@ -41,7 +45,8 @@ class FakeDriverCLI:
 @pytest.fixture
 def driver(env, monkeypatch):
     fake = FakeDriverCLI(env.etc / "simpleusb.conf")
-    (env.etc / "simpleusb.conf").write_text("[1999]\nrxboost = no\n")
+    (env.etc / "simpleusb.conf").write_text('#tryinclude "custom.conf"\n[1999]\nrxboost = no\n')
+    (env.etc / "custom.conf").write_text("[x](!)\n")
     real = status.setup
 
     def setup(app):
@@ -61,6 +66,7 @@ async def test_tuning_session(env, driver):
     assert {s["name"]: s["value"] for s in res["settings"]}["rxmixerset"] == 650
     status_, saved = await a.call("POST", "tuning/1999/save", {})
     assert status_ == 200 and "+rxboost = yes" in saved["diff"]
+    assert saved["files"] == ["simpleusb.conf", "custom.conf"] and "b/custom.conf" in saved["diff"]
     status_, reverted = await a.call("POST", "tuning/1999/revert", {})
     assert status_ == 200 and "+rxboost = no" in reverted["diff"]
     assert {s["name"]: s["value"] for s in reverted["settings"]}["rxmixerset"] == 500

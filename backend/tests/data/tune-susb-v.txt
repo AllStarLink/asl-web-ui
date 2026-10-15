@@ -1,0 +1,4 @@
+Receiver/Transmitter Status Display:
+  COS   | CTCSS  | COS   | PTT
+ Input  | Input  | Out   | Out
+ Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear Clear  | Off    | Clear | Clear

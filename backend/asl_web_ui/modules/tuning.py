@@ -215,17 +215,32 @@ async def tone(request: web.Request) -> web.Response:
     return web.json_response({"reply": reply.strip()})
 
 
+def _driver_files(config_dir: str, driver: tuning.Driver) -> dict[str, bytes]:
+    """The driver's .conf file and every file it includes: the driver's save
+    (Asterisk's config writer) rewrites all of them."""
+    from ..configengine.model import load
+    cfg = load(driver.file, config_dir=config_dir)
+    return {path: Store.read(path) or b"" for path in cfg.files}
+
+
 async def _save(request: web.Request, driver: tuning.Driver, number: str, action: str) -> dict:
-    path = os.path.join(request.app[SETTINGS_KEY].config_dir, driver.file)
-    before = Store.read(path) or b""
+    config_dir = request.app[SETTINGS_KEY].config_dir
+    before = await asyncio.to_thread(_driver_files, config_dir, driver)
     reply = await _cli(request, driver, number, "j")
-    after = Store.read(path) or b""
-    restart.record_driver_save(request.app[SETTINGS_KEY].state_dir, path)
-    diff = "".join(difflib.unified_diff(before.decode(errors="replace").splitlines(True),
-                                        after.decode(errors="replace").splitlines(True),
-                                        f"a/{driver.file}", f"b/{driver.file}"))
-    request.app[STORE_KEY].record(request[USER_KEY], f"node {number}: {action}", "done", [path])
-    return {"reply": reply.strip(), "diff": diff, "file": driver.file}
+    diffs, changed = [], []
+    for path, old in before.items():
+        new = Store.read(path) or b""
+        if new == old:
+            continue
+        rel = os.path.relpath(path, config_dir)
+        changed.append(path)
+        restart.record_driver_save(request.app[SETTINGS_KEY].state_dir, path)
+        diffs.append("".join(difflib.unified_diff(old.decode(errors="replace").splitlines(True),
+                                                  new.decode(errors="replace").splitlines(True),
+                                                  f"a/{rel}", f"b/{rel}")))
+    request.app[STORE_KEY].record(request[USER_KEY], f"node {number}: {action}", "done", changed)
+    return {"reply": reply.strip(), "diff": "".join(diffs), "file": driver.file,
+            "files": [os.path.relpath(p, config_dir) for p in changed]}
 
 
 @routes.post("/api/v1/tuning/{node}/save")
