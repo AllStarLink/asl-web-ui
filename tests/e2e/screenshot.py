@@ -3,6 +3,7 @@
 
     tests/e2e/screenshot.py URL OUT.png [--cookie NAME=VALUE] [--wait 3]
                             [--size 1280x820] [--dark] [--insecure]
+                            [--click CSS-SELECTOR ...] [--eval JS]
 
 Starts Firefox with a throwaway profile, optionally sets a cookie (e.g. a
 session from a scripted login), opens URL, waits for data to load, and
@@ -61,7 +62,8 @@ class BiDi:
                 return msg["result"]
 
 
-async def capture(url: str, out: str, cookie: str | None, wait: float, size: str, dark: bool, insecure: bool) -> None:
+async def capture(url: str, out: str, cookie: str | None, wait: float, size: str, dark: bool, insecure: bool,
+                  clicks: list[str] | None = None, js: str | None = None) -> None:
     width, height = (int(x) for x in size.split("x"))
     port = free_port()
     profile = tempfile.mkdtemp(prefix="asl-ff-")
@@ -99,6 +101,14 @@ async def capture(url: str, out: str, cookie: str | None, wait: float, size: str
                 }})
             await bidi.call("browsingContext.navigate", {"context": ctx, "url": url, "wait": "complete"})
             await bidi.drain(wait)
+            for selector in clicks or []:
+                res = await bidi.call("script.evaluate", {"target": {"context": ctx}, "awaitPromise": False,
+                    "expression": f"(() => {{ const el = document.querySelector({selector!r}); if (!el) return 'missing'; el.click(); return 'clicked'; }})()"})
+                print(f"click {selector}: {res.get('result', {}).get('value')}")
+                await bidi.drain(1.0)
+            if js:
+                res = await bidi.call("script.evaluate", {"target": {"context": ctx}, "awaitPromise": False, "expression": js})
+                print("eval:", res.get("result", {}).get("value"))
             shot = await bidi.call("browsingContext.captureScreenshot", {"context": ctx})
             with open(out, "wb") as f:
                 f.write(base64.b64decode(shot["data"]))
@@ -124,6 +134,8 @@ if __name__ == "__main__":
     p.add_argument("--size", default="1280x820")
     p.add_argument("--dark", action="store_true")
     p.add_argument("--insecure", action="store_true")
+    p.add_argument("--click", action="append")
+    p.add_argument("--eval")
     a = p.parse_args()
-    asyncio.run(capture(a.url, a.out, a.cookie, a.wait, a.size, a.dark, a.insecure))
+    asyncio.run(capture(a.url, a.out, a.cookie, a.wait, a.size, a.dark, a.insecure, a.click, a.eval))
     print(f"wrote {a.out}")

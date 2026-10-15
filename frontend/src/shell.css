@@ -21,6 +21,9 @@ html, body, #root { height: 100%; }
   --pf-v6-c-masthead--BackgroundColor: var(--asl-shell-bg);
   --pf-v6-c-masthead--BorderBlockEndWidth: 1px;
   --pf-v6-c-masthead--BorderBlockEndColor: #000;
+  /* On phones PatternFly stacks the brand above the controls with a light
+     divider; keep it dark like the rest of the bar. */
+  --pf-v6-c-masthead__brand--BorderBlockEnd: 1px solid var(--asl-shell-hover);
   color: var(--asl-shell-fg);
 }
 .pf-v6-c-masthead.asl-masthead .pf-v6-c-button.pf-m-plain,
