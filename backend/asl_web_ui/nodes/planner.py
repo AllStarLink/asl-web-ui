@@ -263,6 +263,50 @@ class Planner:
                                   f"({', '.join(info.templates)}), which this page does not change.", "warning")
         self.effects.restart = True
 
+    # ---- link at startup ---------------------------------------------------------
+
+    def set_startup_link(self, number: str, target: str | None, mode: str = "transceive",
+                         permanent: bool = False, replace_custom: bool = False) -> None:
+        """Connect to ``target`` when the node starts (startup_macro), or not at all."""
+        from .info import link_codes
+        info = self.info(number)
+        current = info.startup
+        if current["custom"] and not replace_custom:
+            raise PlanError(f"Node {number} runs a custom startup macro ({current['macro']}). Replacing it removes "
+                            "whatever else it does.", "startup", "custom_macro")
+        sec = self.section(number)
+        if target is None:
+            if info.startup["macro"]:
+                sec.unset("startup_macro")
+                if self.info(number).startup["macro"]:
+                    self.effects.note("startup_macro also comes from a template, which this page does not change.",
+                                      "warning")
+                self.effects.restart = True
+            return
+        target = target.strip()
+        if not re.fullmatch(r"[0-9]{4,7}", target):
+            raise PlanError("Enter the node number to connect to (4 to 7 digits).", "target")
+        if target == number:
+            raise PlanError(f"Node {number} cannot connect to itself.", "target")
+        if mode not in ("transceive", "monitor"):
+            raise PlanError("The link must be transceive or monitor only.", "mode")
+        rpt = self.ws.model(RPT)
+        codes = link_codes(rpt, rpt.get(number))
+        code = codes.get((mode, permanent))
+        if code is None:
+            kind = ("permanent " if permanent else "") + mode
+            raise PlanError(f"The node's function table has no {kind} link command"
+                            + (" (the permanent link commands 812/813 are commented out in the stock rpt.conf)."
+                               if permanent else "."), "permanent" if permanent else "mode", "requirement")
+        macro = f"{current['funcchar']}{code}{target}"
+        if current["macro"] == macro:
+            return
+        sec.set("startup_macro", macro)
+        self.effects.note(f"When Asterisk starts, node {number} connects to node {target} "
+                          f"({'transceive' if mode == 'transceive' else 'monitor only'}"
+                          f"{', kept up' if permanent else ''}). Restarting Asterisk makes that link right away.")
+        self.effects.restart = True
+
     # ---- registration and password ----------------------------------------------
 
     def _remove_registrations(self, number: str) -> None:

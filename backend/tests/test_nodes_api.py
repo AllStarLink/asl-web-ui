@@ -277,3 +277,46 @@ async def test_interface_switch_carries_ptt_polarity(api):
     radio = load("usbradio.conf", config_dir=str(api.etc))
     assert radio.value("1999", "invertptt") == "yes"
     assert radio.value("1999", "carrierfrom") == "dsp"  # reported, not changed
+
+
+FUNCTIONS = "[functions-main](!)\n1 = ilink,1\n2 = ilink,2\n3 = ilink,3\n"
+
+
+def _with_functions(api, extra=""):
+    rpt = FILES["rpt.conf"].replace("[functions-main](!)\n", FUNCTIONS + extra)
+    (api.etc / "rpt.conf").write_text(rpt)
+
+
+async def test_connect_at_startup(api):
+    _with_functions(api)
+    a = await api.make()
+    _, node = await a.get("nodes/1999")
+    assert node["startup"]["macro"] is None and node["startup"]["permanent_available"] is False
+    plan, status_, _ = await a.change({"op": "startup_link", "node": "1999", "target": "2000", "mode": "transceive"})
+    assert status_ == 200 and "+startup_macro = *32000" in plan["files"][0]["diff"]
+    _, node = await a.get("nodes/1999")
+    assert node["startup"] | {"macro": None} == {"macro": None, "funcchar": "*", "target": "2000",
+                                                 "mode": "transceive", "permanent": False, "custom": False,
+                                                 "permanent_available": False}
+    status_, body = await a.post("nodes/plan", {"op": "startup_link", "node": "1999", "target": "2000",
+                                                "permanent": True})
+    assert status_ == 409 and body["field"] == "permanent"
+    plan, status_, _ = await a.change({"op": "startup_link", "node": "1999", "target": None})
+    assert status_ == 200 and "-startup_macro = *32000" in plan["files"][0]["diff"]
+
+
+async def test_connect_at_startup_permanent_and_custom(api):
+    _with_functions(api, "812 = ilink,12\n813 = ilink,13 ; permanent\n")
+    (api.etc / "rpt.conf").write_text((api.etc / "rpt.conf").read_text().replace(
+        "rxchannel = SimpleUSB/1999      ; SimpleUSB\n", "rxchannel = SimpleUSB/1999      ; SimpleUSB\nstartup_macro = *81348496\n"))
+    a = await api.make()
+    _, node = await a.get("nodes/1999")
+    assert (node["startup"]["target"], node["startup"]["mode"], node["startup"]["permanent"]) == ("48496", "transceive", True)
+    (api.etc / "rpt.conf").write_text((api.etc / "rpt.conf").read_text().replace("*81348496", "*8132000*70"))
+    _, node = await a.get("nodes/1999")
+    assert node["startup"]["custom"] is True
+    status_, body = await a.post("nodes/plan", {"op": "startup_link", "node": "1999", "target": "2001"})
+    assert status_ == 409 and body["error"] == "custom_macro"
+    plan, status_, _ = await a.change({"op": "startup_link", "node": "1999", "target": "2001", "mode": "monitor",
+                                       "permanent": True, "replace_custom": True})
+    assert status_ == 200 and "+startup_macro = *8122001" in plan["files"][0]["diff"]

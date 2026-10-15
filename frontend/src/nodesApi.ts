@@ -24,6 +24,15 @@ export type NodeInfo = {
   nodes_entry: string | null;
   channel_templates: string[] | null;
   references: Record<string, Reference>;
+  startup: {
+    macro: string | null;
+    funcchar: string;
+    target: string | null;
+    mode: "transceive" | "monitor" | null;
+    permanent: boolean;
+    custom: boolean;
+    permanent_available: boolean;
+  };
 };
 
 export type CustomOption = {

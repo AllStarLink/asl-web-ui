@@ -913,6 +913,26 @@ new options), reached through SSH tunnels; nothing was installed and
     it, and the status display says that PTT is the driver's view.
 - Not tested: successful USBRadio calibrations, CTCSS from a real receiver.
 
+## 24. Connect at startup (2026-10-15, user request)
+
+- The node's General tab has **Connect at startup**: off, or a node number
+  with transceive / monitor only and, when available, "keep the link up"
+  (permanent). It writes the node's `startup_macro` (the DTMF string
+  app_rpt runs when the node starts).
+- The macro is built from the node's own function table (its `functions`
+  stanza: the codes bound to `ilink,3` / `ilink,2`, or `ilink,13` /
+  `ilink,12` for permanent links) and its `funcchar` (default `*`), never
+  from fixed codes. In the stock rpt.conf only `2` and `3` are enabled;
+  `812`/`813` are commented out, so "keep the link up" is offered only where
+  they exist (e.g. 40608: `*81348496` = `813` + node 48496).
+- An existing macro that is exactly one link command is shown as "node N,
+  transceive/monitor, kept up"; anything else is a custom macro that must be
+  explicitly replaced (as with a custom ID, D2). "Don't connect" removes the
+  node's own `startup_macro` line; one inherited from a template is
+  reported.
+- Motivated by restarting 40608 during testing: its startup macro linked to
+  another node and played telemetry over it.
+
 ## Mockup
 
 [mockup/](mockup/) holds the source of the published mockup. To rebuild:

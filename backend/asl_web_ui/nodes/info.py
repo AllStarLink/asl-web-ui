@@ -55,6 +55,43 @@ _SIMPLE_ID = re.compile(r"^\|i([0-9A-Za-z/-]+)$")
 _REGISTER = re.compile(r"^(?P<node>\d+):(?P<password>[^@]*)@(?P<host>.+)$")
 
 
+# ilink commands that make a link: (mode, permanent)
+LINK_COMMANDS = {"ilink,2": ("monitor", False), "ilink,3": ("transceive", False),
+                 "ilink,12": ("monitor", True), "ilink,13": ("transceive", True)}
+
+
+def link_codes(rpt: Config, node: Category) -> dict[tuple[str, bool], str]:
+    """The node's DTMF codes for making links, from its functions stanza."""
+    section = node.value("functions") or "functions"
+    funcs = rpt.get(section)
+    codes: dict[tuple[str, bool], str] = {}
+    for v in funcs.vars if funcs else []:
+        command = re.sub(r"\s+", "", v.value.split(";")[0]).lower()
+        if command in LINK_COMMANDS and v.key.isdigit():
+            codes.setdefault(LINK_COMMANDS[command], v.key)  # first definition wins in app_rpt's lookup order
+    return codes
+
+
+def startup_link(rpt: Config, node: Category) -> dict:
+    """What the node's startup_macro does, if it is a single link command."""
+    macro = node.value("startup_macro")
+    funcchar = (node.value("funcchar") or "*").strip()[:1] or "*"
+    out = {"macro": macro, "funcchar": funcchar, "target": None, "mode": None, "permanent": False,
+           "custom": False, "permanent_available": False}
+    codes = link_codes(rpt, node)
+    out["permanent_available"] = ("transceive", True) in codes and ("monitor", True) in codes
+    if not macro:
+        return out
+    text = macro.strip()
+    for (mode, permanent), code in sorted(codes.items(), key=lambda kv: -len(kv[1])):
+        m = re.fullmatch(re.escape(funcchar + code) + r"(\d{4,7})", text)
+        if m:
+            out.update(target=m.group(1), mode=mode, permanent=permanent)
+            return out
+    out["custom"] = True
+    return out
+
+
 def interface_of(rxchannel: str | None) -> str | None:
     if not rxchannel:
         return None
@@ -131,6 +168,7 @@ class NodeInfo:
     nodes_entry: str | None  # this node's [nodes] line
     channel_templates: list[str] | None  # the node's section in simpleusb.conf/usbradio.conf
     references: dict[str, Reference]
+    startup: dict
 
     def as_dict(self) -> dict:
         d = asdict(self)
@@ -189,6 +227,7 @@ def node_info(ws: Workspace, number: str, rpt: Config | None = None) -> NodeInfo
         nodes_entry=nodes.value(number) if nodes else None,
         channel_templates=channel_templates,
         references=references(rpt, cat),
+        startup=startup_link(rpt, cat),
     )
 
 

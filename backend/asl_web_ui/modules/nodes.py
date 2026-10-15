@@ -68,7 +68,7 @@ def _number(value: str) -> str:
 
 
 def _plan_error(exc: PlanError) -> web.Response:
-    status = 404 if exc.code == "not_found" else 409 if exc.code in ("requirement", "custom_id") else 400
+    status = 404 if exc.code == "not_found" else 409 if exc.code in ("requirement", "custom_id", "custom_macro") else 400
     return error(status, exc.code, exc.message, field=exc.field)
 
 
@@ -151,6 +151,7 @@ def _describe(op: str, body: dict) -> str:
         "callsign": f"node {node}: call sign",
         "duplex": f"node {node}: duplex",
         "statpost": f"node {node}: status posting",
+        "startup_link": f"node {node}: connect at startup",
         "password": f"node {node}: password",
         "interface": f"node {node}: radio interface",
         "customize": f"node {node}: customizations",
@@ -185,6 +186,12 @@ def _run(planner: Planner, op: str, body: dict) -> None:
         if duplex is None:
             raise PlanError("duplex is required.", "duplex")
         planner.set_duplex(node, duplex, _str(body, "linktolink", False))
+    elif op == "startup_link":
+        target = body.get("target")
+        if target is not None and not isinstance(target, str):
+            raise PlanError("target must be a node number or null.", "target")
+        planner.set_startup_link(node, target or None, str(body.get("mode", "transceive")),
+                                 bool(body.get("permanent")), bool(body.get("replace_custom")))
     elif op == "statpost":
         enabled = _bool(body, "enabled")
         if enabled is None:

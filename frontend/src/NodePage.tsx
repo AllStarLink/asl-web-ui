@@ -127,6 +127,15 @@ function General({ node, list, propose, status }: {
   const [duplex, setDuplex] = useState(String(node.duplex ?? 2));
   const [l2l, setL2l] = useState(node.linktolink);
   const running = status?.nodes.find((n) => n.node === node.number);
+  const st = node.startup;
+  const [linkOn, setLinkOn] = useState(st.target !== null || st.custom);
+  const [target, setTarget] = useState(st.target ?? "");
+  const [linkMode, setLinkMode] = useState(st.mode ?? "transceive");
+  const [permanent, setPermanent] = useState(st.permanent);
+  const [replaceMacro, setReplaceMacro] = useState(false);
+  const startupText = st.custom ? <span>Custom startup macro: <code>{st.macro}</code></span>
+    : st.target ? `Node ${st.target}, ${st.mode === "monitor" ? "monitor only" : "transceive"}${st.permanent ? ", kept up" : ""}`
+    : "No";
   const numberError = numberProblem(number, list.nodes.map((n) => n.number), node.number);
 
   const rename = async () => {
@@ -197,6 +206,45 @@ function General({ node, list, propose, status }: {
                            isChecked={l2l === "yes"} onChange={() => setL2l("yes")} />
                   </FormGroup>
                 )}
+              </Edit>
+            )}
+          </Setting>
+          <Setting label="Connect at startup" value={startupText}>
+            {(close) => (
+              <Edit close={close}
+                    valid={(!linkOn || /^[0-9]{4,7}$/.test(target.trim())) && (!st.custom || replaceMacro)}
+                    onSave={() => propose("startup_link", {
+                      node: node.number, target: linkOn ? target.trim() : null, mode: linkMode, permanent,
+                      replace_custom: replaceMacro,
+                    })}>
+                <FormGroup role="radiogroup" fieldId="startup-on" isStack>
+                  <Radio id="startup-off" name="startup-on" label="Don't connect to another node" isChecked={!linkOn}
+                         onChange={() => setLinkOn(false)} />
+                  <Radio id="startup-yes" name="startup-on" label="Connect to a node when Asterisk starts"
+                         isChecked={linkOn} onChange={() => setLinkOn(true)} />
+                </FormGroup>
+                {linkOn && (
+                  <>
+                    <Text id="startup-target" label="Node number" value={target} onChange={setTarget} />
+                    <FormGroup role="radiogroup" fieldId="startup-mode" label="Link" isInline>
+                      <Radio id="startup-tx" name="startup-mode" label="Transceive" isChecked={linkMode === "transceive"}
+                             onChange={() => setLinkMode("transceive")} />
+                      <Radio id="startup-mon" name="startup-mode" label="Monitor only" isChecked={linkMode === "monitor"}
+                             onChange={() => setLinkMode("monitor")} />
+                    </FormGroup>
+                    <Checkbox id="startup-permanent" label="Keep the link up (reconnect if it drops)" isChecked={permanent}
+                              isDisabled={!st.permanent_available} onChange={(_e, v) => setPermanent(v)}
+                              description={st.permanent_available ? undefined :
+                                "The node's function table has no permanent link commands (812/813 are commented out in the stock rpt.conf)."} />
+                  </>
+                )}
+                {st.custom && (
+                  <Checkbox id="startup-replace" isChecked={replaceMacro} onChange={(_e, v) => setReplaceMacro(v)}
+                            label={`Replace the custom startup macro (${st.macro})`} />
+                )}
+                <Content component="p" className="asl-sub">
+                  Takes effect when Asterisk restarts, and then on every restart: the link is made automatically.
+                </Content>
               </Edit>
             )}
           </Setting>
