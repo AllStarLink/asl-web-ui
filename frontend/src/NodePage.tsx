@@ -41,7 +41,7 @@ import {
 import { useNodeList } from "./Nodes";
 import { TuningPanel } from "./Tuning";
 import { RegistrationLabel } from "./Overview";
-import { go } from "./useRoute";
+import { go, useLeaveGuard } from "./useRoute";
 
 // The General, Radio interface and Customizations tabs edit one draft of the
 // node's settings. It survives switching tabs, and is reviewed and saved (or
@@ -215,9 +215,11 @@ function General({ node, list, status, draft, set, problems }: {
               <FormGroup fieldId="startup-permanent">
                 <Checkbox id="startup-permanent" label="Keep the link up (reconnect if it drops)" isChecked={draft.permanent}
                           onChange={(_e, v) => set({ permanent: v })}
-                          description={st.permanent_available ? undefined :
-                            "Adds the permanent link commands (811-813) to the node's function table; they are " +
-                            "commented out in the stock rpt.conf."} />
+                          description={st.permanent_available
+                            ? "Uses the permanent link DTMF commands in the node's function table."
+                            : `Enables the permanent link DTMF commands (${st.funcchar}811, ${st.funcchar}812, ` +
+                              `${st.funcchar}813) by adding them to the node's function table; they are commented ` +
+                              "out in the stock rpt.conf."} />
               </FormGroup>
             </>
           )}
@@ -266,9 +268,22 @@ function Interface({ node, list, draft, set }: { node: NodeDetail; list: NodeLis
   );
 }
 
+// Shown on the tabs whose changes do not wait for "Review and save".
+function Immediate({ children }: { children: ReactNode }) {
+  return <Alert variant="info" isInline title="Changes on this tab take effect immediately">{children}</Alert>;
+}
+
 function Tuning({ node, status }: { node: NodeDetail; status: Status | null }) {
   if (node.interface === "SimpleUSB" || node.interface === "USBRadio") {
-    return <TuningPanel node={node.number} status={status} />;
+    return (
+      <div className="asl-stack">
+        <Immediate>
+          Each setting reaches the radio interface as soon as you apply it; it is not part of Review and save.
+          Save settings writes them to the configuration file so that they survive a restart of Asterisk.
+        </Immediate>
+        <TuningPanel node={node.number} status={status} />
+      </div>
+    );
   }
   return (
     <Card>
@@ -322,6 +337,10 @@ function Access({ node }: { node: NodeDetail }) {
       <CardTitle>Access control</CardTitle>
       <CardBody>
         <div className="asl-stack">
+          <Immediate>
+            Allowing, blocking and removing entries changes the node's access list at once, with no restart; it is
+            not part of Review and save.
+          </Immediate>
           {error && <Alert variant="danger" isInline title={error} />}
           {!lists && !error && <Spinner size="md" aria-label="Loading" />}
           {lists && (
@@ -330,7 +349,6 @@ function Access({ node }: { node: NodeDetail }) {
                 {lists.mode === "open" && <>Any node may connect to node {node.number}.</>}
                 {lists.mode === "allow" && <>Only the nodes and calls below may connect to node {node.number}.</>}
                 {lists.mode === "deny" && <>Every node may connect to node {node.number} except those below.</>}
-                {" "}Changes take effect immediately; no restart is needed.
               </Content>
               {both && (
                 <Alert variant="warning" isInline isPlain
@@ -507,7 +525,9 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
   const dirtyTabs = new Set(pending.ops.map((o) => o.tab));
   const count = pending.ops.filter((o) => o.op !== "permanent_links").length;
 
-  // Closing or reloading the browser tab would lose the draft.
+  // Leaving the node's pages, closing or reloading the browser tab would lose the draft.
+  const stays = useCallback((r: string) => r === `nodes/${number}` || r.startsWith(`nodes/${number}/`), [number]);
+  useLeaveGuard(dirty ? stays : null);
   useEffect(() => {
     if (!dirty) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -522,7 +542,7 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
       const res = await proposeOps(pending.ops.map(({ tab: _tab, ...op }) => op));
       if (!res) return;
       if (renamed) {
-        go(`nodes/${renamed}/${active}`);
+        go(`nodes/${renamed}/${active}`, true);
         return;
       }
       await Promise.all([load(), reloadList()]);
@@ -549,7 +569,7 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
 
   const remove = async () => {
     try {
-      if (await propose("remove", { node: number })) go("nodes");
+      if (await propose("remove", { node: number })) go("nodes", true);
     } catch (err) {
       setError(message(err));
     }

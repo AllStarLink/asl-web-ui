@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bullseye, Spinner } from "@patternfly/react-core";
+import { Bullseye, Button, Modal, ModalBody, ModalFooter, ModalHeader, Spinner } from "@patternfly/react-core";
 
 import { ApiError, get, post, Session, setCsrfToken, SystemInfo } from "./api";
 import { AsteriskPage } from "./AsteriskPage";
@@ -18,7 +18,7 @@ import { useStatus } from "./useStatus";
 type Auth = { kind: "loading" } | { kind: "insecure" } | { kind: "anonymous" } | { kind: "user"; session: Session };
 
 function Authenticated({ session, onLogout, onEnded }: { session: Session; onLogout: () => void; onEnded: () => void }) {
-  const route = useRoute();
+  const [route, leaving, answer] = useRoute();
   const { status } = useStatus(onEnded);
   const [system, setSystem] = useState<SystemInfo | null>(null);
 
@@ -39,6 +39,14 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   return (
     <Shell user={session.user ?? ""} hostname={system?.hostname ?? ""} route={route} status={status} onLogout={onLogout}>
       {page}
+      <Modal isOpen={leaving !== null} onClose={() => answer(false)} variant="small" aria-labelledby="leave-title">
+        <ModalHeader title="Leave without saving?" labelId="leave-title" titleIconVariant="warning" />
+        <ModalBody>This page has changes that are not saved. If you leave it, they are lost.</ModalBody>
+        <ModalFooter>
+          <Button variant="danger" onClick={() => answer(true)}>Leave and discard changes</Button>
+          <Button variant="link" onClick={() => answer(false)}>Stay on this page</Button>
+        </ModalFooter>
+      </Modal>
     </Shell>
   );
 }
