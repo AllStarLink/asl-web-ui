@@ -108,9 +108,15 @@ def _make_controlling_tty() -> None:
 
 @routes.get("/api/v1/ws/console")
 async def console(request: web.Request) -> web.WebSocketResponse:
+    return await terminal(request, request.app[COMMAND_KEY], "the Asterisk console")
+
+
+async def terminal(request: web.Request, argv: list[str], what: str) -> web.WebSocketResponse:
+    """Run ``argv`` on a pseudo terminal connected to a WebSocket (as the
+    service's user). Used for the Asterisk console and the classic tune menus."""
     user = request[USER_KEY]
     if _open.get(user, 0) >= MAX_PER_USER:
-        raise web.HTTPTooManyRequests(text="Too many open consoles")
+        raise web.HTTPTooManyRequests(text="Too many open terminals")
 
     ws = web.WebSocketResponse(heartbeat=30, max_msg_size=64 * 1024)
     await ws.prepare(request)
@@ -119,20 +125,20 @@ async def console(request: web.Request) -> web.WebSocketResponse:
     _set_size(master, 80, 24)
     try:
         proc = await asyncio.create_subprocess_exec(
-            *request.app[COMMAND_KEY],
+            *argv,
             stdin=slave, stdout=slave, stderr=slave,
             env=ENV, start_new_session=True, preexec_fn=_make_controlling_tty,
         )
     except OSError as exc:
         os.close(master)
         os.close(slave)
-        await ws.send_bytes(f"Could not start the Asterisk console: {exc}\r\n".encode())
+        await ws.send_bytes(f"Could not start {what}: {exc}\r\n".encode())
         await ws.close()
         return ws
     os.close(slave)
     os.set_blocking(master, False)
     _open[user] = _open.get(user, 0) + 1
-    log.info("console opened by %s", user)
+    log.info("%s opened by %s", what, user)
 
     loop = asyncio.get_running_loop()
     output: asyncio.Queue[bytes | None] = asyncio.Queue()
@@ -201,7 +207,7 @@ async def console(request: web.Request) -> web.WebSocketResponse:
                 await proc.wait()
         os.close(master)
         _open[user] -= 1
-        log.info("console closed by %s", user)
+        log.info("%s closed by %s", what, user)
     return ws
 
 

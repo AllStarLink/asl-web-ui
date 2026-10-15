@@ -40,6 +40,7 @@ import {
   AccessLists, addAccess, clearAccess, getAccess, getNode, INTERFACE_NAMES, NodeDetail, NodeList, removeAccess,
 } from "./nodesApi";
 import { useNodeList } from "./Nodes";
+import { TuningPanel } from "./Tuning";
 import { RegistrationLabel } from "./Overview";
 import { go } from "./useRoute";
 
@@ -251,26 +252,18 @@ function Interface({ node, list, propose }: { node: NodeDetail; list: NodeList; 
   );
 }
 
-function Tuning({ node }: { node: NodeDetail }) {
-  const tool = node.interface === "SimpleUSB" ? "simpleusb-tune-menu" : node.interface === "USBRadio" ? "radio-tune-menu" : null;
+function Tuning({ node, status }: { node: NodeDetail; status: Status | null }) {
+  if (node.interface === "SimpleUSB" || node.interface === "USBRadio") {
+    return <TuningPanel node={node.number} status={status} />;
+  }
   return (
     <Card>
       <CardTitle>Tuning</CardTitle>
       <CardBody>
-        {tool ? (
-          <Content>
-            <p>Tuning sets the receive and transmit audio levels of the radio interface.</p>
-            <p>
-              Tuning in the browser is not available yet. For now, log in over SSH and run{" "}
-              <code>sudo {tool} -n {node.number}</code>.
-            </p>
-          </Content>
-        ) : (
-          <Content component="p">
-            {node.interface === "Pseudo" ? "A node with no radio interface needs no tuning." :
-              `${INTERFACE_NAMES[node.interface ?? ""] ?? "This interface"} is not tuned here; edit its settings in Manual Config Edit.`}
-          </Content>
-        )}
+        <Content component="p">
+          {node.interface === "Pseudo" ? "A node with no radio interface needs no tuning." :
+            `${INTERFACE_NAMES[node.interface ?? ""] ?? "This interface"} is not tuned here; edit its settings in Manual Config Edit.`}
+        </Content>
       </CardBody>
     </Card>
   );
@@ -539,7 +532,7 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
           <>
             {active === "general" && <General node={node} list={list} propose={propose} status={status} />}
             {active === "interface" && <Interface key={node.interface} node={node} list={list} propose={propose} />}
-            {active === "tuning" && <Tuning node={node} />}
+            {active === "tuning" && <Tuning node={node} status={status} />}
             {active === "access" && <Access node={node} />}
             {active === "customizations" && (
               <Customizations key={node.customizations.selected.join()} node={node} propose={propose} />

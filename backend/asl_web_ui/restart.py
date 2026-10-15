@@ -15,7 +15,42 @@ from .configengine.model import load
 NOT_ASTERISK = {"savenode.conf"}
 
 
-def changed_since(config_dir: str, started: float) -> list[str]:
+DRIVER_SAVES = "driver-saves.json"
+
+
+def record_driver_save(state_dir: str, path: str) -> None:
+    """A channel driver saved its own settings (tuning): the running Asterisk
+    already uses them, so that change does not need a restart."""
+    import json
+    record = os.path.join(state_dir, DRIVER_SAVES)
+    try:
+        with open(record) as f:
+            saves = json.load(f)
+    except (OSError, ValueError):
+        saves = {}
+    try:
+        saves[path] = os.stat(path).st_mtime_ns
+    except OSError:
+        return
+    os.makedirs(state_dir, exist_ok=True)
+    with open(record + ".tmp", "w") as f:
+        json.dump(saves, f)
+    os.replace(record + ".tmp", record)
+
+
+def _driver_saves(state_dir: str | None) -> dict:
+    import json
+    if not state_dir:
+        return {}
+    try:
+        with open(os.path.join(state_dir, DRIVER_SAVES)) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def changed_since(config_dir: str, started: float, state_dir: str | None = None) -> list[str]:
+    saved_by_driver = _driver_saves(state_dir)
     changed = []
     for root, _dirs, files in os.walk(config_dir):
         for name in files:
@@ -23,7 +58,8 @@ def changed_since(config_dir: str, started: float) -> list[str]:
                 continue
             path = os.path.join(root, name)
             try:
-                if os.stat(path).st_mtime > started:
+                st = os.stat(path)
+                if st.st_mtime > started and saved_by_driver.get(path) != st.st_mtime_ns:
                     changed.append(os.path.relpath(path, config_dir))
             except OSError:
                 continue

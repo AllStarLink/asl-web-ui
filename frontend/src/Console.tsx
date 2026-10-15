@@ -37,7 +37,8 @@ export function isReload(line: string | null): boolean {
 }
 
 // The Asterisk CLI (asterisk -rvvv on the server) in a terminal.
-export function Console({ status }: { status: Status | null }) {
+export function Console({ status, path = "ws/console", note }: { status: Status | null; path?: string; note?: string }) {
+  const isConsole = path === "ws/console";
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"connecting" | "open" | "closed">("connecting");
   const [attempt, setAttempt] = useState(0);
@@ -60,7 +61,7 @@ export function Console({ status }: { status: Status | null }) {
     term.open(host.current);
     fit.fit();
 
-    const socket = new WebSocket(wsUrl("ws/console"));
+    const socket = new WebSocket(wsUrl(path));
     socket.binaryType = "arraybuffer";
     const sendSize = () => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
@@ -77,7 +78,7 @@ export function Console({ status }: { status: Status | null }) {
     };
     const tracker = new LineTracker();
     const input = term.onData((data) => {
-      if (data === "\r" && errors.current > 0 && isReload(tracker.line)) {
+      if (isConsole && data === "\r" && errors.current > 0 && isReload(tracker.line)) {
         const command = (tracker.line ?? "").trim();
         setHeld({
           command,
@@ -105,7 +106,7 @@ export function Console({ status }: { status: Status | null }) {
       socket.close();
       term.dispose();
     };
-  }, [attempt]);
+  }, [attempt, path, isConsole]);
 
   return (
     <div className="asl-console">
@@ -113,7 +114,7 @@ export function Console({ status }: { status: Status | null }) {
         <Alert
           variant="info"
           isInline
-          title="The console session ended"
+          title={isConsole ? "The console session ended" : "The session ended"}
           actionLinks={
             <Button variant="link" isInline onClick={() => { setState("connecting"); setAttempt((a) => a + 1); }}>
               Reconnect
@@ -154,7 +155,7 @@ export function Console({ status }: { status: Status | null }) {
         </ModalFooter>
       </Modal>
       <p className="asl-sub">
-        Equivalent to <code>asterisk -r</code>, running as the asterisk user. There is no system shell in the web UI.
+        {note ?? <>Equivalent to <code>asterisk -r</code>, running as the asterisk user. There is no system shell in the web UI.</>}
       </p>
     </div>
   );

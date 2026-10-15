@@ -40,9 +40,10 @@ CLOSE_SESSION_ENDED = 4401
 
 class StatusHub:
     def __init__(self, cli: AsteriskCLI, unit_state=systemd.unit_state, interval: float = INTERVAL,
-                 config_dir: str = "/etc/asterisk"):
+                 config_dir: str = "/etc/asterisk", state_dir: str | None = None):
         self.cli = cli
         self.config_dir = config_dir
+        self.state_dir = state_dir
         self.rpt_lint = restart.RptLintCache(config_dir)
         self.unit_state = unit_state
         self.interval = interval
@@ -100,7 +101,8 @@ class StatusHub:
         data["asterisk"].update(reachable=True, uptime=up, last_reload=reload)
         started = restart.asterisk_started(up)
         if started is not None:
-            data["config"]["changed"] = await asyncio.to_thread(restart.changed_since, self.config_dir, started)
+            data["config"]["changed"] = await asyncio.to_thread(restart.changed_since, self.config_dir, started,
+                                                                self.state_dir)
         data["versions"] = self._versions
         registrations = [asdict(r) for r in parse_rpt_registrations(regs)]
         iax_registrations = [asdict(r) for r in parse_iax_registry(iax)]
@@ -202,7 +204,7 @@ def setup(app: web.Application) -> None:
     if CLI_KEY not in app:
         app[CLI_KEY] = AsteriskCLI()
     app[HUB_KEY] = StatusHub(app[CLI_KEY], unit_state=app.get(UNIT_STATE_KEY, systemd.unit_state),
-                             config_dir=app[SETTINGS_KEY].config_dir)
+                             config_dir=app[SETTINGS_KEY].config_dir, state_dir=app[SETTINGS_KEY].state_dir)
 
     async def stop(app: web.Application) -> None:
         await app[HUB_KEY].close()

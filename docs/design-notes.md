@@ -9,7 +9,7 @@ decisions come before any code. Last updated 2026-10-14 (session 2).
 
 ## Where we left off
 
-**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes), M4 (privileged helper, backups) and M5 (diagnostics) are complete** on `main`. Next is M6 (tuning).
+**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes), M4 (privileged helper, backups), M5 (diagnostics) and M6 (tuning, pending a hardware check) are complete** on `main`. Next is M7 (hardening and release).
 
 Every design topic is decided (sections 9, 12, 13 and 14 on 2026-10-14). The
 consolidated design document, [DESIGN.md](DESIGN.md), is awaiting the user's
@@ -788,6 +788,39 @@ flake8, black, mypy, pylint. ruff is not packaged in trixie.
   case on current ASL3 with DNS lookups; restart through polkit), and the
   installed packages (asl-show-version's `dpkg-query` patterns).
 - Verified on the dev box through the hardened service.
+
+## 21. Implementation decisions during M6 (2026-10-15)
+
+- **Driver protocol** (`asl_web_ui/tuning.py`), from app_rpt's
+  `tune_menusupport` (chan_simpleusb.c, chan_usbradio.c): `<prefix> active N`
+  selects the device (susb / radio), `menu-support 0+4` (SimpleUSB) or
+  `0+10` (USBRadio) returns every setting as CSV in a promised order, a
+  letter plus value changes one, `j` saves, `l` sends the test tone (three
+  1 s bursts). Delays are in 20 ms frames. Settings replies, device lists
+  and the "no USB device" message are tested against real transcripts
+  (drivers loaded in the private Asterisk after `res_usbradio.so`; no
+  hardware).
+- **Live displays:** `b` (receive level bars) and `v` (COS/CTCSS/PTT) run as
+  `asterisk -rx` streams, parsed from the drivers' format strings (75
+  columns; marks at the "3KHz"/"5KHz" columns), and the client is killed
+  when the WebSocket closes. Verified that no stream outlives its socket.
+  The numeric one-shot variants (`B`, `V`) stay requested upstream.
+- **One tuning session per driver** (the "active" device is global): a
+  per-driver lock held by one browser session, released on leaving the page
+  or after five idle minutes. A classic tune menu running over SSH is
+  detected from `/proc/*/comm` and warned about.
+- **Save** uses the driver's own `j`; the page shows the diff the driver
+  made (it rewrites the file in its own style). **Undo** puts back the
+  values from the start of the session and saves them. Files saved by the
+  driver are recorded (`driver-saves.json`) so the restart banner does not
+  ask for a restart the running driver does not need.
+- **USBRadio calibrations** (`a` noise, `i` voice, `d` CTCSS) run as jobs
+  with the driver's output and its SUCCESS/FAILED line.
+- **Classic tune menu:** `simpleusb-tune-menu` / `radio-tune-menu -n N` in a
+  terminal (the console's PTY code, factored out), as asterisk, never a
+  shell. Verified on the dev box through the hardened service.
+- **Still to check on real hardware** (the user's instance): meter and
+  status with a radio, levels, test tone, calibrations.
 
 ## Mockup
 

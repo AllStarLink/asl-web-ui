@@ -178,3 +178,23 @@ html, body, #root { height: 100%; }
 .asl-findings { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
 .asl-findings li { display: grid; grid-template-columns: 1.25rem 1fr; gap: .5rem; align-items: baseline; }
 .asl-hint { display: block; }
+
+/* ---- tuning ---- */
+.asl-meter {
+  position: relative; height: 1.6rem; border-radius: var(--pf-t--global--border--radius--small); overflow: visible;
+  background: var(--pf-t--global--background--color--secondary--default);
+  border: 1px solid var(--pf-t--global--border--color--default); margin-block-start: 1.2rem;
+}
+.asl-meter-fill { height: 100%; background: linear-gradient(90deg, #3e8635, #3e8635 60%, #f0ab00 80%, #c9190b); transition: width .1s linear; }
+.asl-meter-mark { position: absolute; top: -1.2rem; bottom: 0; border-inline-start: 2px dashed var(--pf-t--global--text--color--subtle); }
+.asl-meter-mark span { position: absolute; top: 0; left: .25rem; font-size: .7rem; white-space: nowrap; color: var(--pf-t--global--text--color--subtle); }
+.asl-lamps { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+.asl-lamp { display: grid; grid-template-columns: auto 1fr; column-gap: .4rem; align-items: center; }
+.asl-lamp .asl-sub { grid-column: 2; font-size: .75rem; }
+.asl-lamp-dot { width: .9rem; height: .9rem; border-radius: 50%; background: var(--pf-t--global--border--color--default); grid-row: span 2; }
+.asl-lamp-dot.on { background: #3e8635; box-shadow: 0 0 .5rem #3e8635; }
+.asl-lamp-dot.disabled { opacity: .35; }
+.asl-level { display: grid; grid-template-columns: 1fr 5.5rem auto; gap: .75rem; align-items: center; }
+.asl-level-input { width: 5.5rem; }
+.asl-select { max-width: 22rem; }
+.asl-flush { margin: 0; }

@@ -94,33 +94,41 @@ async def env(aiohttp_client, tmp_path, monkeypatch, cloud):
             status.CLI_KEY: FakeCLI(), status.UNIT_STATE_KEY: unit("active"), control.SYSTEMCTL_KEY: str(systemctl),
             PRIV_KEY: InProcessClient(str(root))})
         client = await aiohttp_client(app, cookie_jar=DummyCookieJar())
-        base = {"X-Forwarded-Proto": "https", "Origin": f"https://{client.server.host}:{client.server.port}"}
-        r = await client.post("/api/v1/auth/login", json={"user": "dev"}, headers=base)
-        step = await r.json()
-        r = await client.post(f"/api/v1/auth/login/{step['id']}", json={"answer": "dev"}, headers=base)
-        body = await r.json()
-        headers = {**base, "Cookie": f"asl_web_ui_session={r.cookies['asl_web_ui_session'].value}",
-                   "X-CSRF-Token": body["session"]["csrf"]}
 
-        class Api:
-            client_ = client
+        async def login():
+            base = {"X-Forwarded-Proto": "https", "Origin": f"https://{client.server.host}:{client.server.port}"}
+            r = await client.post("/api/v1/auth/login", json={"user": "dev"}, headers=base)
+            step = await r.json()
+            r = await client.post(f"/api/v1/auth/login/{step['id']}", json={"answer": "dev"}, headers=base)
+            body = await r.json()
+            headers = {**base, "Cookie": f"asl_web_ui_session={r.cookies['asl_web_ui_session'].value}",
+                       "X-CSRF-Token": body["session"]["csrf"]}
 
-            async def call(self, method, path, payload=None, data=None):
-                resp = await client.request(method, "/api/v1/" + path, json=payload, data=data, headers=headers)
-                body = await resp.json() if resp.content_type == "application/json" else await resp.read()
-                return resp.status, body
+            class Api:
+                client_ = client
 
-            async def job(self, method, path, payload=None):
-                status_, body = await self.call(method, path, payload)
-                assert status_ == 202, body
-                for _ in range(200):
-                    _, state = await self.call("GET", f"jobs/{body['job']}")
-                    if state["done"]:
-                        return state
-                    await asyncio.sleep(0.02)
-                raise AssertionError("job did not finish")
+                async def another(self):
+                    """A second browser session on the same server."""
+                    return await login()
 
-        return Api()
+                async def call(self, method, path, payload=None, data=None):
+                    resp = await client.request(method, "/api/v1/" + path, json=payload, data=data, headers=headers)
+                    body = await resp.json() if resp.content_type == "application/json" else await resp.read()
+                    return resp.status, body
+
+                async def job(self, method, path, payload=None):
+                    status_, body = await self.call(method, path, payload)
+                    assert status_ == 202, body
+                    for _ in range(200):
+                        _, state = await self.call("GET", f"jobs/{body['job']}")
+                        if state["done"]:
+                            return state
+                        await asyncio.sleep(0.02)
+                    raise AssertionError("job did not finish")
+
+            return Api()
+
+        return await login()
 
     class Env:
         pass
