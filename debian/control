@@ -12,9 +12,9 @@ Build-Depends: debhelper-compat (= 13),
  python3-hypothesis
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
-Homepage: https://github.com/AllStarLink/asl3-web-ui
-Vcs-Browser: https://github.com/AllStarLink/asl3-web-ui
-Vcs-Git: https://github.com/AllStarLink/asl3-web-ui.git
+Homepage: https://github.com/AllStarLink/asl-web-ui
+Vcs-Browser: https://github.com/AllStarLink/asl-web-ui
+Vcs-Git: https://github.com/AllStarLink/asl-web-ui.git
 
 Package: asl-web-ui
 Architecture: all

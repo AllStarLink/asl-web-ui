@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: asl-web-ui
-Source: https://github.com/AllStarLink/asl3-web-ui
+Source: https://github.com/AllStarLink/asl-web-ui
 
 Files: *
 Copyright: 2026 AllStarLink, Inc. and contributors

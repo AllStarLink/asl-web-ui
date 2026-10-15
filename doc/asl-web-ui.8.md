@@ -110,7 +110,7 @@ backup first.
 **asl-node-auth-check**(1), **pkcheck**(1), **polkit**(8)
 
 # BUGS
-Report bugs to https://github.com/AllStarLink/asl3-web-ui/issues
+Report bugs to https://github.com/AllStarLink/asl-web-ui/issues
 
 # COPYRIGHT
 Copyright (C) 2026 AllStarLink, Inc. and contributors, under the terms of the

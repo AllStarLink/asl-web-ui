@@ -9,7 +9,7 @@ else
 fi
 echo "OS_CODENAME: ${OS_CODENAME}"
 
-REPO_DIR=${REPO_DIR:-asl3-web-ui}
+REPO_DIR=${REPO_DIR:-asl-web-ui}
 OUT_DIR=${OUT_DIR:-/build/_debs}
 
 # The source tree is bind-mounted and may be owned by another UID.

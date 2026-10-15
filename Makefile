@@ -1,7 +1,8 @@
 #
 # Build variables
 #
-SRCNAME = asl3-web-ui
+# The checkout directory (asl-web-ui in CI, whatever it is locally).
+SRCNAME = $(notdir $(CURDIR))
 PKGNAME = asl-web-ui
 RELVER = 0.1
 DEBVER = 1
