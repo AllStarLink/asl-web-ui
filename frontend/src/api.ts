@@ -18,7 +18,11 @@ export function setCsrfToken(token: string | null): void {
   csrfToken = token;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export function csrfHeader(): Record<string, string> {
+  return csrfToken ? { "X-CSRF-Token": csrfToken } : {};
+}
+
+export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (csrfToken && method !== "GET") headers["X-CSRF-Token"] = csrfToken;

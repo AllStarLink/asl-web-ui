@@ -23,6 +23,7 @@ import AsteriskIcon from "@patternfly/react-icons/dist/esm/icons/asterisk-icon";
 import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
 import FileCodeIcon from "@patternfly/react-icons/dist/esm/icons/file-code-icon";
 import NetworkIcon from "@patternfly/react-icons/dist/esm/icons/network-icon";
+import HistoryIcon from "@patternfly/react-icons/dist/esm/icons/history-icon";
 import TachometerAltIcon from "@patternfly/react-icons/dist/esm/icons/tachometer-alt-icon";
 import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
 
@@ -37,6 +38,7 @@ const NAV: NavEntry[] = [
   { route: "overview", label: "Overview", icon: <TachometerAltIcon /> },
   { route: "nodes", label: "Nodes", icon: <NetworkIcon /> },
   { route: "asterisk", label: "Asterisk", icon: <AsteriskIcon /> },
+  { route: "backups", label: "Backups", icon: <HistoryIcon /> },
 ];
 
 // Kept apart, at the bottom, so that newcomers reach for the guided pages first.

@@ -3,6 +3,7 @@ import { Bullseye, Spinner } from "@patternfly/react-core";
 
 import { ApiError, get, post, Session, setCsrfToken, SystemInfo } from "./api";
 import { AsteriskPage } from "./AsteriskPage";
+import { Backups } from "./Backups";
 import { ConfigEditor } from "./ConfigEditor";
 import { ConfigFiles } from "./ConfigFiles";
 import { Login } from "./Login";
@@ -28,6 +29,7 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   let page;
   if (base === "nodes" && sub) page = <NodePage key={sub} number={sub} tab={third ?? "general"} status={status} />;
   else if (base === "nodes") page = <Nodes status={status} />;
+  else if (base === "backups") page = <Backups tab={sub ?? "local"} />;
   else if (base === "asterisk") page = <AsteriskPage status={status} tab={sub ?? "status"} />;
   else if (base === "config" && sub) page = <ConfigEditor key={sub} name={decodeURIComponent(sub)} />;
   else if (base === "config") page = <ConfigFiles />;

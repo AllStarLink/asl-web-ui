@@ -12,7 +12,8 @@ import {
   ModalHeader,
 } from "@patternfly/react-core";
 
-import { message } from "./api";
+import { ApiError, message } from "./api";
+import { fixOwnership } from "./backupsApi";
 import { useAsteriskControl } from "./AsteriskControl";
 import { DiffView } from "./DiffView";
 import { Applied, applyChange, ChangePlan, planChange } from "./nodesApi";
@@ -25,7 +26,7 @@ function FileDiffs({ plan }: { plan: ChangePlan }) {
       {plan.files.map((f, i) => (
         <ExpandableSection
           key={f.name}
-          toggleText={`/etc/asterisk/${f.name}`}
+          toggleText={f.name.startsWith("/") ? f.name : `/etc/asterisk/${f.name}`}
           isExpanded={open[f.name] ?? i === 0}
           onToggle={(_e, v) => setOpen((o) => ({ ...o, [f.name]: v }))}
         >
@@ -54,8 +55,22 @@ export function useChange(): [
   const [reauthElement, withReauth] = useReauth();
   const [controlElement, control] = useAsteriskControl();
 
+  const [fix, setFix] = useState<{ files: string[]; resolve: (ok: boolean) => void } | null>(null);
+  const [fixError, setFixError] = useState<string | null>(null);
+
   const propose = useCallback(async (op: string, params: Record<string, unknown>) => {
-    const plan = await planChange(op, params);
+    let plan;
+    try {
+      plan = await planChange(op, params);
+    } catch (err) {
+      // Root-owned files (edited with sudo): offer to give them back, then plan again.
+      if (!(err instanceof ApiError && err.code === "not_writable")) throw err;
+      const files = (err.data.files as string[]) ?? [];
+      const ok = await new Promise<boolean>((resolve) => setFix({ files, resolve }));
+      setFix(null);
+      if (!ok) return null;
+      plan = await planChange(op, params);
+    }
     if ("unchanged" in plan) {
       setNothing(true);
       return null;
@@ -86,11 +101,39 @@ export function useChange(): [
     setReview(null);
   };
 
+  const doFix = async () => {
+    if (!fix) return;
+    setFixError(null);
+    try {
+      const res = await withReauth(() => fixOwnership(fix.files));
+      if (res) fix.resolve(true);
+    } catch (err) {
+      setFixError(message(err));
+    }
+  };
+
   const plan = review?.plan;
   const element = (
     <>
       {reauthElement}
       {controlElement}
+      <Modal isOpen={fix !== null} onClose={() => fix?.resolve(false)} variant="small" aria-labelledby="fix-title">
+        <ModalHeader title="Some files belong to another user" labelId="fix-title" titleIconVariant="warning" />
+        <ModalBody>
+          <div className="asl-stack">
+            <p>
+              The web interface cannot change these files, usually because they were edited with sudo. Give them back
+              to the asterisk user?
+            </p>
+            <List>{fix?.files.map((f) => <ListItem key={f}><code>{f}</code></ListItem>)}</List>
+            {fixError && <Alert variant="danger" isInline isPlain title={fixError} />}
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button onClick={doFix}>Fix permissions</Button>
+          <Button variant="link" onClick={() => fix?.resolve(false)}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
       <Modal isOpen={plan !== undefined} onClose={cancel} variant="large" aria-labelledby="change-title">
         <ModalHeader
           title={plan ? `Review: ${plan.action}` : ""}
@@ -118,7 +161,7 @@ export function useChange(): [
               ))}
               {plan.allmon3.length > 0 && (
                 <Alert variant="warning" isInline title="Allmon3 needs the same change">
-                  <p>The web interface cannot change Allmon3's settings yet. Do this by hand:</p>
+                  <p>The web interface could not read Allmon3's settings. Do this by hand:</p>
                   <List>
                     {plan.allmon3.map((t) => (
                       <ListItem key={t}>{t}</ListItem>

@@ -14,6 +14,7 @@ from .auth.ratelimit import LoginThrottle
 from .auth.sessions import MemoryStorage
 from .modules import MODULES
 from .modules.auth import CONVERSATIONS_KEY, REAUTH_KEY, STORAGE_KEY, THROTTLE_KEY
+from .privileged import PRIV_KEY, PrivClient
 from .security import SETTINGS_KEY, security_middleware
 
 Connect = Callable[[], Awaitable[Transport]]
@@ -46,6 +47,8 @@ def create_app(
     app[SETTINGS_KEY] = settings
     for key, value in (overrides or {}).items():
         app[key] = value
+    if PRIV_KEY not in app:
+        app[PRIV_KEY] = PrivClient(settings.priv_socket)
 
     storage = MemoryStorage(settings)
     aiohttp_session.setup(app, storage)

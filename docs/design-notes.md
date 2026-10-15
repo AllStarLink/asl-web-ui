@@ -9,7 +9,7 @@ decisions come before any code. Last updated 2026-10-14 (session 2).
 
 ## Where we left off
 
-**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit) and M3 (nodes) are complete** on `main`. Next is M4 (privileged helper, backups, fix permissions, Allmon3 updates).
+**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes) and M4 (privileged helper, backups) are complete** on `main`. Next is M5 (diagnostics).
 
 Every design topic is decided (sections 9, 12, 13 and 14 on 2026-10-14). The
 consolidated design document, [DESIGN.md](DESIGN.md), is awaiting the user's
@@ -715,6 +715,57 @@ flake8, black, mypy, pylint. ruff is not packaged in trixie.
 - **Fixed during testing:** first run must ensure the channel driver and
   section even when the interface does not change (node-setup forces it);
   covered by a parity test.
+
+## 19. Implementation decisions during M4 (2026-10-15)
+
+- **Privileged helper** (`backend/asl_web_ui_priv/`, standard library only):
+  `asl-web-ui-priv.socket` (`/run/asl-web-ui-priv/priv.sock`, asterisk 0600,
+  `Accept=yes`) starts `asl-web-ui-priv@.service` as root per request. One JSON
+  request in; `output` lines (progress) and one `result` out.
+  - Authorization: the caller's pid/uid from `SO_PEERCRED`, the start time
+    from `/proc/<pid>/stat` (field 22), then `pkcheck --action-id
+    org.allstarlink.asl-web-ui.<command> --process pid,start,uid`. Actions are
+    declared in `/usr/share/polkit-1/actions/org.allstarlink.asl-web-ui.policy`
+    (default `auth_admin`); `50-asl-web-ui.rules` grants them to the asterisk
+    user only. Verified on the dev box through the hardened service.
+  - Commands: `backup.create/read/restore/delete/import`,
+    `backup.read_include_list/write_include_list`, `factory.restore`,
+    `file.read/write` (allowlist: `/etc/allmon3/allmon3.ini`),
+    `asterisk.fix_ownership`. The web user name is logged, never trusted.
+- **Backups** share `/var/asl-backups` and its include list with
+  asl-backup-menu (same `ASL_YYYY-MM-DD_HHMM.tgz` names and format). Archives
+  are `root:asterisk 0640` (asl-backup-menu makes them world-readable, and
+  they hold passwords); the service reads them for download and upload.
+- **Restore safety:** only members under an include-list path; absolute
+  names, `..`, links leading outside, hard links, devices and FIFOs refused;
+  set-id bits dropped; a parent directory that is a link elsewhere is not
+  followed; files written atomically with the archive's owner; a
+  `_before-restore` backup first. The dialog lists what will be written and
+  what is skipped, before anything happens.
+- **Factory reset** as asl-backup-menu (`apt-get install --reinstall
+  asl3-asterisk-config` with confnew, remove `*.dpkg-old`, keep the AMI
+  secret), plus a `_before-factory` backup. Verified on the dev box.
+- **AllStarLink backup server**, as asl-backup-menu uses it: basic auth with
+  savenode.conf's node and password (or ones entered on the page),
+  `savenode.cgi` (POST, 2,000,000-byte limit), `getfile.cgi?NAME`, and the
+  index page's `getfile.cgi` links. Downloads are staged in
+  `/var/lib/asl-web-ui/staging` and filed by `backup.import`, which checks
+  the archive. Tested against a fake server only (no real credentials here).
+- **Jobs** (`modules/jobs.py`): restore, factory reset and cloud transfers
+  return a job id at once and the page polls for progress, so nginx's 60 s
+  proxy timeout never cuts them off. nginx's snippet allows 64 MB uploads.
+- **Allmon3:** node renames and AMI secret changes read allmon3.ini through
+  the helper, show its diff in the same review, write it after the Asterisk
+  files (hash-checked) and restart allmon3.service. As node-setup, `pass` is
+  changed only where it held the old secret.
+- **Fix permissions:** a button in the editor and in the change review gives
+  root-owned files back to the owner of /etc/asterisk (password re-entry).
+- **--dev** runs the helper's commands in-process on a sandbox copy
+  (`<state>/dev-root`); factory reset is refused there.
+- **Found by tests:** an aiohttp `Response` is an empty mapping, so
+  `if denied:` was always false and skipped the password re-entry check; now
+  `is not None`. PatternFly's focus trap crashes a dialog with no focusable
+  element (progress dialogs); the button stays focusable (`isAriaDisabled`).
 
 ## Mockup
 

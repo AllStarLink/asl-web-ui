@@ -2,9 +2,9 @@ prefix ?= /usr
 pydir ?= $(prefix)/share/asl-web-ui/python
 libexecdir ?= $(prefix)/libexec/asl-web-ui
 
-PY_SRC = $(shell find asl_web_ui asl_web_ui_auth -name '*.py')
+PY_SRC = $(shell find asl_web_ui asl_web_ui_auth asl_web_ui_priv -name '*.py')
 PY_INSTALLABLES = $(patsubst %, $(DESTDIR)$(pydir)/%, $(PY_SRC))
-BINS = asl-web-ui-server asl-web-ui-auth
+BINS = asl-web-ui-server asl-web-ui-auth asl-web-ui-priv
 BIN_INSTALLABLES = $(patsubst %, $(DESTDIR)$(libexecdir)/%, $(BINS))
 
 .PHONY: install check

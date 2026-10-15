@@ -14,10 +14,10 @@ import pytest
 
 from asl_web_ui.configengine.edit import Workspace
 from asl_web_ui.nodes.planner import Planner
-from harness import Unavailable, diff, effective, run_node_setup, stock
+from parity_harness import Unavailable, diff, effective, run_node_setup, stock
 
 try:
-    from harness import packages
+    from parity_harness import packages
     packages()
 except Unavailable as exc:  # pragma: no cover
     pytest.skip(str(exc), allow_module_level=True)

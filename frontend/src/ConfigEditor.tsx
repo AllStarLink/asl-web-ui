@@ -34,7 +34,9 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 
-import { ApiError } from "./api";
+import { ApiError, message as errorText } from "./api";
+import { fixOwnership } from "./backupsApi";
+import { useReauth } from "./Reauth";
 import { asteriskConf } from "./asteriskConf";
 import { applyPlan, checkFile, FileContent, Finding, Plan, planFile, readFile } from "./configApi";
 import { CountLabels } from "./ConfigFiles";
@@ -73,6 +75,18 @@ export function ConfigEditor({ name }: { name: string }) {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ variant: "success" | "danger" | "warning"; text: string } | null>(null);
+  const [reauthElement, withReauth] = useReauth();
+
+  const fix = async () => {
+    try {
+      if (await withReauth(() => fixOwnership([name]))) {
+        setMessage({ variant: "success", text: `${name} belongs to the asterisk user again.` });
+        await load();
+      }
+    } catch (err) {
+      setMessage({ variant: "danger", text: errorText(err) });
+    }
+  };
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -205,6 +219,7 @@ export function ConfigEditor({ name }: { name: string }) {
 
   return (
     <>
+      {reauthElement}
       <PageSection className="asl-page-head">
         <Breadcrumb>
           <BreadcrumbItem to="#/config">Manual Config Edit</BreadcrumbItem>
@@ -225,10 +240,9 @@ export function ConfigEditor({ name }: { name: string }) {
                   </Alert>
                 )}
                 {file.utf8 && !file.writable && (
-                  <Alert variant="warning" isInline title={`${name} is owned by ${file.owner}, so the web interface cannot change it`}>
-                    This usually happens after editing it with sudo. To fix it, run{" "}
-                    <code>sudo chown asterisk:asterisk /etc/asterisk/{name}</code>. A button for this comes in a later
-                    version.
+                  <Alert variant="warning" isInline title={`${name} is owned by ${file.owner}, so the web interface cannot change it`}
+                         actionLinks={<Button variant="link" isInline onClick={fix}>Fix permissions</Button>}>
+                    This usually happens after editing it with sudo.
                   </Alert>
                 )}
                 {message && <Alert variant={message.variant} isInline title={message.text} />}

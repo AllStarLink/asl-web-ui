@@ -1,0 +1,18 @@
+[Unit]
+Description=ASL Web UI privileged helper socket
+Documentation=man:asl-web-ui(8)
+
+[Socket]
+# Only the asl-web-ui service (user asterisk) can reach the helper; each
+# request is also authorized with polkit.
+ListenStream=/run/asl-web-ui-priv/priv.sock
+SocketUser=asterisk
+SocketGroup=asterisk
+SocketMode=0600
+DirectoryMode=0755
+Accept=yes
+MaxConnections=8
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

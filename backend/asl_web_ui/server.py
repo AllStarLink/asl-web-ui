@@ -15,6 +15,7 @@ import dataclasses
 import logging
 import os
 import pwd
+import shutil
 import signal
 import socket
 from pathlib import Path
@@ -25,6 +26,7 @@ from . import VERSION, config
 from .app import create_app
 from .asterisk_cli import ASTERISK, AsteriskCLI
 from .modules import console, status
+from .privileged import PRIV_KEY, InProcessClient
 
 log = logging.getLogger("asl-web-ui")
 
@@ -52,8 +54,19 @@ def refuse_dev_if_installed() -> None:
         raise SystemExit("--dev must not run as the asterisk user")
 
 
+def dev_root(settings: config.Settings) -> str:
+    """A sandbox for the privileged commands in --dev: a copy of the
+    configuration under <state>/dev-root, never the real system."""
+    root = os.path.join(settings.state_dir, "dev-root")
+    etc = os.path.join(root, "etc", "asterisk")
+    if not os.path.isdir(etc):
+        shutil.copytree(settings.config_dir, etc, symlinks=True)
+    os.makedirs(os.path.join(root, "var", "lib", "asl-web-ui", "staging"), exist_ok=True)
+    return root
+
+
 def dev_app(settings: config.Settings, asterisk_conf: str | None) -> web.Application:
-    overrides = {}
+    overrides: dict = {PRIV_KEY: InProcessClient(dev_root(settings))}
     if asterisk_conf:
         overrides[status.CLI_KEY] = AsteriskCLI(extra_args=["-C", asterisk_conf])
         overrides[console.COMMAND_KEY] = [ASTERISK, "-C", asterisk_conf, "-rvvv"]
@@ -112,6 +125,9 @@ def main() -> None:
             # Use the test instance's configuration, and keep snapshots next to it.
             etc = os.path.dirname(os.path.abspath(args.asterisk_conf))
             settings = dataclasses.replace(settings, config_dir=etc, state_dir=os.path.join(os.path.dirname(etc), "web-ui-state"))
+        root = os.path.join(settings.state_dir, "dev-root")
+        settings = dataclasses.replace(settings, backup_dir=os.path.join(root, "var", "asl-backups"),
+                                       staging_dir=os.path.join(root, "var", "lib", "asl-web-ui", "staging"))
         log.warning("DEVELOPMENT MODE: fake login (dev/dev) on http://127.0.0.1:%d/", args.port)
         asyncio.run(serve(dev_app(settings, args.asterisk_conf), None, None, args.port))
         return

@@ -73,7 +73,8 @@ class Note:
 class Effects:
     notes: list[Note] = field(default_factory=list)
     astdb: list[tuple[str, ...]] = field(default_factory=list)
-    allmon3: list[str] = field(default_factory=list)
+    # Changes Allmon3 needs too: {"kind": "rename"|"secret", "old", "new", "text"}.
+    allmon3: list[dict] = field(default_factory=list)
     restart: bool = False
     tune: bool = False
 
@@ -459,7 +460,8 @@ class Planner:
                     line = text.lines[header]
                     set_raw(text, header, header_line(new, line.options, line, text.newline))
         self.effects.astdb.append(("rename", old, new))
-        self.effects.allmon3.append(f"Rename node {old} to {new} in /etc/allmon3/allmon3.ini, if it is listed there.")
+        self.effects.allmon3.append({"kind": "rename", "old": old, "new": new,
+                                     "text": f"Rename node {old} to {new} in /etc/allmon3/allmon3.ini, if it is listed there."})
         self.effects.restart = True
         self.effects.tune = info.interface in ("SimpleUSB", "USBRadio")
 
@@ -614,7 +616,8 @@ class Planner:
         cfg = self.ws.model(MANAGER) if self.ws.exists(MANAGER) else None
         if cfg is None or cfg.get("admin") is None:
             raise PlanError("manager.conf has no [admin] user.", code="requirement")
-        if cfg.value("admin", "secret") == secret:
+        old_secret = cfg.value("admin", "secret")
+        if old_secret == secret:
             return
         # D3: only the [admin] user, which Allmon3 uses; node-setup changes
         # every user that shares the old secret.
@@ -622,8 +625,9 @@ class Planner:
         others = [u for u in self.ami_users() if u.lower() != "admin"]
         if others:
             self.effects.note(f"Other AMI users are not changed: {', '.join(others)}.")
-        self.effects.allmon3.append("Set the new AMI secret as \"pass\" in /etc/allmon3/allmon3.ini, "
-                                    "then restart Allmon3.")
+        self.effects.allmon3.append({"kind": "secret", "old": old_secret or "", "new": secret,
+                                     "text": "Set the new AMI secret as \"pass\" in /etc/allmon3/allmon3.ini, "
+                                             "then restart Allmon3."})
         self.effects.restart = True
 
 

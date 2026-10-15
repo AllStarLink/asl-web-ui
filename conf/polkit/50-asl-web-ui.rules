@@ -1,6 +1,8 @@
 // asl-web-ui runs as the asterisk user. These are the only system actions
-// it may take: start, stop or restart the AllStarLink services, and reboot
-// or power off (each asks for the user's password again in the web UI).
+// it may take: start, stop or restart the AllStarLink services, reboot or
+// power off (the web UI asks for the user's password again first), and the
+// commands of its privileged helper (backups, factory reset, Allmon3's
+// settings, ownership fixes in /etc/asterisk).
 // To restrict them further, add a rule with a lower number in
 // /etc/polkit-1/rules.d/ that returns polkit.Result.NO.
 
@@ -20,6 +22,9 @@ polkit.addRule(function(action, subject) {
         action.id == "org.freedesktop.login1.reboot-multiple-sessions" ||
         action.id == "org.freedesktop.login1.power-off" ||
         action.id == "org.freedesktop.login1.power-off-multiple-sessions") {
+        return polkit.Result.YES;
+    }
+    if (action.id.indexOf("org.allstarlink.asl-web-ui.") == 0) {
         return polkit.Result.YES;
     }
     return polkit.Result.NOT_HANDLED;

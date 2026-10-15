@@ -163,3 +163,13 @@ html, body, #root { height: 100%; }
 .asl-form-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 1rem; }
 @media (max-width: 40rem) { .asl-form-row { grid-template-columns: minmax(0, 1fr); } }
 .asl-wizard-modal .pf-v6-c-wizard { height: min(560px, 85vh); }
+
+/* ---- backups and jobs ---- */
+.asl-job-log {
+  margin: 0; max-height: 40vh; overflow: auto; padding: .75rem; font-size: .8rem; white-space: pre-wrap;
+  font-family: "Red Hat Mono", "DejaVu Sans Mono", monospace;
+  background: var(--pf-t--global--background--color--secondary--default); border-radius: var(--pf-t--global--border--radius--small);
+}
+.asl-mono textarea, textarea.asl-mono { font-family: "Red Hat Mono", "DejaVu Sans Mono", monospace; font-size: .85rem; }
+.asl-danger-zone { border: 1px solid var(--pf-t--global--border--color--status--danger--default); }
+.asl-end { justify-content: flex-end; }

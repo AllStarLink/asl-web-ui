@@ -175,9 +175,8 @@ async def plan_file(request: web.Request) -> web.Response:
         raise web.HTTPForbidden(text=f"{name} is not valid UTF-8 and cannot be edited in the browser")
     if info.data is not None and not info.writable:
         return web.json_response({"error": "not_writable", "message":
-            f"{name} is owned by {info.owner} and cannot be changed by the web interface. "
-            "Fixing its ownership will be possible from this page in a later version; for now run: "
-            f"sudo chown asterisk:asterisk {info.path}"}, status=409)
+            f"{name} is owned by {info.owner}, so the web interface cannot change it.",
+            "files": [info.path]}, status=409)
     new = _restore_newlines(info.data, content)
     session = await get_session(request)
     store = request.app[STORE_KEY]
@@ -192,6 +191,34 @@ async def plan_file(request: web.Request) -> web.Response:
         "findings": [f.as_dict() for f in findings],
         "counts": counts(findings),
     })
+
+
+@routes.post("/api/v1/config/fix-ownership")
+async def fix_ownership(request: web.Request) -> web.Response:
+    """Give files back to the asterisk user (after editing them with sudo)."""
+    from ..privileged import PRIV_KEY, PrivError
+    from .auth import recently_authenticated
+    from .changes import error
+
+    body = await _json(request)
+    files = body.get("files")
+    if not isinstance(files, list) or not files or not all(isinstance(f, str) for f in files) or len(files) > 50:
+        return error(400, "invalid", "files must be a list of paths inside /etc/asterisk.")
+    session = await get_session(request)
+    if not recently_authenticated(session, request.app[SETTINGS_KEY]):
+        return error(403, "reauth_required", "Enter your password again to fix file ownership.")
+    config_dir = request.app[SETTINGS_KEY].config_dir
+    fixed = []
+    for name in files:
+        rel = os.path.relpath(name, config_dir) if name.startswith("/") else name
+        try:
+            await request.app[PRIV_KEY].call("asterisk.fix_ownership", {"path": rel}, request[USER_KEY])
+        except PrivError as exc:
+            return error(502 if exc.code == "unavailable" else 400, exc.code, f"{rel}: {exc.message}", fixed=fixed)
+        fixed.append(rel)
+    request.app[STORE_KEY].record(request[USER_KEY], "fix file ownership", "done", fixed)
+    log.info("%s: fixed ownership of %s", request[USER_KEY], " ".join(fixed))
+    return web.json_response({"fixed": fixed})
 
 
 def setup(app: web.Application) -> None:

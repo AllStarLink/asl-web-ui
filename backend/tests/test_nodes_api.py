@@ -234,7 +234,7 @@ async def test_unwritable_file_is_reported(api):
         os.chmod(api.etc / "iax.conf", 0o644)
     if os.geteuid() == 0:
         pytest.skip("root can write anything")
-    assert status_ == 409 and body["error"] == "not_writable" and "chown" in body["message"]
+    assert status_ == 409 and body["error"] == "not_writable" and body["files"][0].endswith("iax.conf")
 
 
 async def test_ami_secret_changes_admin_only(api):

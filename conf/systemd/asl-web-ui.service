@@ -2,7 +2,7 @@
 Description=ASL Web UI
 Documentation=man:asl-web-ui(8)
 Requires=asl-web-ui.socket
-Wants=asl-web-ui-auth.socket
+Wants=asl-web-ui-auth.socket asl-web-ui-priv.socket
 After=network.target
 
 [Service]

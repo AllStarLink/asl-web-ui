@@ -1,0 +1,14 @@
+#!/usr/bin/python3 -I
+"""asl-web-ui privileged helper (installed in /usr/libexec/asl-web-ui).
+
+Started by asl-web-ui-priv@.service, one process per request, with the
+connection on stdin/stdout.
+"""
+
+import sys
+
+sys.path.insert(0, "/usr/share/asl-web-ui/python")
+
+from asl_web_ui_priv.helper import main  # noqa: E402
+
+main()

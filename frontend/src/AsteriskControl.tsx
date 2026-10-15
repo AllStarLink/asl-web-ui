@@ -55,7 +55,7 @@ export function useAsteriskControl(): [ReactNode, (action: Action) => Promise<bo
   const element = (
     <>
       {reauthElement}
-      <Modal isOpen={busy !== null} variant="small" aria-label="Working">
+      <Modal isOpen={busy !== null} variant="small" aria-label="Working" disableFocusTrap>
         <ModalBody>{busy ? `${DOING[busy]} Asterisk…` : ""}</ModalBody>
       </Modal>
       <Modal isOpen={failure !== null} onClose={() => setFailure(null)} variant="small" aria-labelledby="ctl-fail">

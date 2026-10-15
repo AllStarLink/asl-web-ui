@@ -120,7 +120,7 @@ async def test_unwritable_file_explains(api):
     os.chmod(etc / "rpt.conf", 0o444)
     _, f = await a.get("config/files/rpt.conf")
     status_, res = await a.post("config/files/rpt.conf/plan", {"content": f["content"], "base_hash": f["hash"]})
-    assert status_ == 409 and res["error"] == "not_writable" and "chown" in res["message"]
+    assert status_ == 409 and res["error"] == "not_writable" and res["files"][0].endswith("rpt.conf")
 
 
 async def test_status_reports_rpt_errors(api):

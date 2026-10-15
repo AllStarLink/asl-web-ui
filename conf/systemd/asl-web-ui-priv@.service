@@ -1,0 +1,27 @@
+[Unit]
+Description=ASL Web UI privileged helper
+Documentation=man:asl-web-ui(8)
+
+[Service]
+# One process per request, connected through the socket. Runs as root for
+# backups, restores, the factory reset (apt-get), Allmon3's settings and
+# ownership fixes in /etc/asterisk; every request is checked with pkcheck.
+ExecStart=/usr/libexec/asl-web-ui/asl-web-ui-priv
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=960
+
+# Hardening that still lets apt-get reinstall a package and restores write
+# configuration across the system.
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK

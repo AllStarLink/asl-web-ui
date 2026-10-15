@@ -5,8 +5,8 @@ text menus of [asl3-menu](https://github.com/AllStarLink/asl3-menu) with a
 browser UI in the style of Cockpit, built with PatternFly.
 
 **Status:** early development. Milestones M0 (package skeleton), M1 (login,
-shell, status and console), M2 (Manual Config Edit) and M3 (nodes, Asterisk
-settings and restart) are done;
+shell, status and console), M2 (Manual Config Edit), M3 (nodes, Asterisk
+settings and restart) and M4 (backups, privileged helper) are done;
 see [docs/DESIGN.md](docs/DESIGN.md) for the design and the milestone plan.
 
 ## Installing
@@ -79,9 +79,9 @@ runners; it builds **and publishes** packages and is not meant for local use.
 
 | Path | Contents |
 |---|---|
-| `backend/` | The Python (aiohttp) service and its tests |
+| `backend/` | The Python (aiohttp) service, its two root helpers (login, privileged commands) and their tests |
 | `frontend/` | The React + PatternFly 6 browser application |
-| `conf/` | Default settings, systemd units, PAM, Apache and nginx snippets |
+| `conf/` | Default settings, systemd units, PAM, polkit, Apache and nginx snippets |
 | `doc/` | Man pages (Markdown, converted with pandoc) |
 | `debian/` | Debian packaging |
 | `tests/` | Conformance tests against a real Asterisk, end-to-end checks |

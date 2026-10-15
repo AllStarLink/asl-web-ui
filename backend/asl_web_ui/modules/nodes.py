@@ -13,6 +13,7 @@ Plans are applied with POST /api/v1/changes/{id}/apply (modules/changes.py).
 Access lists take effect immediately and need no restart.
 """
 
+import difflib
 import logging
 import os
 import re
@@ -26,13 +27,15 @@ from ..configengine.edit import Workspace
 from ..configengine.lint import lint
 from ..configengine.model import load
 from ..configengine.store import Store
-from ..nodes import access, customize
+from ..nodes import access, allmon3, customize
 from ..nodes.info import (
     DUPLEX_LABELS, INTERFACE_LABELS, PRIVATE_LIMIT, all_nodes, iax_port, is_untouched_template, node_info,
 )
 from ..nodes.planner import Planner, PlanError
+from ..privileged import PRIV_KEY, PrivError
 from ..security import SETTINGS_KEY, USER_KEY
 from .changes import STORE_KEY, error, read_json, register_after, unwritable
+from .control import SYSTEMCTL_KEY, systemctl
 from .status import CLI_KEY
 
 log = logging.getLogger("asl-web-ui.nodes")
@@ -251,7 +254,7 @@ async def plan(request: web.Request) -> web.Response:
     if bad:
         names = " ".join(bad)
         return error(409, "not_writable", "Some files cannot be changed by the web interface because of their "
-                     f"ownership. Fix it with: sudo chown asterisk:asterisk {names}", files=bad)
+                     f"ownership: {names}", files=bad)
     before = _lint(ws, settings.config_dir, after=False)
     after = _lint(ws, settings.config_dir, after=True)
     new_errors = []
@@ -262,19 +265,52 @@ async def plan(request: web.Request) -> web.Response:
     stored = request.app[STORE_KEY].plan(session.identity or "", request[USER_KEY], _describe(op, body), changes)
     stored.errors = len(new_errors)
     after_steps = [("astdb", list(a)) for a in fx.astdb]
+    files = [{"name": os.path.relpath(c.path, settings.config_dir), "diff": c.diff(
+        os.path.relpath(c.path, settings.config_dir))} for c in changes]
+    manual = [a["text"] for a in fx.allmon3]
+    if fx.allmon3:
+        # Allmon3's file is updated after the Asterisk files, by the helper.
+        try:
+            current = await request.app[PRIV_KEY].call("file.read", {"path": allmon3.PATH}, request[USER_KEY])
+        except PrivError as exc:
+            log.info("allmon3.ini not readable: %s", exc)
+            current = None
+        if current is not None:
+            manual = []
+            if current["exists"]:
+                new = allmon3.apply(current["content"], fx.allmon3)
+                if new != current["content"]:
+                    files.append({"name": allmon3.PATH, "diff": "".join(difflib.unified_diff(
+                        current["content"].splitlines(True), new.splitlines(True),
+                        f"a{allmon3.PATH}", f"b{allmon3.PATH}"))})
+                    after_steps.append(("allmon3", {"content": new, "hash": current["hash"]}))
+                    fx.note("Allmon3 is restarted after its settings change.")
     stored.meta = {"after": after_steps, "reauth": op == "remove", "restart": fx.restart}
     return web.json_response({
         "id": stored.id,
         "action": stored.action,
-        "files": [{"name": os.path.relpath(c.path, settings.config_dir), "diff": c.diff(
-            os.path.relpath(c.path, settings.config_dir))} for c in changes],
+        "files": files,
         "notes": [n.__dict__ for n in fx.notes],
-        "allmon3": fx.allmon3,
+        "allmon3": manual,
         "restart": fx.restart,
         "tune": fx.tune,
         "errors": new_errors,
         "reauth": op == "remove",
     })
+
+
+async def _after_allmon3(request: web.Request, plan, args: dict) -> list[str]:
+    try:
+        await request.app[PRIV_KEY].call("file.write", {"path": allmon3.PATH, "content": args["content"],
+                                                         "expected_hash": args["hash"]}, request[USER_KEY])
+    except PrivError as exc:
+        return [f"Allmon3's settings were not updated: {exc.message}"]
+    if request.app[SETTINGS_KEY].dev:
+        return []
+    code, output = await systemctl(request.app[SYSTEMCTL_KEY], "restart", "allmon3.service", timeout=60)
+    if code != 0:
+        return [f"Allmon3's settings were updated, but Allmon3 could not be restarted: {output[-200:]}"]
+    return []
 
 
 async def _after_astdb(request: web.Request, plan, args: list) -> list[str]:
@@ -376,4 +412,5 @@ async def asterisk_settings(request: web.Request) -> web.Response:
 
 def setup(app: web.Application) -> None:
     register_after(app, "astdb", _after_astdb)
+    register_after(app, "allmon3", _after_allmon3)
     app.add_routes(routes)

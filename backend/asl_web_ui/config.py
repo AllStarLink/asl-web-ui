@@ -14,6 +14,13 @@ class Settings:
     # Path under which the web server publishes the UI (cookie path).
     url_prefix: str = "/asl-web-ui"
     auth_socket: str = "/run/asl-web-ui-auth/auth.sock"
+    priv_socket: str = "/run/asl-web-ui-priv/priv.sock"
+    # asl-backup-menu's backup directory (shared with it).
+    backup_dir: str = "/var/asl-backups"
+    # Uploaded and downloaded archives wait here for the helper to file them.
+    staging_dir: str = "/var/lib/asl-web-ui/staging"
+    # The AllStarLink backup server.
+    backup_server: str = "https://backup.allstarlink.org"
     login_group: str = "asl-web-ui"
     # "Keep me signed in": absolute and idle limits, in seconds.
     keep_max_age: int = 30 * 86400

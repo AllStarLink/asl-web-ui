@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  Actions of asl-web-ui's privileged helper (asl-web-ui-priv). By default only
+  administrators may perform them; 50-asl-web-ui.rules grants them to the
+  asterisk user, which the web service runs as.
+-->
+<policyconfig>
+  <vendor>AllStarLink</vendor>
+  <vendor_url>https://www.allstarlink.org/</vendor_url>
+  <action id="org.allstarlink.asl-web-ui.backup-create">
+    <description>Create a backup</description>
+    <message>Authentication is required to: create a backup</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.backup-delete">
+    <description>Delete a backup</description>
+    <message>Authentication is required to: delete a backup</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.backup-read">
+    <description>Read a backup</description>
+    <message>Authentication is required to: read a backup</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.backup-restore">
+    <description>Restore a backup</description>
+    <message>Authentication is required to: restore a backup</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.backup-import">
+    <description>Add an uploaded or downloaded backup</description>
+    <message>Authentication is required to: add an uploaded or downloaded backup</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.backup-read-include-list">
+    <description>Read the backup include list</description>
+    <message>Authentication is required to: read the backup include list</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.backup-write-include-list">
+    <description>Change the backup include list</description>
+    <message>Authentication is required to: change the backup include list</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.factory-restore">
+    <description>Restore the default AllStarLink configuration</description>
+    <message>Authentication is required to: restore the default AllStarLink configuration</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.file-read">
+    <description>Read Allmon3's settings</description>
+    <message>Authentication is required to: read Allmon3's settings</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.file-write">
+    <description>Change Allmon3's settings</description>
+    <message>Authentication is required to: change Allmon3's settings</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.asterisk-fix-ownership">
+    <description>Give a configuration file back to the asterisk user</description>
+    <message>Authentication is required to: give a configuration file back to the asterisk user</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+</policyconfig>
