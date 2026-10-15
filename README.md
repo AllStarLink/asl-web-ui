@@ -248,7 +248,8 @@ forward when upgrading.
 ### More
 
 - `docs/DESIGN.md` describes the architecture and `docs/design-notes.md` the
-  decisions behind it; read them before larger changes.
+  decisions behind it; read them before larger changes. Open work is in
+  `docs/backlog.md`.
 - Contributions with AI involvement follow [AGENTS.md](AGENTS.md) and
   AllStarLink's ASL003 practice.
 

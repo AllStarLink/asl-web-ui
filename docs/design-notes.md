@@ -9,7 +9,7 @@ decisions come before any code. Last updated 2026-10-14 (session 2).
 
 ## Where we left off
 
-**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes), M4 (privileged helper, backups), M5 (diagnostics), M6 (tuning, pending a hardware check) and M7 (hardening) are complete** on `main`. Remaining: the upstream changes in upstream-changes.md, and tuning with a radio connected.
+**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit), M3 (nodes), M4 (privileged helper, backups), M5 (diagnostics), M6 (tuning, pending a hardware check) and M7 (hardening) are complete** on `main`. Open work is tracked in [backlog.md](backlog.md).
 
 Every design topic is decided (sections 9, 12, 13 and 14 on 2026-10-14). The
 consolidated design document, [DESIGN.md](DESIGN.md), is awaiting the user's
