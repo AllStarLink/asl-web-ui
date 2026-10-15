@@ -15,13 +15,13 @@ import {
   Modal,
   ModalVariant,
   Radio,
-  TextInput,
   Title,
   Wizard,
   WizardHeader,
   WizardStep,
 } from "@patternfly/react-core";
 
+import { PlainTextInput } from "./PlainInput";
 import { ApiError, message } from "./api";
 import { CustomOption, INTERFACE_NAMES, NodeList } from "./nodesApi";
 
@@ -64,8 +64,8 @@ function Field({ id, label, value, onChange, problem, hint, type = "text" }: {
 }) {
   return (
     <FormGroup label={label} fieldId={id} isRequired>
-      <TextInput id={id} type={type} value={value} onChange={(_e, v) => onChange(v)}
-                 validated={value && problem ? "error" : "default"} autoComplete="off" />
+      <PlainTextInput id={id} type={type} value={value} onChange={(_e, v) => onChange(v)}
+                      validated={value && problem ? "error" : "default"} autoComplete="off" />
       <FormHelperText>
         <HelperText>
           <HelperTextItem variant={value && problem ? "error" : "default"}>{(value && problem) || hint}</HelperTextItem>

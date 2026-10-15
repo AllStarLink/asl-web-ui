@@ -26,13 +26,13 @@ import {
   Tab,
   Tabs,
   TabTitleText,
-  TextInput,
   Title,
   ToggleGroup,
   ToggleGroupItem,
 } from "@patternfly/react-core";
 import { Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
 
+import { PlainTextInput } from "./PlainInput";
 import { ApiError, message, Status } from "./api";
 import { useChange } from "./ChangeReview";
 import { numberProblem } from "./NodeWizard";
@@ -112,7 +112,7 @@ function Text({ id, label, value, onChange, type = "text" }: {
 }) {
   return (
     <FormGroup label={label} fieldId={id}>
-      <TextInput id={id} type={type} value={value} onChange={(_e, v) => onChange(v)} autoFocus autoComplete="off" />
+      <PlainTextInput id={id} type={type} value={value} onChange={(_e, v) => onChange(v)} autoFocus autoComplete="off" />
     </FormGroup>
   );
 }
@@ -422,10 +422,10 @@ function Access({ node }: { node: NodeDetail }) {
                 )}
                 <div className="asl-form-row">
                   <FormGroup label="Node number or call sign" fieldId="access-entry">
-                    <TextInput id="access-entry" value={entry} onChange={(_e, v) => setEntry(v)} />
+                    <PlainTextInput id="access-entry" value={entry} onChange={(_e, v) => setEntry(v)} />
                   </FormGroup>
                   <FormGroup label="Reason (optional)" fieldId="access-reason">
-                    <TextInput id="access-reason" value={reason} onChange={(_e, v) => setReason(v)} />
+                    <PlainTextInput id="access-reason" value={reason} onChange={(_e, v) => setReason(v)} />
                   </FormGroup>
                 </div>
                 <ActionGroup>

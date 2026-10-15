@@ -14,9 +14,9 @@ import {
   HelperText,
   HelperTextItem,
   Spinner,
-  TextInput,
 } from "@patternfly/react-core";
 
+import { PlainTextInput } from "./PlainInput";
 import { message } from "./api";
 import { useChange } from "./ChangeReview";
 import { asteriskSettings, AsteriskSettings as Settings } from "./nodesApi";
@@ -97,7 +97,7 @@ export function AsteriskSettings() {
         >
           {!settings.ami_admin && <Alert variant="warning" isInline isPlain title="manager.conf has no [admin] user." />}
           <FormGroup label="New AMI secret" fieldId="ami-secret">
-            <TextInput id="ami-secret" type="password" value={secret} onChange={(_e, v) => setSecret(v)} autoComplete="new-password" />
+            <PlainTextInput id="ami-secret" type="password" value={secret} onChange={(_e, v) => setSecret(v)} autoComplete="new-password" />
             <FormHelperText>
               <HelperText>
                 <HelperTextItem variant={secret && !secretOk ? "error" : "default"}>
@@ -117,7 +117,7 @@ export function AsteriskSettings() {
             in rpt.conf follow the new port.</>}
         >
           <FormGroup label="UDP port" fieldId="iax-port">
-            <TextInput id="iax-port" value={port} onChange={(_e, v) => setPort(v.trim())} inputMode="numeric" />
+            <PlainTextInput id="iax-port" value={port} onChange={(_e, v) => setPort(v.trim())} inputMode="numeric" />
           </FormGroup>
         </SettingForm>
       </Gallery>

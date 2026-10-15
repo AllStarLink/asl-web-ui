@@ -22,13 +22,12 @@ import {
   Tab,
   Tabs,
   TabTitleText,
-  TextArea,
-  TextInput,
   Title,
 } from "@patternfly/react-core";
 import { ActionsColumn, Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
 import UploadIcon from "@patternfly/react-icons/dist/esm/icons/upload-icon";
 
+import { PlainTextInput, PlainTextArea } from "./PlainInput";
 import { message } from "./api";
 import { useAsteriskControl } from "./AsteriskControl";
 import {
@@ -275,12 +274,12 @@ function Cloud({ list, reload }: { list: BackupList; reload: () => Promise<void>
             </Content>
             <div className="asl-form-row">
               <FormGroup label="Node number" fieldId="cloud-node">
-                <TextInput id="cloud-node" value={node} onChange={(_e, v) => setNode(v.trim())}
-                           placeholder={list.cloud.node ?? ""} inputMode="numeric" />
+                <PlainTextInput id="cloud-node" value={node} onChange={(_e, v) => setNode(v.trim())}
+                                placeholder={list.cloud.node ?? ""} inputMode="numeric" />
               </FormGroup>
               <FormGroup label="Node password" fieldId="cloud-password">
-                <TextInput id="cloud-password" type="password" value={password} onChange={(_e, v) => setPassword(v)}
-                           autoComplete="off" />
+                <PlainTextInput id="cloud-password" type="password" value={password} onChange={(_e, v) => setPassword(v)}
+                                autoComplete="off" />
               </FormGroup>
             </div>
             {error && <Alert variant="danger" isInline isPlain title={error} />}
@@ -378,8 +377,8 @@ function Settings() {
                 One file or directory per line. Lines starting with <code>#</code> are comments. asl-backup-menu uses
                 the same list.
               </Content>
-              <TextArea aria-label="Include list" value={text} onChange={(_e, v) => setText(v)} rows={16}
-                        className="asl-mono" resizeOrientation="vertical" />
+              <PlainTextArea aria-label="Include list" value={text} onChange={(_e, v) => setText(v)} rows={16}
+                             className="asl-mono" resizeOrientation="vertical" />
               {state?.ok && <Alert variant="success" isInline isPlain title={state.ok} />}
               {state?.error && <Alert variant="danger" isInline isPlain title={state.error} />}
               <ActionGroup>

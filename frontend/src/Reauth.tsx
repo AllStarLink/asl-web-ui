@@ -1,6 +1,7 @@
 import { FormEvent, ReactNode, useCallback, useRef, useState } from "react";
-import { Alert, Button, Form, FormGroup, Modal, ModalBody, ModalFooter, ModalHeader, TextInput } from "@patternfly/react-core";
+import { Alert, Button, Form, FormGroup, Modal, ModalBody, ModalFooter, ModalHeader } from "@patternfly/react-core";
 
+import { PlainTextInput } from "./PlainInput";
 import { ApiError, LoginStep, message, post } from "./api";
 
 // Asks for the password again (the same PAM conversation as logging in, so a
@@ -52,7 +53,7 @@ function ReauthModal({ onDone, onCancel }: { onDone: () => void; onCancel: () =>
           {error && <Alert variant="danger" isInline title={error} />}
           {step?.messages.map((m, i) => <Alert key={i} variant="info" isInline isPlain title={m.text} />)}
           <FormGroup label={label} fieldId="reauth-answer">
-            <TextInput
+            <PlainTextInput
               id="reauth-answer"
               type={step?.prompt?.echo ? "text" : "password"}
               autoComplete={step ? "one-time-code" : "current-password"}

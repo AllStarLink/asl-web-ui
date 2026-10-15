@@ -22,9 +22,9 @@ import {
   Slider,
   Spinner,
   Switch,
-  TextInput,
 } from "@patternfly/react-core";
 
+import { PlainTextInput } from "./PlainInput";
 import { get, message, openSocket, post, Status } from "./api";
 import { Started } from "./backupsApi";
 import { Console } from "./Console";
@@ -129,8 +129,8 @@ function LevelControl({ s, onSet, disabled }: { s: TuneSetting; onSet: (v: numbe
     <div className="asl-level">
       <Slider value={value} min={0} max={999} onChange={(_e, v) => setValue(Math.round(v))} isDisabled={disabled}
               aria-label={s.label} />
-      <TextInput value={String(value)} aria-label={`${s.label} value`} type="number" isDisabled={disabled}
-                 onChange={(_e, v) => setValue(Math.max(0, Math.min(999, Number(v) || 0)))} className="asl-level-input" />
+      <PlainTextInput value={String(value)} aria-label={`${s.label} value`} type="number" isDisabled={disabled}
+                      onChange={(_e, v) => setValue(Math.max(0, Math.min(999, Number(v) || 0)))} className="asl-level-input" />
       <Button variant="secondary" size="sm" isDisabled={disabled || value === s.value} onClick={() => onSet(value)}>
         Apply
       </Button>

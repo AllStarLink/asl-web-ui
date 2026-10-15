@@ -7,10 +7,10 @@ import {
   Form,
   FormGroup,
   Content,
-  TextInput,
   Title,
 } from "@patternfly/react-core";
 
+import { PlainTextInput } from "./PlainInput";
 import { ApiError, LoginStep, post, Session } from "./api";
 import { Brand } from "./Brand";
 
@@ -91,7 +91,7 @@ export function Login({ onLogin, insecure }: Props) {
               <Alert key={i} variant={n.kind === "error" ? "warning" : "info"} isInline isPlain title={n.text} />
             ))}
             <FormGroup label={step.prompt?.text.replace(/:\s*$/, "") || "Answer"} fieldId="login-answer">
-              <TextInput
+              <PlainTextInput
                 id="login-answer"
                 type={step.prompt?.echo ? "text" : "password"}
                 autoComplete="one-time-code"
@@ -116,10 +116,10 @@ export function Login({ onLogin, insecure }: Props) {
               <Alert key={i} variant={n.kind === "error" ? "warning" : "info"} isInline isPlain title={n.text} />
             ))}
             <FormGroup label="User name" fieldId="login-user">
-              <TextInput id="login-user" autoComplete="username" value={user} onChange={(_e, v) => setUser(v)} autoFocus />
+              <PlainTextInput id="login-user" autoComplete="username" value={user} onChange={(_e, v) => setUser(v)} autoFocus />
             </FormGroup>
             <FormGroup label="Password" fieldId="login-password">
-              <TextInput
+              <PlainTextInput
                 id="login-password"
                 type="password"
                 autoComplete="current-password"
