@@ -883,8 +883,22 @@ new options), reached through SSH tunnels; nothing was installed and
   now diffs all of them, the restart banner ignores them, and the issue is
   in upstream-changes.md section 3.
 - The recordings are test fixtures (`backend/tests/data/tune-*.txt`).
-- Not testable without a radio: a moving meter, COS/CTCSS from a real
-  receiver, successful calibrations.
+- **With a radio:** node 40608 (SimpleUSB, full-duplex radio, asl3-asterisk
+  3.10.5.6; sound card mixer maximums 31/37/35):
+  - test tone on the air: PTT keyed in three 1.0 s bursts 2 s apart, heard
+    by the user;
+  - receive: every transmission seen as COS / receiving, with the repeat
+    (PTT) during it; speech moved the meter (medians 4-13 of 75, wide
+    spread), an uncalibrated 1 kHz tone held steady at 16 (spread 1.9);
+  - receive level 800 / 500 / 300 with the same tone: meter medians
+    18 / 6 / 2, then restored to 800 without saving; files unchanged;
+  - a node ID transmission showed as PTT in the status display.
+- **Fixed:** closing a live display killed the CLI process with SIGKILL;
+  under a wrapper (sudo, on the test machines) that left `asterisk -rx`
+  running and held up the server's shutdown. Displays now stop with SIGTERM
+  first, then SIGKILL; verified on 40608.
+- Not tested: successful USBRadio calibrations (no radio on the USBRadio
+  node), CTCSS from a real receiver.
 
 ## Mockup
 

@@ -360,11 +360,23 @@ async def live(request: web.Request) -> web.StreamResponse:
                 break
     finally:
         pumper.cancel()
-        if proc.returncode is None:
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-            await proc.wait()
+        await _stop(proc)
     return ws
+
+
+async def _stop(proc: asyncio.subprocess.Process) -> None:
+    """End a display stream: SIGTERM first (a wrapper such as sudo passes it
+    on to asterisk -rx; SIGKILL would leave the child running), then SIGKILL."""
+    if proc.returncode is not None:
+        return
+    with contextlib.suppress(ProcessLookupError):
+        proc.terminate()
+    try:
+        await asyncio.wait_for(proc.wait(), 2)
+    except asyncio.TimeoutError:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        await proc.wait()
 
 
 @routes.get("/api/v1/ws/tune-menu/{node}")
