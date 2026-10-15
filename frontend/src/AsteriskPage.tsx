@@ -78,7 +78,7 @@ export function AsteriskPage({ status, tab }: { status: Status | null; tab: stri
           <Card>
             <CardTitle>Asterisk console</CardTitle>
             <CardBody>
-              <Console />
+              <Console status={status} />
             </CardBody>
           </Card>
         ) : (

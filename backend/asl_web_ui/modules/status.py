@@ -17,7 +17,7 @@ from dataclasses import asdict
 from aiohttp import WSMsgType, web
 from aiohttp_session import get_session
 
-from .. import systemd
+from .. import restart, systemd
 from ..asterisk_cli import (
     AsteriskCLI,
     AsteriskUnavailable,
@@ -39,8 +39,11 @@ CLOSE_SESSION_ENDED = 4401
 
 
 class StatusHub:
-    def __init__(self, cli: AsteriskCLI, unit_state=systemd.unit_state, interval: float = INTERVAL):
+    def __init__(self, cli: AsteriskCLI, unit_state=systemd.unit_state, interval: float = INTERVAL,
+                 config_dir: str = "/etc/asterisk"):
         self.cli = cli
+        self.config_dir = config_dir
+        self.rpt_lint = restart.RptLintCache(config_dir)
         self.unit_state = unit_state
         self.interval = interval
         self.latest: dict | None = None
@@ -68,7 +71,15 @@ class StatusHub:
             "registrations": [],
             "iax_registrations": [],
             "error": None,
+            # Restart pending (files changed since Asterisk started) and
+            # whether rpt.conf currently has errors (restart/reload warnings).
+            "config": {"changed": [], "rpt_errors": 0, "rpt_first_error": None},
         }
+        try:
+            rpt = await asyncio.to_thread(self.rpt_lint.get)
+            data["config"].update(rpt_errors=rpt["errors"], rpt_first_error=rpt["first_error"])
+        except OSError:
+            pass
         if not running:
             self._versions = {}
             return data
@@ -87,6 +98,9 @@ class StatusHub:
             return data
         up, reload = parse_uptime_seconds(uptime)
         data["asterisk"].update(reachable=True, uptime=up, last_reload=reload)
+        started = restart.asterisk_started(up)
+        if started is not None:
+            data["config"]["changed"] = await asyncio.to_thread(restart.changed_since, self.config_dir, started)
         data["versions"] = self._versions
         registrations = [asdict(r) for r in parse_rpt_registrations(regs)]
         iax_registrations = [asdict(r) for r in parse_iax_registry(iax)]
@@ -182,7 +196,8 @@ async def events(request: web.Request) -> web.WebSocketResponse:
 def setup(app: web.Application) -> None:
     if CLI_KEY not in app:
         app[CLI_KEY] = AsteriskCLI()
-    app[HUB_KEY] = StatusHub(app[CLI_KEY], unit_state=app.get(UNIT_STATE_KEY, systemd.unit_state))
+    app[HUB_KEY] = StatusHub(app[CLI_KEY], unit_state=app.get(UNIT_STATE_KEY, systemd.unit_state),
+                             config_dir=app[SETTINGS_KEY].config_dir)
 
     async def stop(app: web.Application) -> None:
         await app[HUB_KEY].close()

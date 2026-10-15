@@ -581,6 +581,73 @@ flake8, black, mypy, pylint. ruff is not packaged in trixie.
   - Apache default-ssl enabled on 8443 with the snakeoil certificate;
   - nginx tested via a private TLS instance on 8091.
 
+## 17. Implementation decisions during M2 (2026-10-14)
+
+- **Config engine** (`backend/asl_web_ui/configengine/`):
+  - `text.py` is a line-preserving lexer whose comment handling is a port of
+    `strip_comments` in main/config.c (`;` comments, `\;` escapes, nested
+    `;-- --;` blocks, a stray `--;` ending the file for Asterisk). Untouched
+    lines round-trip byte for byte (property-tested with hypothesis).
+  - `model.py` resolves `#include`/`#tryinclude`, templates and `(+)` the way
+    the ASL-patched Asterisk does.
+  - `lint.py`: *error* = Asterisk rejects the file (shown in config.c and by a
+    conformance test); *warning* = something is ignored or overridden;
+    *info* = everything else.
+  - `store.py`: plan/apply. Plans are bound to the session, single use, and
+    expire after 5 minutes. Apply takes a `flock`, re-checks the hash, keeps a
+    snapshot with a manifest under `state_dir/snapshots`, writes temp file +
+    fsync + `os.replace` keeping owner and mode, rolls back on failure, and
+    appends to `audit.jsonl`.
+- **Semantics verified by `tests/conformance/`** (24 tests, private Asterisk,
+  `AST_CONFIG` in a generated dialplan run through `channel originate`):
+  - last value wins (the ASTERISK-30370 patch);
+  - templates are copied when the header is read, so they must come first;
+    they are invisible to lookups, and `(+)` cannot extend one;
+  - section names match case-insensitively;
+  - `+=` appends the raw text after `=`, including the leading space;
+  - an included file starts in the includer's current section, and the
+    includer continues in its own section afterwards;
+  - a missing `#include`, or a variable before any section, rejects the file;
+    a missing `#tryinclude` does not.
+  - The harness needs `app_verbose` and `res_clioriginate` in the test
+    instance's modules.conf.
+- **API** (`modules/config_files.py`): a fixed list of 11 files; list, read,
+  `check` (lint a draft), `plan`, and `changes/{id}/apply` with
+  `confirm_errors`. CRLF line endings are kept. Files that are not UTF-8 are
+  shown read-only. Files the asterisk user cannot write return a
+  `sudo chown` hint; the Fix permissions button waits for the privileged
+  helper (M4).
+- **Restart pending** (`restart.py`): any `*.conf` under the config directory
+  whose mtime is later than Asterisk's start (now − uptime), except
+  `savenode.conf`. It is computed from the files, so hand edits and asl3-menu
+  count too. rpt.conf lint results are cached by mtime and size of rpt.conf and
+  everything it includes. Status carries `config.changed`, `config.rpt_errors`
+  and `config.rpt_first_error`.
+- **Frontend:**
+  - "Manual Config Edit" sits under a separate *Advanced* heading at the bottom
+    of the navigation, with an *Expert* badge, and opens with a danger notice.
+  - Editor: CodeMirror 6 with a small StreamLanguage for Asterisk syntax, a
+    lint gutter fed by the `check` endpoint (700 ms debounce), Revert and
+    Download. Save shows the diff and the findings; with errors the only
+    button is a red "Save anyway".
+  - The restart-pending banner sits above every page; it is informational
+    until the restart action arrives (M3) and turns red, with a link to
+    rpt.conf, when rpt.conf has errors.
+  - Console: the page tracks what is typed on the current line. On Enter for
+    `module reload [app_rpt[.so]]`, `core reload`, `rpt restart` or
+    `core restart now|gracefully|when convenient` while rpt.conf has errors,
+    Enter is held and a dialog offers Fix in editor / Run anyway / Cancel
+    (Cancel clears the line with Ctrl-U). After history recall, completion or
+    cursor keys the line is unknown and nothing is intercepted, which is
+    deliberately best-effort; the banner still shows the problem.
+- **Verified:** the hardened service can save `/etc/asterisk/rpt.conf` and
+  write snapshots in `/var/lib/asl-web-ui` (a save-and-restore through the
+  installed package keeps owner, mode and contents). Smoke test extended with
+  read-only config checks, passing through Apache and nginx.
+- `tests/e2e/screenshot.py --before JS` (repeatable) runs scripts before the
+  clicks; the CodeMirror view is reachable as
+  `document.querySelector(".cm-content").cmTile.root.view`.
+
 ## Mockup
 
 [mockup/](mockup/) holds the source of the published mockup. To rebuild:

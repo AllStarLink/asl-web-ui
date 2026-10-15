@@ -91,6 +91,11 @@ export type Status = {
   nodes: { node: string; private: boolean; registration: string | null }[];
   registrations: Registration[];
   iax_registrations: Registration[];
+  config: {
+    changed: string[];
+    rpt_errors: number;
+    rpt_first_error: { line: number | null; file: string; message: string } | null;
+  };
   error: string | null;
 };
 

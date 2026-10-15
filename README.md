@@ -4,8 +4,8 @@ A web interface for managing AllStarLink 3 node servers. It replaces the
 text menus of [asl3-menu](https://github.com/AllStarLink/asl3-menu) with a
 browser UI in the style of Cockpit, built with PatternFly.
 
-**Status:** early development. Milestones M0 (package skeleton) and M1 (login,
-shell, status and console) are done;
+**Status:** early development. Milestones M0 (package skeleton), M1 (login,
+shell, status and console) and M2 (Manual Config Edit) are done;
 see [docs/DESIGN.md](docs/DESIGN.md) for the design and the milestone plan.
 
 ## Installing
@@ -60,6 +60,11 @@ Checks against an installed package:
     tests/e2e/smoke.py https://<host>/asl-web-ui/ <user> <password-file> [--insecure]
     tests/e2e/screenshot.py <url> out.png [--cookie name=value] [--insecure]
 
+How the ASL-patched Asterisk reads configuration files is pinned down by
+conformance tests that ask a private Asterisk directly (no root needed):
+
+    python3 -m pytest tests/conformance
+
 `builder/dockerbuild.sh` is the CI script used by the AllStarLink build
 runners; it builds **and publishes** packages and is not meant for local use.
 
@@ -69,9 +74,10 @@ runners; it builds **and publishes** packages and is not meant for local use.
 |---|---|
 | `backend/` | The Python (aiohttp) service and its tests |
 | `frontend/` | The React + PatternFly 6 browser application |
-| `conf/` | Default settings and the Apache configuration snippet |
+| `conf/` | Default settings, systemd units, PAM, Apache and nginx snippets |
 | `doc/` | Man pages (Markdown, converted with pandoc) |
-| `debian/` | Debian packaging, including the systemd units |
+| `debian/` | Debian packaging |
+| `tests/` | Conformance tests against a real Asterisk, end-to-end checks |
 | `builder/` | The build container |
 | `docs/` | Design documents, the mockup, and research notes |
 

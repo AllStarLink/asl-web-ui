@@ -1,5 +1,7 @@
 import { ReactNode, useContext, useState } from "react";
 import {
+  Alert,
+  Button,
   Dropdown,
   DropdownItem,
   DropdownList,
@@ -12,40 +14,47 @@ import {
   MastheadContent,
   MastheadToggle,
   PageContext,
+  PageSection,
   PageToggleButton,
   MastheadBrand,
   MastheadLogo,
 } from "@patternfly/react-core";
 import AsteriskIcon from "@patternfly/react-icons/dist/esm/icons/asterisk-icon";
 import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
+import FileCodeIcon from "@patternfly/react-icons/dist/esm/icons/file-code-icon";
 import TachometerAltIcon from "@patternfly/react-icons/dist/esm/icons/tachometer-alt-icon";
 import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
 
+import { Status } from "./api";
 import { Star } from "./Brand";
 import { go } from "./useRoute";
 
-type NavEntry = { route: string; label: string; icon: ReactNode };
+type NavEntry = { route: string; label: string; icon: ReactNode; expert?: boolean };
 
 const NAV: NavEntry[] = [
   { route: "overview", label: "Overview", icon: <TachometerAltIcon /> },
   { route: "asterisk", label: "Asterisk", icon: <AsteriskIcon /> },
 ];
 
+// Kept apart, at the bottom, so that newcomers reach for the guided pages first.
+const ADVANCED: NavEntry[] = [{ route: "config", label: "Manual Config Edit", icon: <FileCodeIcon />, expert: true }];
+
 type Props = {
   user: string;
   hostname: string;
   route: string;
+  status: Status | null;
   onLogout: () => void;
   children: ReactNode;
 };
 
 // Navigation links. On narrow screens the sidebar overlays the page, so it
 // closes again after a link is chosen.
-function NavLinks({ base }: { base: string }) {
+function NavLinks({ base, entries }: { base: string; entries: NavEntry[] }) {
   const { isMobile, isSidebarOpen, onSidebarToggle } = useContext(PageContext);
   return (
     <ul className="asl-nav">
-      {NAV.map((n) => (
+      {entries.map((n) => (
         <li key={n.route}>
           <button
             type="button"
@@ -58,6 +67,7 @@ function NavLinks({ base }: { base: string }) {
           >
             {n.icon}
             <span>{n.label}</span>
+            {n.expert && <span className="asl-nav-badge">Expert</span>}
           </button>
         </li>
       ))}
@@ -68,7 +78,37 @@ function NavLinks({ base }: { base: string }) {
 // Cockpit-style frame: dark top bar with the host, dark navigation column.
 // PatternFly manages the sidebar: open on wide screens, closed on phones
 // until the menu button is pressed.
-export function Shell({ user, hostname, route, onLogout, children }: Props) {
+// Configuration files changed after Asterisk started, so they are not all in
+// effect yet. Informational: the restart action arrives with node management.
+function RestartPending({ status }: { status: Status | null }) {
+  const changed = status?.config?.changed ?? [];
+  if (!status?.asterisk.reachable || changed.length === 0) return null;
+  const errors = status.config.rpt_errors;
+  return (
+    <PageSection className="asl-banner">
+      <Alert
+        variant={errors ? "danger" : "info"}
+        isInline
+        title={errors ? "Configuration changed, and rpt.conf has errors" : "Configuration changed since Asterisk started"}
+        actionLinks={
+          errors ? (
+            <Button variant="link" isInline onClick={() => go("config/rpt.conf")}>
+              Open rpt.conf
+            </Button>
+          ) : undefined
+        }
+      >
+        Changed: {changed.slice(0, 6).join(", ")}
+        {changed.length > 6 ? ` and ${changed.length - 6} more` : ""}.{" "}
+        {errors
+          ? "Restarting or reloading Asterisk now would take every node off the air."
+          : "Some changes take effect only when Asterisk restarts."}
+      </Alert>
+    </PageSection>
+  );
+}
+
+export function Shell({ user, hostname, route, status, onLogout, children }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const base = route.split("/")[0];
 
@@ -117,7 +157,9 @@ export function Shell({ user, hostname, route, onLogout, children }: Props) {
     <PageSidebar className="asl-sidebar">
       <PageSidebarBody>
         <nav aria-label="Main">
-          <NavLinks base={base} />
+          <NavLinks base={base} entries={NAV} />
+          <div className="asl-nav-section">Advanced</div>
+          <NavLinks base={base} entries={ADVANCED} />
         </nav>
       </PageSidebarBody>
     </PageSidebar>
@@ -125,6 +167,7 @@ export function Shell({ user, hostname, route, onLogout, children }: Props) {
 
   return (
     <Page masthead={masthead} sidebar={sidebar} isManagedSidebar>
+      <RestartPending status={status} />
       {children}
     </Page>
   );

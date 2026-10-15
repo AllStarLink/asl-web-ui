@@ -3,6 +3,8 @@ import { Bullseye, Spinner } from "@patternfly/react-core";
 
 import { ApiError, get, post, Session, setCsrfToken, SystemInfo } from "./api";
 import { AsteriskPage } from "./AsteriskPage";
+import { ConfigEditor } from "./ConfigEditor";
+import { ConfigFiles } from "./ConfigFiles";
 import { Login } from "./Login";
 import { Overview } from "./Overview";
 import { Shell } from "./Shell";
@@ -21,9 +23,14 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   }, []);
 
   const [base, sub] = route.split("/");
+  let page;
+  if (base === "asterisk") page = <AsteriskPage status={status} tab={sub ?? "status"} />;
+  else if (base === "config" && sub) page = <ConfigEditor key={sub} name={decodeURIComponent(sub)} />;
+  else if (base === "config") page = <ConfigFiles />;
+  else page = <Overview status={status} system={system} />;
   return (
-    <Shell user={session.user ?? ""} hostname={system?.hostname ?? ""} route={route} onLogout={onLogout}>
-      {base === "asterisk" ? <AsteriskPage status={status} tab={sub ?? "status"} /> : <Overview status={status} system={system} />}
+    <Shell user={session.user ?? ""} hostname={system?.hostname ?? ""} route={route} status={status} onLogout={onLogout}>
+      {page}
     </Shell>
   );
 }

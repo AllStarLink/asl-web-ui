@@ -3,7 +3,7 @@
 
     tests/e2e/screenshot.py URL OUT.png [--cookie NAME=VALUE] [--wait 3]
                             [--size 1280x820] [--dark] [--insecure]
-                            [--click CSS-SELECTOR ...] [--eval JS]
+                            [--before JS ...] [--click CSS-SELECTOR ...] [--eval JS]
 
 Starts Firefox with a throwaway profile, optionally sets a cookie (e.g. a
 session from a scripted login), opens URL, waits for data to load, and
@@ -63,7 +63,8 @@ class BiDi:
 
 
 async def capture(url: str, out: str, cookie: str | None, wait: float, size: str, dark: bool, insecure: bool,
-                  clicks: list[str] | None = None, js: str | None = None) -> None:
+                  clicks: list[str] | None = None, js: str | None = None,
+                  before: list[str] | None = None) -> None:
     width, height = (int(x) for x in size.split("x"))
     port = free_port()
     profile = tempfile.mkdtemp(prefix="asl-ff-")
@@ -101,6 +102,10 @@ async def capture(url: str, out: str, cookie: str | None, wait: float, size: str
                 }})
             await bidi.call("browsingContext.navigate", {"context": ctx, "url": url, "wait": "complete"})
             await bidi.drain(wait)
+            for script in before or []:
+                res = await bidi.call("script.evaluate", {"target": {"context": ctx}, "awaitPromise": False, "expression": script})
+                print("before:", res.get("result", {}).get("value"))
+                await bidi.drain(1.5)
             for selector in clicks or []:
                 res = await bidi.call("script.evaluate", {"target": {"context": ctx}, "awaitPromise": False,
                     "expression": f"(() => {{ const el = document.querySelector({selector!r}); if (!el) return 'missing'; el.click(); return 'clicked'; }})()"})
@@ -136,6 +141,7 @@ if __name__ == "__main__":
     p.add_argument("--insecure", action="store_true")
     p.add_argument("--click", action="append")
     p.add_argument("--eval")
+    p.add_argument("--before", action="append", help="JS to run before the clicks (repeatable)")
     a = p.parse_args()
-    asyncio.run(capture(a.url, a.out, a.cookie, a.wait, a.size, a.dark, a.insecure, a.click, a.eval))
+    asyncio.run(capture(a.url, a.out, a.cookie, a.wait, a.size, a.dark, a.insecure, a.click, a.eval, a.before))
     print(f"wrote {a.out}")

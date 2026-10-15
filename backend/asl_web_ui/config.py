@@ -23,6 +23,10 @@ class Settings:
     session_idle: int = 30 * 60
     # Password re-entry window for destructive actions.
     recent_auth: int = 10 * 60
+    # Asterisk configuration directory, and where snapshots and the audit
+    # log are kept (the service's StateDirectory).
+    config_dir: str = "/etc/asterisk"
+    state_dir: str = "/var/lib/asl-web-ui"
     # Set only by --dev; never read from the settings file.
     dev: bool = False
 

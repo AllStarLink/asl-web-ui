@@ -94,6 +94,22 @@ async def main(base: str, user: str, password: str, verify: bool) -> int:
             except asyncio.TimeoutError:
                 pass
         check("console runs Asterisk CLI commands", b"app_rpt version" in seen, seen[-300:].decode(errors="replace"))
+        check("status reports configuration state", "rpt_errors" in status.get("config", {}), json.dumps(status.get("config")))
+
+        # Manual Config Edit, read-only: nothing here writes to /etc/asterisk.
+        async with http.get(api + "config/files") as r:
+            files = (await r.json()).get("files", [])
+        check("config file list", r.status == 200 and any(f["name"] == "rpt.conf" and f["exists"] for f in files),
+              json.dumps(files)[:300])
+        async with http.get(api + "config/files/rpt.conf") as r:
+            rpt = await r.json()
+        check("reads rpt.conf", r.status == 200 and "[nodes]" in rpt.get("content", ""), str(r.status))
+        async with http.post(api + "config/files/rpt.conf/check", json={"content": "x = 1\n[a]\n"}, headers=headers) as r:
+            found = await r.json()
+        check("checks a draft without saving it", r.status == 200 and found.get("counts", {}).get("error") == 1,
+              json.dumps(found)[:300])
+        async with http.get(api + "config/files/..%2Fpasswd") as r:
+            check("refuses files outside the list", r.status == 404, str(r.status))
 
         async with http.post(api + "auth/logout", json={}, headers={"Origin": origin, "X-CSRF-Token": "wrong"}) as r:
             check("missing/wrong CSRF token is refused", r.status == 403, str(r.status))

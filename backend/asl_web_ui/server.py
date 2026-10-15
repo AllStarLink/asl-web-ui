@@ -108,6 +108,10 @@ def main() -> None:
     if args.dev:
         refuse_dev_if_installed()
         settings = dataclasses.replace(settings, dev=True, url_prefix="")
+        if args.asterisk_conf:
+            # Use the test instance's configuration, and keep snapshots next to it.
+            etc = os.path.dirname(os.path.abspath(args.asterisk_conf))
+            settings = dataclasses.replace(settings, config_dir=etc, state_dir=os.path.join(os.path.dirname(etc), "web-ui-state"))
         log.warning("DEVELOPMENT MODE: fake login (dev/dev) on http://127.0.0.1:%d/", args.port)
         asyncio.run(serve(dev_app(settings, args.asterisk_conf), None, None, args.port))
         return

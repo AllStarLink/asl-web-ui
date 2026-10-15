@@ -85,3 +85,70 @@ html, body, #root { height: 100%; }
 .asl-brand b { font-family: var(--pf-t--global--font--family--heading); font-size: 1.2rem; display: block; }
 .asl-brand span { color: var(--pf-t--global--text--color--subtle); font-size: .875rem; }
 .asl-login-foot { color: #b8c2c9; font-size: .8rem; text-align: center; margin-top: 1rem; max-width: 28rem; }
+
+/* ---- navigation: advanced section ---- */
+.asl-nav-section {
+  margin: .75rem 1.25rem 0; padding-block-start: .75rem; border-block-start: 1px solid var(--asl-shell-hover);
+  color: var(--asl-shell-muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em;
+}
+.asl-nav-badge {
+  margin-inline-start: auto; font-size: .68rem; padding: 0 .4rem; border-radius: 999px;
+  border: 1px solid #c58c00; color: #f4c145;
+}
+
+/* ---- restart pending banner ---- */
+.asl-banner { padding-block-end: 0; }
+
+/* ---- shared bits ---- */
+.asl-stack { display: grid; gap: 1rem; }
+.asl-stack > * { min-width: 0; }
+.asl-labels { display: inline-flex; flex-wrap: wrap; gap: .35rem; }
+.asl-gap { margin-block-start: 1rem; }
+.asl-spacer { flex: 1; }
+.asl-err { color: var(--pf-t--global--icon--color--status--danger--default); }
+.asl-info { color: var(--pf-t--global--icon--color--status--info--default); }
+
+/* ---- config editor ---- */
+:root {
+  --asl-hl-comment: #6a7a85;
+  --asl-hl-section: #0066cc;
+  --asl-hl-directive: #8a4baf;
+  --asl-hl-key: #1e6b52;
+  --asl-hl-value: #151515;
+}
+.pf-v6-theme-dark {
+  --asl-hl-comment: #8b9aa5;
+  --asl-hl-section: #92c5f9;
+  --asl-hl-directive: #d0a6f0;
+  --asl-hl-key: #87d4b2;
+  --asl-hl-value: #e0e0e0;
+}
+.asl-editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.asl-codemirror {
+  border: 1px solid var(--pf-t--global--border--color--default); border-radius: var(--pf-t--global--border--radius--small);
+  overflow: hidden;
+}
+.asl-codemirror .cm-editor { background: var(--pf-t--global--background--color--primary--default); color: var(--pf-t--global--text--color--regular); }
+.asl-codemirror .cm-gutters {
+  background: var(--pf-t--global--background--color--secondary--default); color: var(--pf-t--global--text--color--subtle);
+  border-inline-end: 1px solid var(--pf-t--global--border--color--default);
+}
+.asl-codemirror .cm-activeLine, .asl-codemirror .cm-activeLineGutter { background: rgb(127 127 127 / .08); }
+.asl-codemirror .cm-cursor { border-inline-start-color: var(--pf-t--global--text--color--regular); }
+.asl-codemirror .cm-tooltip { white-space: pre-line; max-width: 36rem; }
+.asl-problems ul { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .4rem; }
+.asl-problems li { display: grid; grid-template-columns: auto 5.5rem 1fr; gap: .5rem; align-items: baseline; }
+.asl-problem-text { display: grid; }
+
+/* ---- diff ---- */
+.asl-diff {
+  margin: 0; padding: .5rem 0; max-height: 55vh; overflow: auto; font-size: .82rem;
+  font-family: "Red Hat Mono", "DejaVu Sans Mono", monospace;
+  background: var(--pf-t--global--background--color--secondary--default);
+  border-radius: var(--pf-t--global--border--radius--small);
+}
+.asl-diff span { display: block; padding-inline: .75rem; white-space: pre; }
+.asl-diff .file { color: var(--pf-t--global--text--color--subtle); font-weight: 600; }
+.asl-diff .hunk { color: var(--asl-hl-directive); }
+.asl-diff .add { background: rgb(62 134 53 / .18); }
+.asl-diff .del { background: rgb(201 25 11 / .16); }
