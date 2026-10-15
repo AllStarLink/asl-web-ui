@@ -111,6 +111,20 @@ async def main(base: str, user: str, password: str, verify: bool) -> int:
         async with http.get(api + "config/files/..%2Fpasswd") as r:
             check("refuses files outside the list", r.status == 404, str(r.status))
 
+        # Nodes, read-only: a plan is computed but never applied.
+        async with http.get(api + "nodes") as r:
+            nodes = await r.json()
+        check("node list", r.status == 200 and len(nodes.get("nodes", [])) > 0, str(nodes)[:300])
+        first = nodes["nodes"][0]["number"] if nodes.get("nodes") else "1999"
+        async with http.post(api + "nodes/plan", json={"op": "callsign", "node": first, "callsign": "N0CALL",
+                                                      "replace_custom": True}, headers=headers) as r:
+            plan = await r.json()
+        check("plans a node change without applying it", r.status == 200 and
+              ("unchanged" in plan or any("idrecording" in f["diff"] for f in plan.get("files", []))), str(plan)[:300])
+        async with http.post(api + "nodes/plan", json={"op": "add", "number": "12345"}, headers=headers) as r:
+            bad = await r.json()
+        check("node number validation", r.status == 400 and bad.get("field") == "number", str(bad)[:200])
+
         async with http.post(api + "auth/logout", json={}, headers={"Origin": origin, "X-CSRF-Token": "wrong"}) as r:
             check("missing/wrong CSRF token is refused", r.status == 403, str(r.status))
 

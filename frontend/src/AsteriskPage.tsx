@@ -1,5 +1,7 @@
 import {
+  Button,
   Card,
+  CardFooter,
   CardBody,
   CardTitle,
   Content,
@@ -18,6 +20,8 @@ import {
 import { Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
 
 import { Registration, Status } from "./api";
+import { useAsteriskControl } from "./AsteriskControl";
+import { AsteriskSettings } from "./AsteriskSettings";
 import { Console } from "./Console";
 import { duration } from "./format";
 import { AsteriskState } from "./Overview";
@@ -61,8 +65,26 @@ function Registrations({ title, regs }: { title: string; regs: Registration[] })
   );
 }
 
+function ServiceButtons({ status }: { status: Status | null }) {
+  const [element, control] = useAsteriskControl();
+  const running = status?.asterisk.state === "active";
+  return (
+    <div className="asl-buttons">
+      {element}
+      {running ? (
+        <>
+          <Button variant="secondary" onClick={() => control("restart")}>Restart</Button>
+          <Button variant="secondary" isDanger onClick={() => control("stop")}>Stop</Button>
+        </>
+      ) : (
+        <Button variant="primary" isDisabled={!status} onClick={() => control("start")}>Start</Button>
+      )}
+    </div>
+  );
+}
+
 export function AsteriskPage({ status, tab }: { status: Status | null; tab: string }) {
-  const active = tab === "console" ? "console" : "status";
+  const active = tab === "console" || tab === "settings" ? tab : "status";
   return (
     <>
       <PageSection className="asl-page-head">
@@ -70,11 +92,14 @@ export function AsteriskPage({ status, tab }: { status: Status | null; tab: stri
         <Content component="p">The Asterisk service that runs app_rpt and your nodes.</Content>
         <Tabs activeKey={active} onSelect={(_e, key) => go(`asterisk/${key}`)} className="asl-head-tabs">
           <Tab eventKey="status" title={<TabTitleText>Status</TabTitleText>} />
+          <Tab eventKey="settings" title={<TabTitleText>Settings</TabTitleText>} />
           <Tab eventKey="console" title={<TabTitleText>Console</TabTitleText>} />
         </Tabs>
       </PageSection>
       <PageSection>
-        {active === "console" ? (
+        {active === "settings" ? (
+          <AsteriskSettings />
+        ) : active === "console" ? (
           <Card>
             <CardTitle>Asterisk console</CardTitle>
             <CardBody>
@@ -113,6 +138,9 @@ export function AsteriskPage({ status, tab }: { status: Status | null; tab: stri
                   </DescriptionListGroup>
                 </DescriptionList>
               </CardBody>
+              <CardFooter>
+                <ServiceButtons status={status} />
+              </CardFooter>
             </Card>
             <Card>
               <CardTitle>Registrations</CardTitle>

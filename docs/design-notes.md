@@ -9,7 +9,7 @@ decisions come before any code. Last updated 2026-10-14 (session 2).
 
 ## Where we left off
 
-**M0 (skeleton) and M1 (login and shell) are complete** on `main`. Next is M2 (config engine).
+**M0 (skeleton), M1 (login and shell), M2 (Manual Config Edit) and M3 (nodes) are complete** on `main`. Next is M4 (privileged helper, backups, fix permissions, Allmon3 updates).
 
 Every design topic is decided (sections 9, 12, 13 and 14 on 2026-10-14). The
 consolidated design document, [DESIGN.md](DESIGN.md), is awaiting the user's
@@ -647,6 +647,74 @@ flake8, black, mypy, pylint. ruff is not packaged in trixie.
 - `tests/e2e/screenshot.py --before JS` (repeatable) runs scripts before the
   clicks; the CodeMirror view is reachable as
   `document.querySelector(".cm-content").cmTile.root.view`.
+
+## 18. Implementation decisions during M3 (2026-10-15)
+
+- **Edit layer** (`configengine/edit.py`):
+  - A `Workspace` holds working copies of the files; the Asterisk model
+    reads them, so each step of a multi-step change sees the previous ones.
+    `changes()` gives the plan.
+  - `Section.set` changes the line Asterisk uses (D1), in whichever file it
+    lives; a value that only comes from a template gets an override line in
+    the section (after its last variable, copying the neighbours' spacing).
+    Templates are never edited. A later `+=` is handled by adding a plain
+    line after it. `;` in values is escaped.
+  - `remove_section` keeps trailing comments (they usually introduce the
+    next section) unless they mention the node (D5).
+  - `set_module` switches `load`/`noload` in place, keeping columns, and
+    adds a `load` line when needed (stock modules.conf has `autoload = no`).
+- **Node planner** (`nodes/planner.py`, `nodes/customize.py`): one method per
+  node-setup operation, reading effective values (`nodes/info.py`) instead of
+  grep. `savenode.conf` (shell syntax) has its own tiny model.
+- **Parity tests** (`tests/parity`, 54 tests): node-setup's own functions run
+  on a copy of the stock files (asl3-asterisk-config and asl3-menu, fetched
+  with `apt-get download` in the installed versions and cached in
+  `~/.cache/asl-web-ui-tests`; not vendored, they are GPL-2). Dialog answers
+  come from a queue kept in a file, because whiptail runs in `$(...)`
+  subshells. The comparison is what Asterisk would load: the last value per
+  key, every value for repeatable keys, plus the channel drivers' load state.
+- **Intended differences from node-setup**, asserted by the tests:
+  - **D7.** node-setup's noload pattern (`load =>`) does not match the stock
+    modules.conf (`load    =`), so it never unloads a driver. Here unused
+    channel drivers are set to noload.
+  - **D8.** Going from duplex 1 to 0, node-setup adds `hangtime = 100` and
+    then deletes it again (its second block removes the 400 case's line).
+    Here the node ends with hangtime 100, as intended.
+  - **D9.** Renaming a node also renames its `[events-N]` (etc.) stanzas and
+    the node's references to them; node-setup leaves them under the old number.
+  - **D10.** Adding a node uses the new node's own (template) values for the
+    duplex/hangtime rules; node-setup uses whatever node was viewed last.
+  - The rest matches, including first run (rename 1999, the stock
+    registration placeholders becoming the new node's), device presets and
+    customizations.
+- **API** (`modules/nodes.py`): `POST /api/v1/nodes/plan {op, ...}` returns
+  every file's diff, notes, new lint errors and manual Allmon3 steps; applying
+  goes through the shared `modules/changes.py`, whose plans can carry
+  follow-up steps (AstDB list moves on rename) and require a recent password
+  (node removal). Unwritable files are reported with a `sudo chown` hint.
+- **Access lists** go straight to AstDB with `database put/del/deltree` (no
+  plan, no restart), logged in the audit log.
+- **Asterisk control** (`modules/control.py`): restart/start/stop and
+  reboot/poweroff via `systemctl --no-ask-password`, allowed by
+  `/usr/share/polkit-1/rules.d/50-asl-web-ui.rules` for the asterisk user only
+  (asterisk, allmon3, asl3-update-nodelist units; login1 reboot/power-off).
+  Verified: the rule allows restarting asterisk.service and refuses other
+  units. Start/restart refuse while rpt.conf has errors unless confirmed;
+  stop, reboot and power-off need a recent password. In `--dev`, restart and
+  stop use the private instance's CLI; reboot is refused.
+- **Allmon3** (`allmon3.ini` is allmon3:allmon3 0660) cannot be changed by
+  the service; until the privileged helper (M4) the review lists the manual
+  step (node rename, AMI secret).
+- **Frontend:** Nodes page with first-run card and Add node wizard (number,
+  password, configuration preset, interface, call sign, customizations,
+  review); node page with General, Radio interface, Tuning (SSH command until
+  M6), Access control and Customizations tabs; Asterisk › Settings (AMI
+  secret, IAX port); Restart on the banner and the Asterisk page; Restart
+  system / Shut down on the Overview. Every change goes through one review
+  dialog (diffs per file, notes, errors), then offers to restart Asterisk.
+- **Fixed during testing:** first run must ensure the channel driver and
+  section even when the interface does not change (node-setup forces it);
+  covered by a parity test.
 
 ## Mockup
 

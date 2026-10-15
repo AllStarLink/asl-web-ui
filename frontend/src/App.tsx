@@ -6,6 +6,8 @@ import { AsteriskPage } from "./AsteriskPage";
 import { ConfigEditor } from "./ConfigEditor";
 import { ConfigFiles } from "./ConfigFiles";
 import { Login } from "./Login";
+import { NodePage } from "./NodePage";
+import { Nodes } from "./Nodes";
 import { Overview } from "./Overview";
 import { Shell } from "./Shell";
 import { useRoute } from "./useRoute";
@@ -22,9 +24,11 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
     get<SystemInfo>("system").then(setSystem, () => setSystem(null));
   }, []);
 
-  const [base, sub] = route.split("/");
+  const [base, sub, third] = route.split("/");
   let page;
-  if (base === "asterisk") page = <AsteriskPage status={status} tab={sub ?? "status"} />;
+  if (base === "nodes" && sub) page = <NodePage key={sub} number={sub} tab={third ?? "general"} status={status} />;
+  else if (base === "nodes") page = <Nodes status={status} />;
+  else if (base === "asterisk") page = <AsteriskPage status={status} tab={sub ?? "status"} />;
   else if (base === "config" && sub) page = <ConfigEditor key={sub} name={decodeURIComponent(sub)} />;
   else if (base === "config") page = <ConfigFiles />;
   else page = <Overview status={status} system={system} />;

@@ -113,6 +113,11 @@ class StatusHub:
         ]
         return data
 
+    def invalidate(self) -> None:
+        """Collect afresh on the next request (after Asterisk was restarted)."""
+        self._latest_at = 0.0
+        self._versions = {}
+
     async def snapshot(self) -> dict:
         async with self._lock:
             if self.latest is None or time.monotonic() - self._latest_at > self.interval:

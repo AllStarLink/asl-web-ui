@@ -66,6 +66,7 @@ class Plan:
     action: str
     changes: list[FileChange]
     errors: int = 0  # lint errors in the new content; applying needs confirmation
+    meta: dict = field(default_factory=dict)  # what the caller does after applying (not written to disk)
     created: float = field(default_factory=time.monotonic)
 
     @property
@@ -192,8 +193,13 @@ class Store:
                     self._write(change.path, original)
 
     def _audit(self, plan: Plan, result: str, snapshot: str | None, detail: list[str]) -> None:
-        entry = {"time": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "user": plan.user, "action": plan.action,
-                 "files": [c.path for c in plan.changes], "snapshot": snapshot, "result": result, "detail": detail}
+        self.record(plan.user, plan.action, result, detail, files=[c.path for c in plan.changes], snapshot=snapshot)
+
+    def record(self, user: str, action: str, result: str, detail: list[str], files: list[str] | None = None,
+               snapshot: str | None = None) -> None:
+        """Append an entry to the audit log (also for changes that are not file edits)."""
+        entry = {"time": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "user": user, "action": action,
+                 "files": files or [], "snapshot": snapshot, "result": result, "detail": detail}
         self.state.mkdir(parents=True, exist_ok=True)
         with open(self.state / "audit.jsonl", "a") as f:
             f.write(json.dumps(entry) + "\n")

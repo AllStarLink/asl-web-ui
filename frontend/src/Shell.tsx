@@ -22,10 +22,12 @@ import {
 import AsteriskIcon from "@patternfly/react-icons/dist/esm/icons/asterisk-icon";
 import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
 import FileCodeIcon from "@patternfly/react-icons/dist/esm/icons/file-code-icon";
+import NetworkIcon from "@patternfly/react-icons/dist/esm/icons/network-icon";
 import TachometerAltIcon from "@patternfly/react-icons/dist/esm/icons/tachometer-alt-icon";
 import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
 
 import { Status } from "./api";
+import { useAsteriskControl } from "./AsteriskControl";
 import { Star } from "./Brand";
 import { go } from "./useRoute";
 
@@ -33,6 +35,7 @@ type NavEntry = { route: string; label: string; icon: ReactNode; expert?: boolea
 
 const NAV: NavEntry[] = [
   { route: "overview", label: "Overview", icon: <TachometerAltIcon /> },
+  { route: "nodes", label: "Nodes", icon: <NetworkIcon /> },
   { route: "asterisk", label: "Asterisk", icon: <AsteriskIcon /> },
 ];
 
@@ -79,23 +82,30 @@ function NavLinks({ base, entries }: { base: string; entries: NavEntry[] }) {
 // PatternFly manages the sidebar: open on wide screens, closed on phones
 // until the menu button is pressed.
 // Configuration files changed after Asterisk started, so they are not all in
-// effect yet. Informational: the restart action arrives with node management.
+// effect yet.
 function RestartPending({ status }: { status: Status | null }) {
+  const [controlElement, control] = useAsteriskControl();
   const changed = status?.config?.changed ?? [];
   if (!status?.asterisk.reachable || changed.length === 0) return null;
   const errors = status.config.rpt_errors;
   return (
     <PageSection className="asl-banner">
+      {controlElement}
       <Alert
         variant={errors ? "danger" : "info"}
         isInline
         title={errors ? "Configuration changed, and rpt.conf has errors" : "Configuration changed since Asterisk started"}
         actionLinks={
-          errors ? (
-            <Button variant="link" isInline onClick={() => go("config/rpt.conf")}>
-              Open rpt.conf
+          <>
+            {errors > 0 && (
+              <Button variant="link" isInline onClick={() => go("config/rpt.conf")}>
+                Open rpt.conf
+              </Button>
+            )}
+            <Button variant="link" isInline onClick={() => void control("restart")}>
+              Restart Asterisk
             </Button>
-          ) : undefined
+          </>
         }
       >
         Changed: {changed.slice(0, 6).join(", ")}

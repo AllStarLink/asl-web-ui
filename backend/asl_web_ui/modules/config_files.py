@@ -4,7 +4,7 @@
     GET  /api/v1/config/files/{name}          content, hash and findings
     POST /api/v1/config/files/{name}/check    {"content"}  -> findings (no write)
     POST /api/v1/config/files/{name}/plan     {"content", "base_hash"} -> plan
-    POST /api/v1/changes/{plan_id}/apply      {"confirm_errors"} -> applied
+    POST /api/v1/changes/{plan_id}/apply      (modules/changes.py)
 
 Only the files listed in FILES can be named. A file that is not valid UTF-8
 is shown but cannot be edited in the browser (the editor would change its
@@ -21,9 +21,10 @@ from aiohttp_session import get_session
 
 from ..configengine.lint import Finding, counts, lint
 from ..configengine.model import load
-from ..configengine.store import ApplyError, Conflict, FileChange, Store, digest
+from ..configengine.store import FileChange, Store, digest
 from ..configengine.text import ConfigText
 from ..security import SETTINGS_KEY, USER_KEY
+from .changes import STORE_KEY
 
 log = logging.getLogger("asl-web-ui.config")
 
@@ -44,7 +45,6 @@ NAMES = {name for name, _ in FILES}
 # Not read by Asterisk (shell syntax, used by the backup tools): no Asterisk lint.
 NOT_ASTERISK = {"savenode.conf"}
 
-STORE_KEY = web.AppKey("config_store", Store)
 routes = web.RouteTableDef()
 
 
@@ -194,31 +194,5 @@ async def plan_file(request: web.Request) -> web.Response:
     })
 
 
-@routes.post("/api/v1/changes/{plan_id}/apply")
-async def apply_plan(request: web.Request) -> web.Response:
-    body = await _json(request)
-    session = await get_session(request)
-    store = request.app[STORE_KEY]
-    plan = store.peek(request.match_info["plan_id"], session.identity or "")
-    if plan is not None and plan.errors and body.get("confirm_errors") is not True:
-        return web.json_response({"error": "has_errors", "message":
-            "The new content has errors that make Asterisk reject the file. Confirm to save anyway."}, status=409)
-    plan = store.take(request.match_info["plan_id"], session.identity or "")
-    if plan is None:
-        return web.json_response({"error": "plan_expired", "message": "These changes expired. Review them again."}, status=410)
-    try:
-        snapshot = store.apply(plan)
-    except Conflict:
-        return web.json_response({"error": "conflict", "message":
-            "The file changed on disk after you opened it. Reload it to see the current version, then make your change again."}, status=409)
-    except ApplyError as exc:
-        log.error("apply failed: %s", exc)
-        return web.json_response({"error": "apply_failed", "message": f"The change could not be saved: {exc}"}, status=500)
-    log.info("%s: %s (snapshot %s)", plan.user, plan.action, snapshot)
-    return web.json_response({"applied": True, "snapshot": snapshot})
-
-
 def setup(app: web.Application) -> None:
-    if STORE_KEY not in app:
-        app[STORE_KEY] = Store(app[SETTINGS_KEY].state_dir)
     app.add_routes(routes)

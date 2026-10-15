@@ -6,6 +6,7 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    public data: Record<string, unknown> = {},
   ) {
     super(message);
   }
@@ -35,13 +36,24 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   if (!resp.ok && resp.status !== 429) {
     const err = (data ?? {}) as { error?: string; message?: string };
-    throw new ApiError(resp.status, err.error ?? "http_error", err.message ?? `The server answered with HTTP ${resp.status}.`);
+    throw new ApiError(
+      resp.status,
+      err.error ?? "http_error",
+      err.message ?? `The server answered with HTTP ${resp.status}.`,
+      (data ?? {}) as Record<string, unknown>,
+    );
   }
   return data as T;
 }
 
 export const get = <T>(path: string) => request<T>("GET", path);
 export const post = <T>(path: string, body: unknown = {}) => request<T>("POST", path, body);
+export const del = <T>(path: string) => request<T>("DELETE", path);
+
+// The message to show for a failed call.
+export function message(err: unknown): string {
+  return err instanceof ApiError ? err.message : "The server could not be reached.";
+}
 
 // WebSocket URL for an API path, relative to the page.
 export function wsUrl(path: string): string {

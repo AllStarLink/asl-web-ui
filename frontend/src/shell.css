@@ -152,3 +152,14 @@ html, body, #root { height: 100%; }
 .asl-diff .hunk { color: var(--asl-hl-directive); }
 .asl-diff .add { background: rgb(62 134 53 / .18); }
 .asl-diff .del { background: rgb(201 25 11 / .16); }
+
+/* ---- nodes ---- */
+.asl-title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+.asl-title-sub { color: var(--pf-t--global--text--color--subtle); font-weight: normal; }
+.asl-buttons { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.asl-settings { --pf-v6-c-description-list--m-horizontal__term--width: 11rem; }
+.asl-setting { display: flex; flex-wrap: wrap; gap: .75rem; align-items: baseline; }
+.asl-inline-form { max-width: 34rem; }
+.asl-form-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 1rem; }
+@media (max-width: 40rem) { .asl-form-row { grid-template-columns: minmax(0, 1fr); } }
+.asl-wizard-modal .pf-v6-c-wizard { height: min(560px, 85vh); }

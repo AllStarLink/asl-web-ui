@@ -5,7 +5,8 @@ text menus of [asl3-menu](https://github.com/AllStarLink/asl3-menu) with a
 browser UI in the style of Cockpit, built with PatternFly.
 
 **Status:** early development. Milestones M0 (package skeleton), M1 (login,
-shell, status and console) and M2 (Manual Config Edit) are done;
+shell, status and console), M2 (Manual Config Edit) and M3 (nodes, Asterisk
+settings and restart) are done;
 see [docs/DESIGN.md](docs/DESIGN.md) for the design and the milestone plan.
 
 ## Installing
@@ -64,6 +65,12 @@ How the ASL-patched Asterisk reads configuration files is pinned down by
 conformance tests that ask a private Asterisk directly (no root needed):
 
     python3 -m pytest tests/conformance
+
+Node changes must leave Asterisk with the same configuration as asl3-menu's
+node-setup; the parity tests run node-setup's own functions next to the
+planner (they download the stock packages once with `apt-get download`):
+
+    python3 -m pytest tests/parity
 
 `builder/dockerbuild.sh` is the CI script used by the AllStarLink build
 runners; it builds **and publishes** packages and is not meant for local use.

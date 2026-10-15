@@ -1,4 +1,6 @@
+import { useState } from "react";
 import {
+  Alert,
   Card,
   CardBody,
   CardFooter,
@@ -16,15 +18,67 @@ import {
   Spinner,
   Title,
   Button,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
 } from "@patternfly/react-core";
 import CheckCircleIcon from "@patternfly/react-icons/dist/esm/icons/check-circle-icon";
 import ExclamationTriangleIcon from "@patternfly/react-icons/dist/esm/icons/exclamation-triangle-icon";
 import LockIcon from "@patternfly/react-icons/dist/esm/icons/lock-icon";
 import TimesCircleIcon from "@patternfly/react-icons/dist/esm/icons/times-circle-icon";
 
-import { Status, SystemInfo } from "./api";
+import { message, Status, SystemInfo } from "./api";
 import { duration } from "./format";
+import { FirstRun, useNodeList, useNodeWizard } from "./Nodes";
+import { systemAction } from "./nodesApi";
+import { useReauth } from "./Reauth";
 import { go } from "./useRoute";
+
+// Reboot and Shut down, as in Cockpit's overview. Both confirm and ask for
+// the password again.
+function PowerButtons({ hostname }: { hostname: string }) {
+  const [reauthElement, withReauth] = useReauth();
+  const [ask, setAsk] = useState<"reboot" | "poweroff" | null>(null);
+  const [state, setState] = useState<{ error?: string; done?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const go_ = async () => {
+    if (!ask) return;
+    setBusy(true);
+    try {
+      const res = await withReauth(() => systemAction(ask));
+      if (res) setState({ done: ask === "reboot" ? "The system is restarting. This page reconnects when it is back."
+        : "The system is shutting down." });
+    } catch (err) {
+      setState({ error: message(err) });
+    } finally {
+      setBusy(false);
+      setAsk(null);
+    }
+  };
+  const word = ask === "reboot" ? "Restart" : "Shut down";
+  return (
+    <div className="asl-buttons">
+      {reauthElement}
+      <Button variant="secondary" onClick={() => setAsk("reboot")}>Restart system</Button>
+      <Button variant="secondary" isDanger onClick={() => setAsk("poweroff")}>Shut down</Button>
+      <Modal isOpen={ask !== null} onClose={() => setAsk(null)} variant="small" aria-labelledby="power-title">
+        <ModalHeader title={`${word} ${hostname}?`} labelId="power-title" titleIconVariant="warning" />
+        <ModalBody>
+          {ask === "reboot" ? "Your nodes go off the air until the system is back, usually within a few minutes."
+            : "Your nodes go off the air. Someone must turn the computer on again by hand."}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="danger" onClick={go_} isLoading={busy} isDisabled={busy}>{word}</Button>
+          <Button variant="link" onClick={() => setAsk(null)}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
+      {state && (
+        <Alert variant={state.error ? "danger" : "info"} isInline isPlain title={state.error ?? state.done ?? ""} />
+      )}
+    </div>
+  );
+}
 
 export function AsteriskState({ status }: { status: Status | null }) {
   if (!status) return <Spinner size="sm" aria-label="Loading" />;
@@ -75,12 +129,24 @@ function Health({ status }: { status: Status | null }) {
 type Props = { status: Status | null; system: SystemInfo | null };
 
 export function Overview({ status, system }: Props) {
+  const [list, , reload] = useNodeList();
+  const wizard = useNodeWizard(list, reload);
   return (
     <>
       <PageSection className="asl-page-head">
         <Title headingLevel="h1">{system?.hostname ?? "Overview"}</Title>
         <Content component="p">AllStarLink node server overview.</Content>
       </PageSection>
+      {list?.first_run && (
+        <PageSection>
+          <Card>
+            <CardBody>
+              <FirstRun onStart={() => wizard.start("first_run")} />
+            </CardBody>
+          </Card>
+          {wizard.element}
+        </PageSection>
+      )}
       <PageSection>
         <Gallery hasGutter minWidths={{ default: "100%", lg: "28rem" }}>
           <Card>
@@ -105,6 +171,11 @@ export function Overview({ status, system }: Props) {
                 ))
               )}
             </CardBody>
+            <CardFooter>
+              <Button variant="link" isInline onClick={() => go("nodes")}>
+                Manage nodes
+              </Button>
+            </CardFooter>
           </Card>
           <Card>
             <CardTitle>Asterisk</CardTitle>
@@ -147,6 +218,9 @@ export function Overview({ status, system }: Props) {
                 ))}
               </DescriptionList>
             </CardBody>
+            <CardFooter>
+              <PowerButtons hostname={system?.hostname ?? "this system"} />
+            </CardFooter>
           </Card>
         </Gallery>
       </PageSection>
