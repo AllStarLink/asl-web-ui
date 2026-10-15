@@ -154,6 +154,14 @@ async def get_tuning(request: web.Request) -> web.Response:
         show = await request.app[CLI_KEY].run(f"{driver.prefix} active show")
     except AsteriskUnavailable as exc:
         return _unavailable(exc)
+    # USBRadio reads invertptt only from its file at startup (no command), so
+    # show the configured value; SimpleUSB's is an ordinary setting ("q").
+    ptt_config = None
+    if driver.setting("invertptt") is None:
+        from ..configengine.model import load
+        cat = load(driver.file, config_dir=request.app[SETTINGS_KEY].config_dir).get(number)
+        raw = cat.value("invertptt") if cat else None
+        ptt_config = {"invert": (raw or "no").strip().lower() in ("yes", "y", "true", "1", "on"), "file": driver.file}
     m = re.search(rf"Device \[{number}\] is assigned to device=(\S+)", show)
     assigned = m.group(1) if m and m.group(1) != "unassigned" else None
     return web.json_response({
@@ -170,6 +178,7 @@ async def get_tuning(request: web.Request) -> web.Response:
         "tui_running": tui_running(),
         "classic_menu": os.path.exists(driver.tune_menu),
         "meter_marks": tuning.METER_MARKS,
+        "ptt_config": ptt_config,
     })
 
 

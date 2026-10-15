@@ -897,8 +897,21 @@ new options), reached through SSH tunnels; nothing was installed and
   under a wrapper (sudo, on the test machines) that left `asterisk -rx`
   running and held up the server's shutdown. Displays now stop with SIGTERM
   first, then SIGKILL; verified on 40608.
-- Not tested: successful USBRadio calibrations (no radio on the USBRadio
-  node), CTCSS from a real receiver.
+- **Interface switch on a live radio (40608, SimpleUSB -> USBRadio with the
+  planner):** the switch itself was correct (rxchannel, modules, existing
+  [40608] section reused), but the node came up with USBRadio's PTT
+  polarity, which did not match the radio, and the transmitter stayed
+  keyed until the user fixed invertptt. The status display read "PTT clear"
+  throughout: it shows the driver's logical PTT, not the line.
+  - **D11:** switching between SimpleUSB and USBRadio now carries the old
+    driver's effective invertptt over into the new driver's node section
+    (node-setup does not); differing carrier/CTCSS detection is reported in
+    the review as a warning but not changed (DSP detection is a valid
+    USBRadio choice).
+  - USBRadio reads invertptt only from its file at startup (no CLI command),
+    so the Tuning page shows it from the configuration with how to change
+    it, and the status display says that PTT is the driver's view.
+- Not tested: successful USBRadio calibrations, CTCSS from a real receiver.
 
 ## Mockup
 

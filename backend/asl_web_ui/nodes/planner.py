@@ -396,8 +396,42 @@ class Planner:
             self._channel_section(number, interface)
         if info.interface in CHANNEL_FILES and info.interface != interface:
             self.effects.note(f"The node's {CHANNEL_FILES[info.interface]} settings are kept, in case you switch back.")
+            if interface in CHANNEL_FILES:
+                self._carry_over(number, info.interface, interface)
         self.effects.restart = True
         self.effects.tune = interface in ("SimpleUSB", "USBRadio")
+
+    def _driver_value(self, interface: str, number: str, key: str) -> str | None:
+        name = CHANNEL_FILES[interface]
+        if not self.ws.exists(name):
+            return None
+        cat = self.ws.model(name).get(number)
+        return cat.value(key) if cat else None
+
+    def _carry_over(self, number: str, old: str, new: str) -> None:
+        """What the old driver did with the radio's lines, compared with what
+        the new driver will do. A different PTT polarity keys the transmitter
+        as soon as Asterisk starts (and USBRadio offers no command to change
+        it), so it is carried over; detection differences are only reported,
+        because the new driver may rightly detect differently (USBRadio's DSP)."""
+        def truth(value: str | None) -> bool:
+            return (value or "no").strip().lower() in ("yes", "y", "true", "1", "on")
+
+        old_ptt = truth(self._driver_value(old, number, "invertptt"))
+        new_ptt = truth(self._driver_value(new, number, "invertptt"))
+        if old_ptt != new_ptt:
+            Section(self.ws, CHANNEL_FILES[new], number).set("invertptt", "yes" if old_ptt else "no")
+            self.effects.note(f"PTT polarity carried over from {CHANNEL_FILES[old]}: invertptt = "
+                              f"{'yes' if old_ptt else 'no'}. With the {new} default "
+                              f"({'yes' if new_ptt else 'no'}) the transmitter would key as soon as Asterisk "
+                              "restarts.", "warning")
+        for key, label in (("carrierfrom", "Carrier (COS) detection"), ("ctcssfrom", "CTCSS detection")):
+            before = (self._driver_value(old, number, key) or "no").strip().lower()
+            after = (self._driver_value(new, number, key) or "no").strip().lower()
+            if before != after:
+                self.effects.note(f"{label} changes from \"{before}\" ({old}) to \"{after}\" ({new}'s settings). "
+                                  "Check it on the Tuning tab after the restart; a full-duplex node repeats "
+                                  "whatever it detects as a signal.", "warning")
 
     # ---- rename --------------------------------------------------------------------
 

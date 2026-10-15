@@ -262,3 +262,18 @@ async def test_stop_and_reboot_need_recent_password(api):
         status_, body = await a.post(path, {})
         assert status_ == 403 and body["error"] == "reauth_required"
     assert not api.log.exists()
+
+
+async def test_interface_switch_carries_ptt_polarity(api):
+    (api.etc / "simpleusb.conf").write_text("[general]\n\n[node-main](!)\ninvertptt = yes\ncarrierfrom = usbinvert\n\n"
+                                            "[1999](node-main)\ndevstr =\n")
+    (api.etc / "usbradio.conf").write_text("[general]\n\n[node-main](!)\ninvertptt = no\ncarrierfrom = dsp\n\n")
+    a = await api.make()
+    plan, status_, res = await a.change({"op": "interface", "node": "1999", "interface": "USBRadio"})
+    assert status_ == 200
+    notes = " ".join(n["text"] for n in plan["notes"])
+    assert "PTT polarity carried over" in notes and "Carrier (COS) detection changes" in notes
+    from asl_web_ui.configengine.model import load
+    radio = load("usbradio.conf", config_dir=str(api.etc))
+    assert radio.value("1999", "invertptt") == "yes"
+    assert radio.value("1999", "carrierfrom") == "dsp"  # reported, not changed

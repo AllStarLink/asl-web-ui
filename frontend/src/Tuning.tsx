@@ -52,6 +52,7 @@ type TuneState = {
   tui_running: boolean;
   classic_menu: boolean;
   meter_marks: Record<string, number>;
+  ptt_config: { invert: boolean; file: string } | null;
 };
 type Meter = { keyed: boolean; level: number; columns: number };
 type RxTx = { cos: string; ctcss: string; rx_keyed: boolean; ptt: boolean };
@@ -245,6 +246,12 @@ export function TuningPanel({ node, status }: { node: string; status: Status | n
                   {statusProblem && <span className="asl-sub">{statusProblem}</span>}
                 </div>
               )}
+              {statusOn && (
+                <Content component="p" className="asl-sub">
+                  PTT shows what the driver asks for, not the transmitter itself: with the wrong PTT polarity the
+                  radio transmits while this reads clear.
+                </Content>
+              )}
               <div>
                 <Button variant="secondary" onClick={tone} isLoading={toning} isDisabled={noDevice || toning}>
                   {toning ? "Sending test tone…" : "Send test tone"}
@@ -275,6 +282,18 @@ export function TuningPanel({ node, status }: { node: string; status: Status | n
         <CardTitle>Settings</CardTitle>
         <CardBody>
           <DescriptionList isHorizontal className="asl-settings">
+            {state.ptt_config && (
+              <DescriptionListGroup>
+                <DescriptionListTerm>Invert PTT</DescriptionListTerm>
+                <DescriptionListDescription>
+                  {state.ptt_config.invert ? "Yes (keyed = line open)" : "No (keyed = line grounded)"}
+                  <div className="asl-sub">
+                    The {state.interface} driver reads this from {state.ptt_config.file} when Asterisk starts; it cannot
+                    be changed here. Edit invertptt in Manual Config Edit, then restart Asterisk.
+                  </div>
+                </DescriptionListDescription>
+              </DescriptionListGroup>
+            )}
             {others.map((s) => (
               <DescriptionListGroup key={s.name}>
                 <DescriptionListTerm>{s.label}</DescriptionListTerm>
