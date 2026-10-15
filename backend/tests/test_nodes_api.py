@@ -64,6 +64,8 @@ class RecordingCLI(FakeCLI):
 
     async def run(self, command):
         self.commands.append(command)
+        if command.startswith("module reload "):
+            return f"Module '{command.split()[-1]}' reloaded successfully."
         if command.startswith("database put "):
             family, key, value = command[len("database put "):].split(" ", 2)
             self.db[f"/{family}/{key}"] = value.strip('"')

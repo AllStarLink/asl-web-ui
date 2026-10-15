@@ -18,7 +18,7 @@ from ..configengine.edit import (
     replace_value, section_end, section_vars, set_module, set_raw, var_line,
 )
 from ..configengine.text import ConfigText
-from . import savenode
+from . import savenode, voter
 from .info import (
     ALL_CHANNEL_MODULES, CHANNEL_FILES, CHANNEL_MODULES, DEFAULT_IAX_PORT, INTERFACES, PRIVATE_LIMIT,
     REFERENCE_KEYS, REGISTRATION_HOST, STATPOST_URL, NodeInfo, iax_port, node_info, node_numbers, registrations,
@@ -77,6 +77,8 @@ class Effects:
     allmon3: list[dict] = field(default_factory=list)
     restart: bool = False
     tune: bool = False
+    # Asterisk CLI commands that apply the change without a restart (if no restart is needed).
+    reload: list[str] = field(default_factory=list)
 
     def note(self, text: str, severity: str = "info") -> None:
         if not any(n.text == text for n in self.notes):
@@ -750,6 +752,116 @@ class Planner:
                                      "text": "Set the new AMI secret as \"pass\" in /etc/allmon3/allmon3.ini, "
                                              "then restart Allmon3."})
         self.effects.restart = True
+
+    # ---- voter (RTCM) -----------------------------------------------------------
+
+    def set_voter(self, number: str, wanted: list[dict], settings: dict[str, str | None],
+                  general: dict[str, str | None], host_password: str | None) -> None:
+        """Make node NUMBER's voter instance match the wanted clients and settings.
+
+        wanted: {"original": name or None, "name", "password" (None keeps the
+        original's), "transmit", "master", "nodeemp", "noplfilter", "gpsid", "prio"}.
+        settings/general: None or "" removes the setting. host_password: None
+        keeps it, "" removes it.
+        """
+        info = self.info(number)
+        if info.interface != "Voter":
+            raise PlanError(f"Node {number} does not use the RTCM/voter interface.", "interface", "requirement")
+        text = self.ws.text(voter.FILE, create=True)
+        before = text.to_bytes()
+        if self.ws.model(voter.FILE).get(number) is None:
+            append_section(text, number, [])
+        cfg = self.ws.model(voter.FILE)
+        current = {c.name: c for c in voter.clients(cfg.get(number))}
+        pairs = []
+        for w in wanted:
+            if not isinstance(w, dict):
+                raise PlanError("Each client must be an object.", "clients")
+            orig = current.get(str(w.get("original") or ""))
+            password = w.get("password")
+            password = (orig.password if orig else "") if password in (None, "") else str(password).strip()
+            prio = w.get("prio")
+            if prio not in (None, ""):
+                try:
+                    prio = int(prio)
+                except (TypeError, ValueError):
+                    raise PlanError("A client's priority must be a whole number.", "clients")
+            gpsid = w.get("gpsid")
+            pairs.append((orig, voter.Client(
+                name=str(w.get("name", "")).strip(), password=password,
+                transmit=bool(w.get("transmit")), master=bool(w.get("master")), nodeemp=bool(w.get("nodeemp")),
+                noplfilter=bool(w.get("noplfilter")), gpsid=None if gpsid is None else str(gpsid).strip(),
+                prio=None if prio in (None, "") else prio, other=orig.other if orig else [])))
+        others = [(c.name, cl) for c in cfg.categories if c.name not in ("general", number) and not c.template
+                  for cl in voter.clients(c)]
+        try:
+            voter.check_clients([c for _, c in pairs], number, others)
+            checked = {k: (voter.check_setting(k, v) if v not in (None, "") else None) for k, v in settings.items()
+                       if k in voter.INSTANCE_KEYS}
+            checked_general = {k: (voter.check_setting(k, v) if v not in (None, "") else None)
+                               for k, v in general.items() if k in voter.GENERAL_KEYS}
+        except voter.VoterError as exc:
+            raise PlanError(exc.message, exc.field)
+        unknown = [k for k in [*settings, *general] if k not in voter.INSTANCE_KEYS + voter.GENERAL_KEYS]
+        if unknown:
+            raise PlanError(f"Unknown voter setting: {', '.join(unknown)}.", "settings")
+
+        sec = Section(self.ws, voter.FILE, number)
+        kept = {orig.name for orig, _ in pairs if orig}
+        for name in current:
+            if name not in kept:
+                sec.unset(name)
+        for orig, c in pairs:
+            if orig and orig.name != c.name:
+                sec.unset(orig.name)
+                sec.set(c.name, c.value())
+            elif orig is None or orig.value() != c.value():
+                sec.set(c.name, c.value())
+        _apply_values(sec, checked)
+        gen = Section(self.ws, voter.FILE, "general")
+        if gen.category() is None and (any(v is not None for v in checked_general.values()) or host_password):
+            insert(text, 0, [f"[general]{text.newline}", text.newline])
+        restart = _apply_values(gen, checked_general) & voter.RESTART_KEYS
+        if host_password is not None:
+            if host_password.strip() and not re.fullmatch(r"[^\s,;=\[\]]{1,49}", host_password.strip()):
+                raise PlanError("The host password must be 1 to 49 characters without spaces, commas or semicolons.",
+                                "host_password")
+            if (gen.value("password") or "") != host_password.strip():
+                if host_password.strip():
+                    gen.set("password", host_password.strip())
+                else:
+                    gen.unset("password")
+        if before == self.ws.text(voter.FILE).to_bytes():
+            return
+        if restart:
+            self.effects.restart = True
+            self.effects.note(f"{', '.join(sorted(restart))} {'is' if len(restart) == 1 else 'are'} read when Asterisk "
+                              "starts, so Asterisk must restart.")
+        elif _RELOAD_VOTER not in self.effects.reload:
+            self.effects.reload.append(_RELOAD_VOTER)
+            self.effects.note("chan_voter rereads voter.conf right after saving; Asterisk keeps running.")
+
+
+_RELOAD_VOTER = "module reload chan_voter.so"
+
+
+def _apply_values(sec: Section, values: dict[str, str | None]) -> set[str]:
+    """Set or remove values; returns the keys that changed."""
+    changed = set()
+    for key, value in values.items():
+        old = sec.value(key)
+        if value is None:
+            if old is not None:
+                sec.unset(key)
+                changed.add(key)
+            continue
+        same = (old is not None and key in voter.BOOLEANS and (old.strip().lower() in voter.TRUE) == (value == "y"))
+        if old is None and key in voter.BOOLEANS and value == "n":
+            continue  # off is the default
+        if old != value and not same:
+            sec.set(key, value)
+            changed.add(key)
+    return changed
 
 
 def run(ws: Workspace, fn, *args, **kwargs) -> Effects:

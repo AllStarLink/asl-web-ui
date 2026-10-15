@@ -67,7 +67,28 @@ export type NodeList = {
   private_limit: number;
 };
 
-export type NodeDetail = NodeInfo & { customizations: CustomStatus };
+export type VoterClient = {
+  name: string;
+  transmit: boolean;
+  master: boolean;
+  nodeemp: boolean;
+  noplfilter: boolean;
+  gpsid: string | null;
+  prio: number | null;
+  other: string[];
+};
+
+// voter.conf for an RTCM/voter node (no passwords).
+export type VoterStatus = {
+  configured: boolean;
+  clients: VoterClient[];
+  settings: Record<string, string>;
+  general: Record<string, string>;
+  host_password_set: boolean;
+  master_elsewhere: string[];
+};
+
+export type NodeDetail = NodeInfo & { customizations: CustomStatus; voter: VoterStatus | null };
 
 export type Note = { severity: "info" | "warning"; text: string };
 

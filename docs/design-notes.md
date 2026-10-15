@@ -1009,6 +1009,37 @@ running service on the development machine.
   diffs of allmon3.ini hide `pass` values.
 - **Not done:** #5 (voter/RTCM nodes) is about node types, not Allmon3.
 
+## 27. RTCM/voter nodes (2026-10-15, issue #5)
+
+node-setup only switches a node to RTCM and leaves commented sample clients
+in voter.conf; everything else was hand editing. A node whose interface is
+RTCM/voter now has a **Voter** tab (instead of Tuning), part of the node
+page's draft (#15: reviewed and saved with the other tabs).
+
+- Read from chan_voter.c (app_rpt): client lines are NAME = PASSWORD
+  [,transmit][,master][,nodeemp][,noplfilter][,gpsid[=ID]][,prio=N]; other
+  options (such as the adpcm the sample file mentions) are not read and are
+  kept as they are. Instance settings: plfilter, hostdeemp, mixminus,
+  linger, buflen, txctcss, txctcsslevel, txtoctype, gtxgain, thresholds.
+  [general]: port, bindaddr, utos (read at module load), password, buflen.
+- Rules enforced, all from the source: a client named like a setting
+  (instance keys case-sensitively, or starting with transmit, master,
+  gpsid, buflen, nodeemp, hostdeemp, noplfilter or prio in any case) is
+  ignored by chan_voter, so it is refused; clients are recognized by their
+  password, so passwords must differ across all instances; one master
+  timing source per server; names and passwords up to 49 characters.
+- Passwords are never sent to the browser; blank keeps the current one.
+- **Reload, not restart:** chan_voter's reload() rereads clients, instance
+  settings, password and buflen. A plan carries `Effects.reload`
+  (`module reload chan_voter.so`), run after apply when no restart is
+  needed; on success voter.conf is recorded like a driver save so it does
+  not show as restart-pending. Changing port, bindaddr or utos sets
+  restart instead. Verified on the development machine (Asterisk 3.10.5):
+  a client added in the browser appeared in `voter prio 1999` with
+  Asterisk's uptime unchanged.
+- Live client status (RSSI, connection) is left to Allmon3's voter page,
+  which the tab links to (Allmon3 > Nodes > Voters).
+
 ## Mockup
 
 [mockup/](mockup/) holds the source of the published mockup. To rebuild:

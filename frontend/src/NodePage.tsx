@@ -42,6 +42,7 @@ import { useNodeList } from "./Nodes";
 import { TuningPanel } from "./Tuning";
 import { RegistrationLabel } from "./Overview";
 import { go, useLeaveGuard } from "./useRoute";
+import { VoterDraft, voterDraft, voterOp, VoterTab } from "./VoterTab";
 
 // The General, Radio interface and Customizations tabs edit one draft of the
 // node's settings. It survives switching tabs, and is reviewed and saved (or
@@ -61,6 +62,7 @@ type Draft = {
   replaceMacro: boolean;
   iface: string;
   custom: string[];
+  voter: VoterDraft;
 };
 type SetDraft = (change: Partial<Draft>) => void;
 type Problems = Partial<Record<keyof Draft, string>>;
@@ -73,7 +75,7 @@ function initial(node: NodeDetail): Draft {
     duplex: String(node.duplex ?? 2), l2l: node.linktolink, statpost: node.statpost,
     linkOn: st.target !== null || st.custom, target: st.target ?? "", linkMode: st.mode ?? "transceive",
     permanent: st.permanent, replaceMacro: false,
-    iface: node.interface ?? "SimpleUSB", custom: node.customizations.selected,
+    iface: node.interface ?? "SimpleUSB", custom: node.customizations.selected, voter: voterDraft(node.voter),
   };
 }
 
@@ -117,6 +119,8 @@ function changes(node: NodeDetail, list: NodeList, d: Draft): { ops: (Op & { tab
   }
   if (d.iface !== base.iface) add("interface", "interface", { interface: d.iface });
   if (!sameSet(d.custom, base.custom)) add("customizations", "customize", { names: d.custom });
+  const voter = node.interface === "Voter" ? voterOp(base.voter, d.voter) : null;
+  if (voter) add("voter", "voter", voter);
   if (d.number !== n) {
     const problem = numberProblem(d.number, list.nodes.map((x) => x.number), n);
     if (problem) problems.number = problem;
@@ -482,12 +486,16 @@ function Customizations({ node, draft, set, enable }: {
   );
 }
 
-const TABS = ["general", "interface", "tuning", "access", "customizations"] as const;
-const TAB_NAMES: Record<(typeof TABS)[number], string> = {
-  general: "General", interface: "Radio interface", tuning: "Tuning", access: "Access control",
+const TABS = ["general", "interface", "tuning", "voter", "access", "customizations"] as const;
+type TabKey = (typeof TABS)[number];
+const TAB_NAMES: Record<TabKey, string> = {
+  general: "General", interface: "Radio interface", tuning: "Tuning", voter: "Voter", access: "Access control",
   customizations: "Customizations",
 };
-const DRAFT_TABS = ["general", "interface", "customizations"];
+const DRAFT_TABS = ["general", "interface", "voter", "customizations"];
+// An RTCM/voter node has a Voter tab instead of Tuning.
+const tabsFor = (node: NodeDetail | null): TabKey[] =>
+  TABS.filter((t) => (node?.interface === "Voter" ? t !== "tuning" : t !== "voter"));
 
 export function NodePage({ number, tab, status }: { number: string; tab: string; status: Status | null }) {
   const [node, setNode] = useState<NodeDetail | null>(null);
@@ -575,7 +583,8 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
     }
   };
 
-  const active = (TABS as readonly string[]).includes(tab) ? (tab as (typeof TABS)[number]) : "general";
+  const tabs = tabsFor(node);
+  const active: TabKey = (tabs as string[]).includes(tab) ? (tab as TabKey) : "general";
   const showBar = node && list && draft && (dirty || DRAFT_TABS.includes(active));
   return (
     <>
@@ -596,7 +605,7 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
           )}
         </div>
         <Tabs activeKey={active} onSelect={(_e, key) => go(`nodes/${number}/${key}`)} className="asl-head-tabs">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <Tab key={t} eventKey={t} title={
               <TabTitleText>
                 {TAB_NAMES[t]}
@@ -616,6 +625,7 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
             )}
             {active === "interface" && <Interface node={node} list={list} draft={draft} set={set} />}
             {active === "tuning" && <Tuning node={node} status={status} />}
+            {active === "voter" && <VoterTab node={node} draft={draft.voter} set={(voter) => set({ voter })} />}
             {active === "access" && <Access node={node} />}
             {active === "customizations" && (
               <Customizations node={node} draft={draft} set={set}
@@ -633,7 +643,7 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
               {!dirty ? "No unsaved changes." :
                 !valid ? "Correct the highlighted settings first." :
                 `${count} unsaved change${count === 1 ? "" : "s"}` +
-                ` (${[...dirtyTabs].map((t) => TAB_NAMES[t as (typeof TABS)[number]]).join(", ")}).`}
+                ` (${[...dirtyTabs].map((t) => TAB_NAMES[t as TabKey]).join(", ")}).`}
             </span>
           </div>
           {saveError && <Alert variant="danger" isInline isPlain title={saveError} />}

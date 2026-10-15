@@ -4,6 +4,7 @@
     GET    /api/v1/nodes/{node}                       one node in detail
     POST   /api/v1/nodes/plan          {"op", ...}    plan a change -> diffs, notes, plan id
     POST   /api/v1/nodes/plan          {"ops": [...]} several of them as one change
+                                       (op "voter": the node's RTCM/voter clients and settings)
     GET    /api/v1/nodes/{node}/access                allow/deny lists (AstDB)
     POST   /api/v1/nodes/{node}/access {"list", "entry", "reason"}
     DELETE /api/v1/nodes/{node}/access/{list}/{entry}
@@ -28,12 +29,13 @@ from ..configengine.edit import Workspace
 from ..configengine.lint import lint
 from ..configengine.model import load
 from ..configengine.store import Store
-from ..nodes import access, allmon3, customize
+from ..nodes import access, allmon3, customize, voter
 from ..nodes.info import (
     DUPLEX_LABELS, INTERFACE_LABELS, PRIVATE_LIMIT, all_nodes, iax_port, is_untouched_template, node_info,
 )
 from ..nodes.planner import Planner, PlanError
 from ..privileged import PRIV_KEY, PrivError
+from ..restart import record_driver_save
 from ..security import SETTINGS_KEY, USER_KEY
 from .changes import STORE_KEY, error, read_json, register_after, unwritable
 from .control import SYSTEMCTL_KEY, systemctl
@@ -113,6 +115,7 @@ async def get_node(request: web.Request) -> web.Response:
         return error(404, "not_found", f"Node {number} is not configured.")
     out = info.as_dict()
     out["customizations"] = customize.status(ws, number)
+    out["voter"] = voter.status(ws.model(voter.FILE), number) if ws.exists(voter.FILE) else None
     return web.json_response(out)
 
 
@@ -157,6 +160,7 @@ def _describe(op: str, body: dict) -> str:
         "password": f"node {node}: password",
         "interface": f"node {node}: radio interface",
         "customize": f"node {node}: customizations",
+        "voter": f"node {node}: voter clients and settings",
         "enable_customizations": "enable customizations",
         "iax_port": "IAX port",
         "ami_secret": "AMI secret",
@@ -238,6 +242,13 @@ def _run(planner: Planner, op: str, body: dict) -> None:
         planner.effects.note("Your configuration files are rearranged so that customizations can be added. "
                              "Settings stay the same.")
         planner.effects.restart = True
+    elif op == "voter":
+        wanted, settings, general = body.get("clients", []), body.get("settings", {}), body.get("general", {})
+        host_password = body.get("host_password")
+        if not isinstance(wanted, list) or not isinstance(settings, dict) or not isinstance(general, dict) \
+                or not (host_password is None or isinstance(host_password, str)):
+            raise PlanError("clients must be a list, settings and general objects.", "clients")
+        planner.set_voter(node, wanted, settings, general, host_password)
     elif op == "iax_port":
         planner.set_iax_port(body.get("port"))
     elif op == "ami_secret":
@@ -299,6 +310,8 @@ async def plan(request: web.Request) -> web.Response:
                                                _describe_all(ops), changes)
     stored.errors = len(new_errors)
     after_steps = [("astdb", list(a)) for a in fx.astdb]
+    if fx.reload and not fx.restart:
+        after_steps.append(("reload", list(fx.reload)))
     files = [{"name": os.path.relpath(c.path, settings.config_dir), "diff": c.diff(
         os.path.relpath(c.path, settings.config_dir))} for c in changes]
     manual = [a["text"] for a in fx.allmon3]
@@ -344,6 +357,23 @@ async def _after_allmon3(request: web.Request, plan, args: dict) -> list[str]:
     code, output = await systemctl(request.app[SYSTEMCTL_KEY], "restart", "allmon3.service", timeout=60)
     if code != 0:
         return [f"Allmon3's settings were updated, but Allmon3 could not be restarted: {output[-200:]}"]
+    return []
+
+
+async def _after_reload(request: web.Request, plan, commands: list[str]) -> list[str]:
+    """Apply the change to the running Asterisk without a restart (chan_voter reloads voter.conf)."""
+    for command in commands:
+        try:
+            out = await request.app[CLI_KEY].run(command)
+        except AsteriskUnavailable:
+            return []  # Asterisk reads the files when it starts
+        if not re.search(r"reloaded successfully", out, re.I):
+            return [f"Asterisk could not apply the change ({command}: {out.strip()[:200]}). Restart Asterisk "
+                    "to use it."]
+    # The running Asterisk now uses voter.conf as saved: no restart is pending for it.
+    for c in plan.changes:
+        if os.path.basename(c.path) == voter.FILE:
+            record_driver_save(request.app[SETTINGS_KEY].state_dir, c.path)
     return []
 
 
@@ -447,4 +477,5 @@ async def asterisk_settings(request: web.Request) -> web.Response:
 def setup(app: web.Application) -> None:
     register_after(app, "astdb", _after_astdb)
     register_after(app, "allmon3", _after_allmon3)
+    register_after(app, "reload", _after_reload)
     app.add_routes(routes)
