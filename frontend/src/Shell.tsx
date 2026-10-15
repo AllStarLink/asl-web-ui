@@ -24,6 +24,7 @@ import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
 import FileCodeIcon from "@patternfly/react-icons/dist/esm/icons/file-code-icon";
 import NetworkIcon from "@patternfly/react-icons/dist/esm/icons/network-icon";
 import HistoryIcon from "@patternfly/react-icons/dist/esm/icons/history-icon";
+import MonitoringIcon from "@patternfly/react-icons/dist/esm/icons/monitoring-icon";
 import StethoscopeIcon from "@patternfly/react-icons/dist/esm/icons/stethoscope-icon";
 import TachometerAltIcon from "@patternfly/react-icons/dist/esm/icons/tachometer-alt-icon";
 import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
@@ -39,6 +40,7 @@ const NAV: NavEntry[] = [
   { route: "overview", label: "Overview", icon: <TachometerAltIcon /> },
   { route: "nodes", label: "Nodes", icon: <NetworkIcon /> },
   { route: "asterisk", label: "Asterisk", icon: <AsteriskIcon /> },
+  { route: "allmon3", label: "Allmon3", icon: <MonitoringIcon /> },
   { route: "diagnostics", label: "Diagnostics", icon: <StethoscopeIcon /> },
   { route: "backups", label: "Backups", icon: <HistoryIcon /> },
 ];

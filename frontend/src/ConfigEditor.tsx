@@ -43,7 +43,7 @@ import { CountLabels } from "./ConfigFiles";
 import { DiffView } from "./DiffView";
 
 // Colors come from CSS variables so they follow the light/dark theme.
-const highlight = HighlightStyle.define([
+export const highlight = HighlightStyle.define([
   { tag: tags.comment, color: "var(--asl-hl-comment)" },
   { tag: tags.heading, color: "var(--asl-hl-section)", fontWeight: "600" },
   { tag: tags.keyword, color: "var(--asl-hl-directive)" },
@@ -52,7 +52,7 @@ const highlight = HighlightStyle.define([
   { tag: tags.operator, color: "var(--asl-hl-comment)" },
 ]);
 
-const editorTheme = EditorView.theme({
+export const editorTheme = EditorView.theme({
   "&": { height: "min(62vh, 40rem)", fontSize: "0.85rem" },
   ".cm-scroller": { fontFamily: '"Red Hat Mono", "DejaVu Sans Mono", monospace' },
 });

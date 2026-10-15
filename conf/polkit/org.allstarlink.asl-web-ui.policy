@@ -99,6 +99,42 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.allstarlink.asl-web-ui.file-delete">
+    <description>Remove Allmon3's menu</description>
+    <message>Authentication is required to: remove Allmon3's menu</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.allmon3-users">
+    <description>List Allmon3's users</description>
+    <message>Authentication is required to: list Allmon3's users</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.allmon3-set-password">
+    <description>Add an Allmon3 user or change their password</description>
+    <message>Authentication is required to: add an Allmon3 user or change their password</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.allmon3-delete-user">
+    <description>Remove an Allmon3 user</description>
+    <message>Authentication is required to: remove an Allmon3 user</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
   <action id="org.allstarlink.asl-web-ui.asterisk-fix-ownership">
     <description>Give a configuration file back to the asterisk user</description>
     <message>Authentication is required to: give a configuration file back to the asterisk user</message>

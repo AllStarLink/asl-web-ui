@@ -965,6 +965,50 @@ new options), reached through SSH tunnels; nothing was installed and
   ordinary requests, expires); smoke test checks it through Apache and
   nginx.
 
+## 26. Allmon3 management (2026-10-15, issues #6-#10)
+
+A sidebar entry, **Allmon3**, with tabs Status, Nodes, Users, Web settings
+and Files. Checked against Allmon3 1.11's source (`/usr/bin/allmon3`,
+`asl_allmon/{node_configs,web_configs,security}`) and tested against the
+running service on the development machine.
+
+- **Forms where the settings are fixed, text where they are free-form.**
+  allmon3.ini (#6) is a list of nodes with known keys, so it gets a table
+  and an edit dialog (host, AMI port/user, the secret kept / taken from
+  manager.conf / typed, and the optional keys under "More settings"), plus
+  "Add" for local nodes Allmon3 does not show. web.ini's `[web]` keys (#8)
+  get a form. Everything else is lists of free-form lines: menu.ini (#10),
+  web.ini's `[syscmds]` (CLI commands with `@`/`%` placeholders),
+  `[node-overrides]` and `[voter-titles]`. A form for those would only
+  re-encode the same lines, so they are edited as text in the Files tab,
+  with a short explanation of the syntax and a starter menu.ini based on
+  Allmon3's example.
+- **Checked the way Allmon3 reads them.** Each file is parsed with
+  configparser as Allmon3 does (duplicates, `%` interpolation, missing
+  sections, non-numeric node sections, missing host/user/pass,
+  user-restrictions lines without `|`). menu.ini is run through a copy of
+  Allmon3's string-pasting JSON builder: an empty file, an empty section,
+  or a quote in a label makes the whole sidebar menu invalid JSON (verified).
+  Errors need "Save anyway", as for Asterisk files.
+- **Users (#7) and restrictions (#9)** share one table. Allmon3 has its own
+  argon2id password file and cannot use PAM, so there is nothing to sync;
+  the page says so. The helper hashes passwords as allmon3-passwd does and
+  never returns the hashes (users is not a readable file). Adding users,
+  changing passwords, removing users and changing which nodes a user may
+  command need a recent password entry, because an Allmon3 login can send
+  commands to Asterisk.
+- **Restart, not reload.** Allmon3's SIGUSR1 handler assigns the new node
+  and web settings to local variables and never clears restrictions, so
+  only a restart applies changes. Every save restarts allmon3.service
+  (already allowed by the polkit rule) and logs Allmon3 users out.
+- **Privileged helper:** the file allowlist adds web.ini, menu.ini,
+  custom.css and user-restrictions; menu.ini may be created (root 0644,
+  like web.ini) and removed (`file.delete`); `allmon3.users`,
+  `allmon3.set_password`, `allmon3.delete_user` with their own polkit
+  actions. Plans keep the new content on the server and are applied by id;
+  diffs of allmon3.ini hide `pass` values.
+- **Not done:** #5 (voter/RTCM nodes) is about node types, not Allmon3.
+
 ## Mockup
 
 [mockup/](mockup/) holds the source of the published mockup. To rebuild:

@@ -16,8 +16,10 @@ Restoring is stricter than asl-backup-menu (which untars over /):
 - a backup of the current state is made first.
 """
 
+import csv
 import grp
 import hashlib
+import io
 import os
 import posixpath
 import re
@@ -34,8 +36,14 @@ INCLUDE_LIST = "/var/asl-backups/asl-backup-files"
 STAGING_DIR = "/var/lib/asl-web-ui/staging"
 CONFIG_DIR = "/etc/asterisk"
 MARKER = "etc/asterisk/rpt_http_registrations.conf"  # asl-backup-menu's "made on ASL3" check
-# Files outside /etc/asterisk the web UI may read and replace.
-FILE_ALLOWLIST = {"/etc/allmon3/allmon3.ini"}
+# Files outside /etc/asterisk the web UI may read and replace (Allmon3's
+# users file only through the allmon3.* commands, so hashes never leave).
+FILE_ALLOWLIST = {"/etc/allmon3/allmon3.ini", "/etc/allmon3/web.ini", "/etc/allmon3/menu.ini",
+                  "/etc/allmon3/custom.css", "/etc/allmon3/user-restrictions"}
+# Of those, the ones that may be created or removed: Allmon3 works without them.
+OPTIONAL_FILES = {"/etc/allmon3/menu.ini"}
+ALLMON3_USERS = "/etc/allmon3/users"
+ALLMON3_USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}$")
 ARCHIVE_GROUP = "asterisk"
 MAX_FILE = 1 << 20
 MAX_ARCHIVE = 64 << 20
@@ -491,17 +499,111 @@ def file_read(args: dict, output: Output) -> dict:
     return {"exists": True, "content": data.decode("utf-8", "replace"), "hash": _digest(data)}
 
 
+def _existing(path: str, name: str, optional: bool) -> os.stat_result | None:
+    st = os.lstat(path) if os.path.lexists(path) else None
+    if st is None and optional:
+        return None
+    if st is None or not stat.S_ISREG(st.st_mode):
+        raise CommandError(f"{name} does not exist or is not a regular file.", "not_found")
+    return st
+
+
 def file_write(args: dict, output: Output) -> dict:
     path = _allowed_file(args)
     content = _str(args, "content", MAX_FILE)
     expected = _str(args, "expected_hash", 80)
-    st = os.lstat(path) if os.path.lexists(path) else None
-    if st is None or not stat.S_ISREG(st.st_mode):
-        raise CommandError(f"{args['path']} does not exist or is not a regular file.", "not_found")
-    if _digest(_read(path)) != expected:
+    st = _existing(path, args["path"], args["path"] in OPTIONAL_FILES)
+    current = _read(path) if st is not None else None
+    if (_digest(current) if current is not None else "absent") != expected:
         raise CommandError(f"{args['path']} changed meanwhile. Nothing was written.", "conflict")
-    _atomic_write(path, content.encode("utf-8"), stat.S_IMODE(st.st_mode), st.st_uid, st.st_gid)
+    if st is None:
+        # A new optional file is configuration like web.ini: root's, readable by Allmon3.
+        mode, uid, gid = 0o644, 0, 0
+    else:
+        mode, uid, gid = stat.S_IMODE(st.st_mode), st.st_uid, st.st_gid
+    _atomic_write(path, content.encode("utf-8"), mode, uid, gid)
     return {"hash": _digest(content.encode("utf-8"))}
+
+
+def file_delete(args: dict, output: Output) -> dict:
+    path = _allowed_file(args)
+    if args["path"] not in OPTIONAL_FILES:
+        raise CommandError("That file cannot be removed.", "invalid")
+    expected = _str(args, "expected_hash", 80)
+    if _existing(path, args["path"], True) is None:
+        return {"removed": False}
+    if _digest(_read(path)) != expected:
+        raise CommandError(f"{args['path']} changed meanwhile. Nothing was removed.", "conflict")
+    os.unlink(path)
+    return {"removed": True}
+
+
+# ---- Allmon3 users ---------------------------------------------------------------
+# /etc/allmon3/users is "user|pass" lines with argon2id hashes, read by
+# Allmon3 with a csv.DictReader (so the header line is required). Written
+# the way allmon3-passwd writes it.
+
+
+def _users() -> tuple[str, os.stat_result, list[list[str]]]:
+    path = _path(ALLMON3_USERS)
+    st = _existing(path, ALLMON3_USERS, False)
+    rows, first = [], True
+    for row in csv.reader(io.StringIO((_read(path) or b"").decode("utf-8", "replace"), newline=""), delimiter="|"):
+        if len(row) < 2:
+            continue
+        if first:
+            first = False
+            if [f.strip() for f in row[:2]] == ["user", "pass"]:
+                continue
+        rows.append([row[0], row[1]])
+    return path, st, rows
+
+
+def _write_users(path: str, st: os.stat_result, rows: list[list[str]]) -> None:
+    buf = io.StringIO(newline="")
+    writer = csv.writer(buf, delimiter="|", lineterminator="\r\n")
+    writer.writerow(["user", "pass"])
+    writer.writerows(rows)
+    _atomic_write(path, buf.getvalue().encode("utf-8"), stat.S_IMODE(st.st_mode), st.st_uid, st.st_gid)
+
+
+def _allmon3_user(args: dict) -> str:
+    user = _str(args, "user", 64)
+    if not ALLMON3_USER_RE.match(user) or user == "user":
+        raise CommandError("A user name may contain letters, numbers, _ . @ and - (and cannot be \"user\").",
+                           "invalid")
+    return user
+
+
+def allmon3_users(args: dict, output: Output) -> dict:
+    _, _, rows = _users()
+    return {"users": [r[0] for r in rows]}
+
+
+def allmon3_set_password(args: dict, output: Output) -> dict:
+    user = _allmon3_user(args)
+    password = _str(args, "password", 256)
+    if len(password) < 8:
+        raise CommandError("The password must have at least 8 characters.", "invalid")
+    try:
+        import argon2
+    except ImportError:
+        raise CommandError("python3-argon2 is not installed (it comes with Allmon3).", "unavailable")
+    hashed = argon2.PasswordHasher(type=argon2.Type.ID).hash(password)
+    path, st, rows = _users()
+    existed = any(r[0] == user for r in rows)
+    rows = [[r[0], hashed] if r[0] == user else r for r in rows] if existed else rows + [[user, hashed]]
+    _write_users(path, st, rows)
+    return {"created": not existed}
+
+
+def allmon3_delete_user(args: dict, output: Output) -> dict:
+    user = _allmon3_user(args)
+    path, st, rows = _users()
+    if not any(r[0] == user for r in rows):
+        raise CommandError(f"Allmon3 has no user {user}.", "not_found")
+    _write_users(path, st, [r for r in rows if r[0] != user])
+    return {}
 
 
 def fix_ownership(args: dict, output: Output) -> dict:
@@ -539,5 +641,9 @@ COMMANDS = {
     "factory.restore": factory_restore,
     "file.read": file_read,
     "file.write": file_write,
+    "file.delete": file_delete,
+    "allmon3.users": allmon3_users,
+    "allmon3.set_password": allmon3_set_password,
+    "allmon3.delete_user": allmon3_delete_user,
     "asterisk.fix_ownership": fix_ownership,
 }

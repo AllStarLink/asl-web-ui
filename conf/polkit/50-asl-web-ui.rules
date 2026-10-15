@@ -2,7 +2,7 @@
 // it may take: start, stop or restart the AllStarLink services, reboot or
 // power off (the web UI asks for the user's password again first), and the
 // commands of its privileged helper (backups, factory reset, Allmon3's
-// settings, ownership fixes in /etc/asterisk).
+// settings and users, ownership fixes in /etc/asterisk).
 // To restrict them further, add a rule with a lower number in
 // /etc/polkit-1/rules.d/ that returns polkit.Result.NO.
 

@@ -31,8 +31,8 @@ modules such as one-time codes work as for SSH. The **root** account cannot
 log in.
 
 Restarting or stopping Asterisk, rebooting, shutting down, restoring a
-backup, restoring the default configuration, removing a node and fixing file
-ownership ask for the password again if it was entered more than ten minutes
+backup, restoring the default configuration, removing a node, fixing file
+ownership and changing Allmon3's users ask for the password again if it was entered more than ten minutes
 earlier.
 
 # PROCESSES
@@ -48,7 +48,8 @@ earlier.
 **asl-web-ui-priv@.service**
 : One root process per privileged request (socket **asl-web-ui-priv.socket**,
   reachable only by **asterisk**): backups, restores, the default
-  configuration, Allmon3's settings and ownership fixes in */etc/asterisk*.
+  configuration, Allmon3's settings and users, and ownership fixes in
+  */etc/asterisk*.
   Every request is authorized with polkit (**pkcheck**) for the calling
   process.
 
@@ -76,6 +77,10 @@ allowed for the **asterisk** user by the polkit rule below.
 */etc/asl-web-ui/nginx.conf*
 : nginx configuration. Add **include /etc/asl-web-ui/nginx.conf;** inside the
   **server { }** block of your site and reload nginx.
+
+*/etc/allmon3/*
+: Allmon3's settings, changed on the Allmon3 page through the privileged
+  helper. Each change restarts **allmon3**.
 
 */var/asl-backups/*
 : Backups, shared with **asl-backup-menu** (same names and format). The

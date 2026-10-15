@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Bullseye, Button, Modal, ModalBody, ModalFooter, ModalHeader, Spinner } from "@patternfly/react-core";
 
 import { ApiError, get, post, Session, setCsrfToken, SystemInfo } from "./api";
+import { Allmon3Editor } from "./Allmon3Editor";
+import { Allmon3Page } from "./Allmon3Page";
 import { AsteriskPage } from "./AsteriskPage";
 import { Backups } from "./Backups";
 import { Diagnostics } from "./Diagnostics";
@@ -33,6 +35,8 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   else if (base === "diagnostics") page = <Diagnostics status={status} />;
   else if (base === "backups") page = <Backups tab={sub ?? "local"} />;
   else if (base === "asterisk") page = <AsteriskPage status={status} tab={sub ?? "status"} />;
+  else if (base === "allmon3" && sub === "files" && third) page = <Allmon3Editor key={third} name={decodeURIComponent(third)} />;
+  else if (base === "allmon3") page = <Allmon3Page tab={sub ?? "status"} />;
   else if (base === "config" && sub) page = <ConfigEditor key={sub} name={decodeURIComponent(sub)} />;
   else if (base === "config") page = <ConfigFiles />;
   else page = <Overview status={status} system={system} />;
