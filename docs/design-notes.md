@@ -932,6 +932,13 @@ new options), reached through SSH tunnels; nothing was installed and
   reported.
 - Motivated by restarting 40608 during testing: its startup macro linked to
   another node and played telemetry over it.
+- **Add the permanent link commands:** when the node's function table lacks
+  them, the editor offers to add `811 = ilink,11`, `812 = ilink,12`,
+  `813 = ilink,13` to the node's functions stanza (stock `[functions]`, not
+  the `[functions-main]` template where they are commented out). app_rpt
+  runs the first code in the stanza that is a prefix of the digits entered,
+  so a code that would shadow or be shadowed by an existing one (e.g. `81`)
+  is refused with its name; the review says which nodes share the stanza.
 
 ## Mockup
 

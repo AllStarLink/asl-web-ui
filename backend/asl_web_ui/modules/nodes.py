@@ -152,6 +152,7 @@ def _describe(op: str, body: dict) -> str:
         "duplex": f"node {node}: duplex",
         "statpost": f"node {node}: status posting",
         "startup_link": f"node {node}: connect at startup",
+        "permanent_links": f"node {node}: add permanent link commands",
         "password": f"node {node}: password",
         "interface": f"node {node}: radio interface",
         "customize": f"node {node}: customizations",
@@ -192,6 +193,8 @@ def _run(planner: Planner, op: str, body: dict) -> None:
             raise PlanError("target must be a node number or null.", "target")
         planner.set_startup_link(node, target or None, str(body.get("mode", "transceive")),
                                  bool(body.get("permanent")), bool(body.get("replace_custom")))
+    elif op == "permanent_links":
+        planner.enable_permanent_links(node)
     elif op == "statpost":
         enabled = _bool(body, "enabled")
         if enabled is None:

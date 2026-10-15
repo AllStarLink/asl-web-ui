@@ -320,3 +320,24 @@ async def test_connect_at_startup_permanent_and_custom(api):
     plan, status_, _ = await a.change({"op": "startup_link", "node": "1999", "target": "2001", "mode": "monitor",
                                        "permanent": True, "replace_custom": True})
     assert status_ == 200 and "+startup_macro = *8122001" in plan["files"][0]["diff"]
+
+
+async def test_add_permanent_link_commands(api):
+    _with_functions(api)
+    a = await api.make()
+    plan, status_, _ = await a.change({"op": "permanent_links", "node": "1999"})
+    assert status_ == 200
+    diff = plan["files"][0]["diff"]
+    assert all(f"+{c} = ilink,{c[1:]}" in diff for c in ("811", "812", "813"))
+    assert "[functions](functions-main)" in diff  # added to the node's stanza, not the template
+    _, node = await a.get("nodes/1999")
+    assert node["startup"]["permanent_available"] is True
+    plan, status_, _ = await a.change({"op": "startup_link", "node": "1999", "target": "2000", "permanent": True})
+    assert "+startup_macro = *8132000" in plan["files"][0]["diff"]
+
+
+async def test_permanent_link_commands_refuse_clashes(api):
+    _with_functions(api, "81 = status,12\n")
+    a = await api.make()
+    status_, body = await a.post("nodes/plan", {"op": "permanent_links", "node": "1999"})
+    assert status_ == 409 and "clash with code 81" in body["message"]

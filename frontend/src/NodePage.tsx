@@ -133,6 +133,7 @@ function General({ node, list, propose, status }: {
   const [linkMode, setLinkMode] = useState(st.mode ?? "transceive");
   const [permanent, setPermanent] = useState(st.permanent);
   const [replaceMacro, setReplaceMacro] = useState(false);
+  const [permError, setPermError] = useState<string | null>(null);
   const startupText = st.custom ? <span>Custom startup macro: <code>{st.macro}</code></span>
     : st.target ? `Node ${st.target}, ${st.mode === "monitor" ? "monitor only" : "transceive"}${st.permanent ? ", kept up" : ""}`
     : "No";
@@ -235,7 +236,22 @@ function General({ node, list, propose, status }: {
                     <Checkbox id="startup-permanent" label="Keep the link up (reconnect if it drops)" isChecked={permanent}
                               isDisabled={!st.permanent_available} onChange={(_e, v) => setPermanent(v)}
                               description={st.permanent_available ? undefined :
-                                "The node's function table has no permanent link commands (812/813 are commented out in the stock rpt.conf)."} />
+                                "The node's function table has no permanent link commands (811-813 are commented out in the stock rpt.conf)."} />
+                    {!st.permanent_available && (
+                      <div>
+                        <Button variant="link" isInline onClick={async () => {
+                          setPermError(null);
+                          try {
+                            await propose("permanent_links", { node: node.number });
+                          } catch (err) {
+                            setPermError(message(err));
+                          }
+                        }}>
+                          Add the permanent link commands
+                        </Button>
+                        {permError && <Alert variant="danger" isInline isPlain title={permError} />}
+                      </div>
+                    )}
                   </>
                 )}
                 {st.custom && (

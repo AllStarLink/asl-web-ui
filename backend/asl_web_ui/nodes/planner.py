@@ -307,6 +307,49 @@ class Planner:
                           f"{', kept up' if permanent else ''}). Restarting Asterisk makes that link right away.")
         self.effects.restart = True
 
+    PERMANENT_LINK_COMMANDS = {"811": "ilink,11", "812": "ilink,12", "813": "ilink,13"}
+
+    def enable_permanent_links(self, number: str) -> None:
+        """Add the permanent link commands (811-813, commented out in the stock
+        template) to the node's functions stanza, so that a startup link can be
+        kept up. app_rpt uses the first code in the stanza that is a prefix of
+        the digits entered, so codes that would shadow or be shadowed are refused."""
+        from .info import link_codes
+        rpt = self.ws.model(RPT)
+        node = rpt.get(number)
+        if node is None:
+            raise PlanError(f"Node {number} is not configured.", "number", "not_found")
+        codes = link_codes(rpt, node)
+        if ("transceive", True) in codes and ("monitor", True) in codes:
+            return
+        name = node.value("functions") or "functions"
+        stanza = rpt.get(name)
+        if stanza is None:
+            raise PlanError(f"The node's functions stanza [{name}] does not exist.", code="requirement")
+        existing = {}
+        for v in stanza.vars:
+            existing.setdefault(v.key, re.sub(r"\s+", "", v.value.split(";")[0]).lower())
+        to_add = []
+        for code, command in self.PERMANENT_LINK_COMMANDS.items():
+            if code in existing:
+                if existing[code] != command:
+                    raise PlanError(f"Code {code} in [{name}] already does something else ({existing[code]}).",
+                                    code="requirement")
+                continue
+            clash = [k for k in existing if k.isdigit() and (code.startswith(k) or k.startswith(code))]
+            if clash:
+                raise PlanError(f"Code {code} would clash with code {clash[0]} in [{name}]: app_rpt runs the "
+                                "first code that matches the digits entered.", code="requirement")
+            to_add.append((code, command))
+        sec = Section(self.ws, RPT, name)
+        for code, command in to_add:
+            sec.set(code, command)
+        users = [n for n in self.nodes() if (rpt.get(n).value("functions") or "functions") == name]
+        self.effects.note(f"Adds {', '.join(c for c, _ in to_add)} (disconnect / connect permanently, monitor or "
+                          f"transceive) to [{name}]"
+                          + (f", which nodes {', '.join(users)} use." if len(users) > 1 else "."))
+        self.effects.restart = True
+
     # ---- registration and password ----------------------------------------------
 
     def _remove_registrations(self, number: str) -> None:
