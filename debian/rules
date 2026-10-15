@@ -14,7 +14,8 @@ override_dh_auto_build:
 override_dh_auto_install:
 	$(MAKE) install DESTDIR=$(CURDIR)/debian/asl-web-ui RELVER=$(DEB_VERSION_UPSTREAM)
 
-# The service is started by its socket; enable and start the socket only.
+# Unit files are installed by conf/Makefile. The services are started by
+# their sockets, so only the sockets are enabled and started.
 override_dh_installsystemd:
-	dh_installsystemd asl-web-ui.socket
-	dh_installsystemd --no-enable --no-start asl-web-ui.service
+	dh_installsystemd asl-web-ui.socket asl-web-ui-auth.socket
+	dh_installsystemd --no-enable --no-start asl-web-ui.service asl-web-ui-auth@.service

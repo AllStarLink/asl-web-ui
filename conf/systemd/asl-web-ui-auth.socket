@@ -1,0 +1,17 @@
+[Unit]
+Description=ASL Web UI login helper socket
+Documentation=man:asl-web-ui(8)
+
+[Socket]
+# Only the asl-web-ui service (user asterisk) can reach the helper.
+ListenStream=/run/asl-web-ui-auth/auth.sock
+SocketUser=asterisk
+SocketGroup=asterisk
+SocketMode=0600
+DirectoryMode=0755
+Accept=yes
+MaxConnections=16
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

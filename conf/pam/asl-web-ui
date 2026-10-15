@@ -1,0 +1,8 @@
+# PAM configuration for logins to the asl-web-ui web interface.
+#
+# Change how web logins are checked here, for example by adding
+# pam_google_authenticator for two-factor authentication. Each prompt PAM
+# asks is shown on the login page. No PAM session is opened.
+
+@include common-auth
+@include common-account

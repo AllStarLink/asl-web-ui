@@ -1,129 +1,76 @@
-import { useEffect, useState } from "react";
-import {
-  Alert,
-  Card,
-  CardBody,
-  CardTitle,
-  Content,
-  DescriptionList,
-  DescriptionListDescription,
-  DescriptionListGroup,
-  DescriptionListTerm,
-  Label,
-  Masthead,
-  MastheadBrand,
-  MastheadLogo,
-  MastheadMain,
-  Nav,
-  NavItem,
-  NavList,
-  Page,
-  PageSection,
-  PageSidebar,
-  PageSidebarBody,
-  Spinner,
-  Title,
-} from "@patternfly/react-core";
-import CheckCircleIcon from "@patternfly/react-icons/dist/esm/icons/check-circle-icon";
+import { useCallback, useEffect, useState } from "react";
+import { Bullseye, Spinner } from "@patternfly/react-core";
 
-type Health = { status: string; version: string };
+import { ApiError, get, post, Session, setCsrfToken, SystemInfo } from "./api";
+import { AsteriskPage } from "./AsteriskPage";
+import { Login } from "./Login";
+import { Overview } from "./Overview";
+import { Shell } from "./Shell";
+import { useRoute } from "./useRoute";
+import { useStatus } from "./useStatus";
 
-type HealthState =
-  | { kind: "loading" }
-  | { kind: "ok"; health: Health }
-  | { kind: "error"; message: string };
+type Auth = { kind: "loading" } | { kind: "insecure" } | { kind: "anonymous" } | { kind: "user"; session: Session };
 
-function useHealth(): HealthState {
-  const [state, setState] = useState<HealthState>({ kind: "loading" });
+function Authenticated({ session, onLogout, onEnded }: { session: Session; onLogout: () => void; onEnded: () => void }) {
+  const route = useRoute();
+  const { status } = useStatus(onEnded);
+  const [system, setSystem] = useState<SystemInfo | null>(null);
+
   useEffect(() => {
-    fetch("api/v1/health")
-      .then(async (resp) => {
-        if (!resp.ok) throw new Error(`The service answered with HTTP ${resp.status}.`);
-        setState({ kind: "ok", health: (await resp.json()) as Health });
-      })
-      .catch((err: unknown) =>
-        setState({ kind: "error", message: err instanceof Error ? err.message : String(err) }),
-      );
+    get<SystemInfo>("system").then(setSystem, () => setSystem(null));
   }, []);
-  return state;
-}
 
-function ServiceStatus() {
-  const state = useHealth();
-  if (state.kind === "loading") return <Spinner size="md" aria-label="Checking the service" />;
-  if (state.kind === "error") {
-    return (
-      <Alert variant="danger" isInline title="The asl-web-ui service is not responding">
-        <p>{state.message}</p>
-        <p>
-          Check it with <code>systemctl status asl-web-ui.socket asl-web-ui.service</code>.
-        </p>
-      </Alert>
-    );
-  }
+  const [base, sub] = route.split("/");
   return (
-    <DescriptionList isHorizontal>
-      <DescriptionListGroup>
-        <DescriptionListTerm>Service</DescriptionListTerm>
-        <DescriptionListDescription>
-          <Label color="green" icon={<CheckCircleIcon />}>
-            Running
-          </Label>
-        </DescriptionListDescription>
-      </DescriptionListGroup>
-      <DescriptionListGroup>
-        <DescriptionListTerm>Service version</DescriptionListTerm>
-        <DescriptionListDescription>{state.health.version}</DescriptionListDescription>
-      </DescriptionListGroup>
-      <DescriptionListGroup>
-        <DescriptionListTerm>Interface version</DescriptionListTerm>
-        <DescriptionListDescription>{__ASL_WEB_UI_VERSION__}</DescriptionListDescription>
-      </DescriptionListGroup>
-    </DescriptionList>
+    <Shell user={session.user ?? ""} hostname={system?.hostname ?? ""} route={route} onLogout={onLogout}>
+      {base === "asterisk" ? <AsteriskPage status={status} tab={sub ?? "status"} /> : <Overview status={status} system={system} />}
+    </Shell>
   );
 }
 
 export function App() {
-  const masthead = (
-    <Masthead>
-      <MastheadMain>
-        <MastheadBrand>
-          <MastheadLogo component="span">AllStarLink</MastheadLogo>
-        </MastheadBrand>
-      </MastheadMain>
-    </Masthead>
-  );
-  const sidebar = (
-    <PageSidebar>
-      <PageSidebarBody>
-        <Nav aria-label="Main">
-          <NavList>
-            <NavItem itemId="overview" isActive>
-              Overview
-            </NavItem>
-          </NavList>
-        </Nav>
-      </PageSidebarBody>
-    </PageSidebar>
-  );
+  const [auth, setAuth] = useState<Auth>({ kind: "loading" });
 
-  return (
-    <Page masthead={masthead} sidebar={sidebar}>
-      <PageSection>
-        <Title headingLevel="h1">ASL Web UI</Title>
-        <Content component="p">
-          The package is installed and the service is reachable. Node management, diagnostics,
-          backups and tuning arrive in later milestones.
-        </Content>
-      </PageSection>
-      <PageSection>
-        <Card>
-          <CardTitle>Status</CardTitle>
-          <CardBody>
-            <ServiceStatus />
-          </CardBody>
-        </Card>
-      </PageSection>
-    </Page>
-  );
+  const load = useCallback(async () => {
+    try {
+      const session = await get<Session>("auth/session");
+      setCsrfToken(session.csrf ?? null);
+      setAuth(session.user ? { kind: "user", session } : { kind: "anonymous" });
+    } catch (err) {
+      setAuth(err instanceof ApiError && err.code === "https_required" ? { kind: "insecure" } : { kind: "anonymous" });
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const logout = async () => {
+    try {
+      await post("auth/logout");
+    } finally {
+      setCsrfToken(null);
+      setAuth({ kind: "anonymous" });
+    }
+  };
+
+  if (auth.kind === "loading") {
+    return (
+      <Bullseye className="asl-fill">
+        <Spinner aria-label="Loading" />
+      </Bullseye>
+    );
+  }
+  if (auth.kind !== "user") {
+    return (
+      <Login
+        insecure={auth.kind === "insecure"}
+        onLogin={(session) => {
+          setCsrfToken(session.csrf ?? null);
+          setAuth({ kind: "user", session });
+        }}
+      />
+    );
+  }
+  return <Authenticated session={auth.session} onLogout={logout} onEnded={() => void load()} />;
 }

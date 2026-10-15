@@ -11,6 +11,20 @@ DEFAULT_PATH = Path("/etc/asl-web-ui/asl-web-ui.ini")
 class Settings:
     allow_insecure_http: bool = False
     log_level: str = "info"
+    # Path under which the web server publishes the UI (cookie path).
+    url_prefix: str = "/asl-web-ui"
+    auth_socket: str = "/run/asl-web-ui-auth/auth.sock"
+    login_group: str = "asl-web-ui"
+    # "Keep me signed in": absolute and idle limits, in seconds.
+    keep_max_age: int = 30 * 86400
+    keep_idle: int = 7 * 86400
+    # Normal sessions.
+    session_max_age: int = 8 * 3600
+    session_idle: int = 30 * 60
+    # Password re-entry window for destructive actions.
+    recent_auth: int = 10 * 60
+    # Set only by --dev; never read from the settings file.
+    dev: bool = False
 
 
 def load(path: Path = DEFAULT_PATH) -> Settings:

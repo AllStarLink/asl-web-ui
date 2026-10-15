@@ -1,0 +1,84 @@
+/* Cockpit-style shell: dark top bar and navigation column in both themes;
+   the content area follows PatternFly's light/dark theme. */
+
+:root {
+  --asl-shell-bg: #151515;
+  --asl-shell-bg-2: #1f1f1f;
+  --asl-shell-fg: #e0e0e0;
+  --asl-shell-muted: #a3a3a3;
+  --asl-shell-hover: #2a2a2a;
+  --asl-shell-current: #383838;
+  --asl-shell-accent: #92c5f9;
+}
+
+html, body, #root { height: 100%; }
+.asl-fill { height: 100%; }
+
+/* ---- top bar ----
+   PatternFly's component CSS is bundled after this file, so these rules
+   use .pf-v6-c-masthead.asl-masthead to win on specificity. */
+.pf-v6-c-masthead.asl-masthead {
+  --pf-v6-c-masthead--BackgroundColor: var(--asl-shell-bg);
+  --pf-v6-c-masthead--BorderBlockEndWidth: 1px;
+  --pf-v6-c-masthead--BorderBlockEndColor: #000;
+  color: var(--asl-shell-fg);
+}
+.pf-v6-c-masthead.asl-masthead .pf-v6-c-button.pf-m-plain,
+.pf-v6-c-masthead.asl-masthead .pf-v6-c-menu-toggle {
+  color: var(--asl-shell-fg);
+  --pf-v6-c-button--m-plain--Color: var(--asl-shell-fg);
+  --pf-v6-c-menu-toggle--Color: var(--asl-shell-fg);
+  --pf-v6-c-menu-toggle--m-plain-text--Color: var(--asl-shell-fg);
+}
+.asl-masthead-brand { display: flex; align-items: center; gap: .6rem; color: var(--asl-shell-fg); text-decoration: none; }
+.asl-masthead-brand span { display: flex; flex-direction: column; line-height: 1.15; }
+.asl-masthead-brand b { font-family: var(--pf-t--global--font--family--heading); font-size: .95rem; }
+.asl-masthead-brand small { color: var(--asl-shell-muted); font-size: .78rem; }
+.asl-masthead-tools { margin-inline-start: auto; display: flex; align-items: center; gap: .5rem; }
+
+/* ---- navigation ---- */
+.pf-v6-c-page__sidebar.asl-sidebar {
+  --pf-v6-c-page__sidebar--BackgroundColor: var(--asl-shell-bg-2);
+  --pf-v6-c-page__sidebar--BorderInlineEndWidth: 1px;
+  --pf-v6-c-page__sidebar--BorderInlineEndColor: #000;
+}
+.asl-nav { list-style: none; margin: 0; padding: .75rem .5rem; display: grid; gap: 2px; }
+.asl-nav-link {
+  width: 100%; display: flex; align-items: center; gap: .7rem; background: transparent; color: var(--asl-shell-fg);
+  border: 0; border-radius: 6px; padding: .55rem .75rem; font: inherit; font-size: .9rem; text-align: left; cursor: pointer;
+}
+.asl-nav-link svg { width: 1.1rem; color: var(--asl-shell-muted); }
+.asl-nav-link:hover { background: var(--asl-shell-hover); }
+.asl-nav-link:focus-visible { outline: 2px solid var(--asl-shell-accent); outline-offset: 2px; }
+.asl-nav-link.current { background: var(--asl-shell-current); font-weight: 600; box-shadow: inset 3px 0 0 var(--asl-shell-accent); }
+.asl-nav-link.current svg { color: var(--asl-shell-accent); }
+
+/* ---- page content ---- */
+.asl-page-head { display: grid; gap: .5rem; }
+.asl-head-tabs { margin-block-start: .5rem; }
+.asl-subhead { margin-block: .75rem .5rem; }
+.asl-sub { color: var(--pf-t--global--text--color--subtle); font-size: .875rem; }
+.asl-ok { color: var(--pf-t--global--icon--color--status--success--default); }
+.asl-warn { color: var(--pf-t--global--icon--color--status--warning--default); }
+.asl-health { display: grid; gap: .6rem; }
+.asl-node-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-block: .5rem; border-block-start: 1px solid var(--pf-t--global--border--color--default); }
+.asl-node-row:first-child { border-block-start: 0; padding-block-start: 0; }
+
+/* ---- console ---- */
+.asl-console { display: grid; gap: .75rem; }
+.asl-terminal { height: min(65vh, 34rem); background: #0f1214; padding: .5rem; border-radius: var(--pf-t--global--border--radius--small); }
+
+/* ---- login ---- */
+.asl-login {
+  min-height: 100%; display: grid; place-content: center; justify-items: center; padding: 2rem 16px;
+  background: radial-gradient(1200px 600px at 20% 0%, #26323b, #151515 60%);
+}
+.asl-login-card {
+  width: min(100vw - 32px, 28rem); background: var(--pf-t--global--background--color--primary--default);
+  border-radius: var(--pf-t--global--border--radius--medium); padding: 2rem; display: grid; gap: 1.25rem;
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / .45);
+}
+.asl-brand { display: flex; gap: .75rem; align-items: center; }
+.asl-brand b { font-family: var(--pf-t--global--font--family--heading); font-size: 1.2rem; display: block; }
+.asl-brand span { color: var(--pf-t--global--text--color--subtle); font-size: .875rem; }
+.asl-login-foot { color: #b8c2c9; font-size: .8rem; text-align: center; margin-top: 1rem; max-width: 28rem; }

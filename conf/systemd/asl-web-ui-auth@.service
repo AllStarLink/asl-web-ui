@@ -1,0 +1,30 @@
+[Unit]
+Description=ASL Web UI login helper
+Documentation=man:asl-web-ui(8)
+
+[Service]
+# One process per login, connected through the socket. Runs as root because
+# PAM (pam_unix) needs to read /etc/shadow.
+ExecStart=/usr/libexec/asl-web-ui/asl-web-ui-auth
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=150
+
+# Hardening. Lighter than asl-web-ui.service on purpose: PAM modules an
+# admin may add need more room. pam_google_authenticator writes in the
+# user's home directory (so no ProtectHome/ProtectSystem), pam_faillock
+# writes under /run, and the ctypes PAM conversation callback uses libffi
+# closures (so no MemoryDenyWriteExecute).
+NoNewPrivileges=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK

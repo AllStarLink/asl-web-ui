@@ -1,4 +1,5 @@
 import "@patternfly/react-core/dist/styles/base.css";
+import "./shell.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

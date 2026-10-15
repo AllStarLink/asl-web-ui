@@ -9,7 +9,7 @@ decisions come before any code. Last updated 2026-10-14 (session 2).
 
 ## Where we left off
 
-**M0 (skeleton) is complete** on branch `m0-skeleton`. Next is M1 (login and shell).
+**M0 (skeleton) and M1 (login and shell) are complete** on `main`. Next is M2 (config engine).
 
 Every design topic is decided (sections 9, 12, 13 and 14 on 2026-10-14). The
 consolidated design document, [DESIGN.md](DESIGN.md), is awaiting the user's
@@ -521,6 +521,65 @@ flake8, black, mypy, pylint. ruff is not packaged in trixie.
   - nginx is tested with a temporary private nginx process that includes the
     packaged snippet, never by editing the system nginx;
   - test builds are installed with `dpkg -i` or `--no-install-recommends`.
+
+## 16. Implementation decisions during M1 (2026-10-14)
+
+- **Auth helper** (`backend/asl_web_ui_auth/`): ctypes binding to libpam
+  (pam_start, PAM_RHOST, pam_authenticate, pam_acct_mgmt), with a conversation
+  callback relayed over JSON lines.
+  - **Result reasons:**
+    - `denied` covers every failure before the password is known to be good, so
+      an unknown user looks exactly like a wrong password;
+    - `not_permitted` (not in the group) and `expired` are only sent after PAM
+      accepted the credentials;
+    - root is refused before PAM runs.
+  - **Verified against real PAM** in a container and on the dev box.
+  - **Hardening is lighter than the main service, on purpose:**
+    pam_google_authenticator writes in the user's home directory (so no
+    `ProtectHome`/`ProtectSystem`), pam_faillock writes under `/run`, and the
+    libffi callback needs executable memory (so no `MemoryDenyWriteExecute`).
+- **CSP allows inline styles** (user decision): `style-src 'self'
+  'unsafe-inline'`.
+  - xterm.js injects `<style>` elements computed at run time and supports no
+    nonce, so the console text was invisible under the strict policy.
+  - Scripts remain `'self'` only.
+  - Login and Overview had no violations, so only the console needed this.
+- **nginx forwards `Host $http_host`**, not `$host`: `$host` drops the port, which
+  broke the origin check.
+- **Systemd units live in `conf/systemd/`** and are installed by the Makefile;
+  `dh_installsystemd` only enables and starts the two sockets. (dh only picks up
+  extra unit files under its `debian/<pkg>.<name>.<unit>` naming.)
+- **Live status:** the events WebSocket does *not* count as activity for the
+  idle timeout. Each push re-checks the session and group, and the socket closes
+  with code 4401 when the session ends.
+- **Asterisk console:**
+  - runs `asterisk -rvvv` on a pseudo-terminal, as the asterisk user, with at most
+    3 per user;
+  - a streaming filter drops only the `-- Remote UNIX connection [disconnected]`
+    announcements caused by our own poller, handling lines split across reads
+    and incomplete escape sequences.
+- **Deferred to M2**, because both need the include-aware config engine:
+  - the console's warning before reload commands;
+  - the "restart pending" banner.
+- **aiohttp 3.11 (trixie) has no `web.RequestKey`**; request-scoped values use a
+  string key.
+- **Dev mode** (`asl-web-ui-server --dev`):
+  - serves the UI at `/` (`url_prefix ""`);
+  - logs in with dev/dev and skips the Unix group check;
+  - `--asterisk-conf` points it at a private Asterisk from
+    `tests/asterisk/instance.sh`.
+- **Test tooling added:**
+  - `tests/e2e/smoke.py`: end-to-end check through a real web server with a
+    real account;
+  - `tests/e2e/screenshot.py`: headless Firefox over WebDriver BiDi, printing
+    browser console and CSP errors;
+  - `tests/asterisk/instance.sh`: start/stop/cli for a private Asterisk.
+- **Dev box:**
+  - kept test account `aslwebtest` (in `asl-web-ui`; password in
+    `~/.local/share/asl-web-ui-test/aslwebtest.password`, mode 0600, never in
+    the repo);
+  - Apache default-ssl enabled on 8443 with the snakeoil certificate;
+  - nginx tested via a private TLS instance on 8091.
 
 ## Mockup
 

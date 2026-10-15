@@ -121,8 +121,10 @@ decide authorization. Admins can tighten the policy with their own polkit rules.
   - Only paths in the include list are extracted.
   - Absolute paths, `..`, and links that point outside those paths are rejected.
   - A snapshot is taken before anything is overwritten.
-- **Apache headers:** strict Content-Security-Policy, `X-Frame-Options: DENY`,
-  `Referrer-Policy`, `nosniff`. HSTS is documented for the admin's TLS virtual host.
+- **Web server headers:** Content-Security-Policy (scripts only from the site
+  itself; inline styles allowed because the console's terminal component needs
+  them), `X-Frame-Options: DENY`, `Referrer-Policy`, `nosniff`. HSTS is
+  documented for the admin's TLS virtual host.
 - **No general shell.** The only terminals are the Asterisk console and the classic
   tune menu, both running as `asterisk`. The backup `--post-exec` hook is not
   exposed in the web UI.

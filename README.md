@@ -4,7 +4,8 @@ A web interface for managing AllStarLink 3 node servers. It replaces the
 text menus of [asl3-menu](https://github.com/AllStarLink/asl3-menu) with a
 browser UI in the style of Cockpit, built with PatternFly.
 
-**Status:** early development. Milestone M0 (package skeleton) is in progress;
+**Status:** early development. Milestones M0 (package skeleton) and M1 (login,
+shell, status and console) are done;
 see [docs/DESIGN.md](docs/DESIGN.md) for the design and the milestone plan.
 
 ## Installing
@@ -40,6 +41,24 @@ Other targets:
 | `make frontend` | Build the browser bundle into `frontend/dist/` (needs Node.js) |
 | `make check` | Run the backend tests and the frontend type check |
 | `make deb` | Build the package directly (used inside the builder) |
+
+## Development
+
+Run the backend with a fake login (user `dev`, password `dev`) and a private,
+unprivileged Asterisk built from the installed ASL packages:
+
+    tests/asterisk/instance.sh start /tmp/asl-dev-asterisk
+    make frontend
+    cd backend && python3 -m asl_web_ui.server --dev \
+        --asterisk-conf /tmp/asl-dev-asterisk/etc/asterisk.conf
+
+Then open http://127.0.0.1:8099/. `--dev` refuses to run from the installed
+package or as the asterisk user.
+
+Checks against an installed package:
+
+    tests/e2e/smoke.py https://<host>/asl-web-ui/ <user> <password-file> [--insecure]
+    tests/e2e/screenshot.py <url> out.png [--cookie name=value] [--insecure]
 
 `builder/dockerbuild.sh` is the CI script used by the AllStarLink build
 runners; it builds **and publishes** packages and is not meant for local use.

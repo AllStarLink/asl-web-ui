@@ -9,10 +9,13 @@ NPM_BEFORE ?= 2026-09-30
 
 all frontend: dist/index.html
 
-node_modules/.package-lock.json: package.json package-lock.json
+# Our own stamp: npm rewrites node_modules/.package-lock.json even with
+# --package-lock-only, so that file cannot tell whether packages are installed.
+node_modules/.asl-installed: package.json package-lock.json
 	npm ci --ignore-scripts --no-audit --no-fund
+	touch $@
 
-dist/index.html: node_modules/.package-lock.json build.mjs public/index.html $(shell find src -type f)
+dist/index.html: node_modules/.asl-installed build.mjs public/index.html $(shell find src -type f)
 	npx tsc -p .
 	node build.mjs
 
@@ -20,7 +23,7 @@ dist/index.html: node_modules/.package-lock.json build.mjs public/index.html $(s
 lock:
 	npm install --package-lock-only --ignore-scripts --no-audit --no-fund --before=$(NPM_BEFORE)
 
-check: node_modules/.package-lock.json
+check: node_modules/.asl-installed
 	npx tsc -p .
 
 # Installs the already-built bundle; it does not build (no Node.js needed).

@@ -5,6 +5,6 @@ later milestones, its navigation entries, privileged commands and background
 tasks). ``MODULES`` lists them in load order.
 """
 
-from . import core
+from . import auth, console, core, status, system
 
-MODULES = [core]
+MODULES = [core, auth, system, status, console]
