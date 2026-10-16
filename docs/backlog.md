@@ -38,12 +38,9 @@ Questions to answer:
   (scheduled `npm audit`, Dependabot, a release checklist)?
 - Should the npm tarballs and Node.js archive be cached or vendored, so a
   build does not depend on nodejs.org and the npm registry being reachable?
-- Licensing: the package ships the bundled code and fonts above, but
-  `debian/copyright` does not list them (only esbuild's generated
-  `app.js.LEGAL.txt` / `app.css.LEGAL.txt` mention them). They need entries
-  (MIT for React, PatternFly, CodeMirror, xterm.js; SIL OFL for the Red Hat
-  fonts), checked against the actual tree, and a way to keep that list
-  current.
+- Licensing: done 2026-10-15. `debian/copyright` lists every bundled npm
+  package and the Red Hat fonts, and `frontend/build.mjs` fails the build
+  when a bundled package has no stanza there.
 - Debian policy prefers packaged libraries over embedded copies: decide
   whether that matters for the AllStarLink repository, and document the
   decision.
