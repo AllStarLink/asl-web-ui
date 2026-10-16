@@ -48,8 +48,9 @@ earlier.
 **asl-web-ui-priv@.service**
 : One root process per privileged request (socket **asl-web-ui-priv.socket**,
   reachable only by **asterisk**): backups, restores, the default
-  configuration, Allmon3's settings and users, the SA818 radio module, and
-  ownership fixes in */etc/asterisk*.
+  configuration, Allmon3's settings and users, the SA818 radio module, HTTPS
+  and Let's Encrypt certificates in Apache, and ownership fixes in
+  */etc/asterisk*.
   Every request is authorized with polkit (**pkcheck**) for the calling
   process.
 
@@ -81,6 +82,12 @@ allowed for the **asterisk** user by the polkit rule below.
 */etc/allmon3/*
 : Allmon3's settings, changed on the Allmon3 page through the privileged
   helper. Each change restarts **allmon3**.
+
+*/etc/apache2/sites-available/asl-web-ui-https.conf*
+: Written by the HTTPS page for the names of the Let's Encrypt certificate
+  (port 80 site with the optional redirect, port 443 site with the
+  certificate). The certificate itself is managed by **certbot**(1) in
+  */etc/letsencrypt*.
 
 */etc/sa818.conf*
 : The SA818 radio module's settings, shared with **sa818-menu**(1) (same
@@ -116,7 +123,7 @@ backup first.
 
 # SEE ALSO
 **asl-menu**(1), **node-setup**(8), **asl-backup-menu**(1),
-**asl-node-auth-check**(1), **sa818-menu**(1), **pkcheck**(1), **polkit**(8)
+**asl-node-auth-check**(1), **sa818-menu**(1), **certbot**(1), **pkcheck**(1), **polkit**(8)
 
 # BUGS
 Report bugs to https://github.com/AllStarLink/asl-web-ui/issues

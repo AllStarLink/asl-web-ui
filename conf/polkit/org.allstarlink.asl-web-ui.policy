@@ -162,6 +162,69 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.allstarlink.asl-web-ui.https-status">
+    <description>Read the web server's HTTPS settings</description>
+    <message>Authentication is required to: read the web server's HTTPS settings</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.https-install">
+    <description>Install certbot for Let's Encrypt certificates</description>
+    <message>Authentication is required to: install certbot for Let's Encrypt certificates</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.https-enable-listener">
+    <description>Enable HTTPS on port 443 in Apache</description>
+    <message>Authentication is required to: enable HTTPS on port 443 in Apache</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.https-obtain">
+    <description>Get a Let's Encrypt certificate and use it in Apache</description>
+    <message>Authentication is required to: get a Let's Encrypt certificate and use it in Apache</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.https-redirect">
+    <description>Change the HTTP to HTTPS redirection</description>
+    <message>Authentication is required to: change the HTTP to HTTPS redirection</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.https-renew-test">
+    <description>Test the renewal of the Let's Encrypt certificate</description>
+    <message>Authentication is required to: test the renewal of the Let's Encrypt certificate</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.https-remove">
+    <description>Stop using the Let's Encrypt certificate in Apache</description>
+    <message>Authentication is required to: stop using the Let's Encrypt certificate in Apache</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
   <action id="org.allstarlink.asl-web-ui.asterisk-fix-ownership">
     <description>Give a configuration file back to the asterisk user</description>
     <message>Authentication is required to: give a configuration file back to the asterisk user</message>

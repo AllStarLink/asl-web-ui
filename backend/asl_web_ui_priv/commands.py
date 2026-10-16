@@ -30,7 +30,7 @@ import tempfile
 import time
 from collections.abc import Callable
 
-from . import sa818
+from . import https, sa818
 
 ROOT = "/"
 BACKUP_DIR = "/var/asl-backups"
@@ -697,6 +697,45 @@ def sa818_version(args: dict, output: Output) -> dict:
     return {"ok": ok and firmware is not None, "firmware": firmware, "log": lines}
 
 
+# ---- HTTPS and Let's Encrypt (Apache) ------------------------------------------------------
+
+
+def _https(fn, *args):
+    try:
+        return fn(*args)
+    except https.HttpsError as exc:
+        message = f"{exc.field}: {exc.message}" if exc.field else exc.message
+        raise CommandError(message, exc.code)
+
+
+def https_status(args: dict, output: Output) -> dict:
+    return _https(https.status, ROOT)
+
+
+def https_install(args: dict, output: Output) -> dict:
+    return _https(https.install_packages, output)
+
+
+def https_enable_listener(args: dict, output: Output) -> dict:
+    return _https(https.enable_listener, ROOT, output)
+
+
+def https_obtain(args: dict, output: Output) -> dict:
+    return _https(https.obtain, ROOT, args, output)
+
+
+def https_redirect(args: dict, output: Output) -> dict:
+    return _https(https.set_redirect, ROOT, args.get("redirect") is True, output)
+
+
+def https_renew_test(args: dict, output: Output) -> dict:
+    return _https(https.renew_test, ROOT, output)
+
+
+def https_remove(args: dict, output: Output) -> dict:
+    return _https(https.remove, ROOT, args.get("delete_certificate") is True, output)
+
+
 COMMANDS = {
     "backup.create": backup_create,
     "backup.delete": backup_delete,
@@ -716,4 +755,11 @@ COMMANDS = {
     "sa818.read": sa818_read,
     "sa818.apply": sa818_apply,
     "sa818.version": sa818_version,
+    "https.status": https_status,
+    "https.install": https_install,
+    "https.enable_listener": https_enable_listener,
+    "https.obtain": https_obtain,
+    "https.redirect": https_redirect,
+    "https.renew_test": https_renew_test,
+    "https.remove": https_remove,
 }

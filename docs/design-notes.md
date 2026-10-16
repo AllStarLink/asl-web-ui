@@ -1078,6 +1078,48 @@ settings in /etc/sa818.conf and program the module from them.
   volume 4 -> 5 -> 4); the module accepted every command. Effects on the air
   were not tested (the module's cable is moved between programming and use).
 
+## 29. HTTPS and Let's Encrypt in Apache (2026-10-15, issue #2)
+
+An **HTTPS** page: whether Apache serves port 443 and which certificate it
+presents, installing certbot, getting a Let's Encrypt certificate, the
+HTTP-to-HTTPS redirect, a renewal test, and removal. Apache only; with
+nginx the page says to use certbot --nginx.
+
+- **Our own site, not certbot's installer.** Stock ASL appliances have
+  000-default (port 80, `.local` ServerName, a redirect and the fallback-AP
+  rules) and default-ssl (snakeoil, no ServerName), so `certbot --apache`
+  cannot tell which site to change. asl-web-ui writes
+  sites-available/asl-web-ui-https.conf for the names entered: a port 80
+  site (optionally redirecting everything except
+  /.well-known/acme-challenge/) and, once there is a certificate, a port
+  443 site using /etc/letsencrypt/live/NAME/. Same DocumentRoot, so global
+  confs (asl-web-ui, Allmon3) apply; other names still reach the other
+  sites. Its settings are a JSON comment in the file. Because the file
+  sorts before default-ssl it is also Apache's default port 443 site, so
+  visitors using an IP address or `.local` name get this certificate
+  (name mismatch either way).
+- **certbot only obtains certificates:** `certbot certonly --apache
+  --cert-name FIRST -d ... --deploy-hook "systemctl reload apache2"`
+  (stored as renew_hook); Debian's certbot.timer renews. Test (staging)
+  certificates first is the default; switching between staging and real
+  adds --force-renewal. If certbot fails, Apache is put back as it was.
+- **Every Apache change** is followed by `apache2ctl configtest`; on
+  failure the site file, enabled sites and enabled modules are restored
+  before anything reloads. Reloads are graceful.
+- **Turn on HTTPS** enables mod_ssl and Debian's default-ssl (creating the
+  snakeoil certificate with make-ssl-cert if needed) when nothing serves
+  443. A server without HTTPS cannot log in to asl-web-ui at all (plain
+  HTTP is refused), so this button helps only where the page is reached
+  otherwise; open question: should the package enable default-ssl itself?
+- Names: public host names only (no wildcards, IP addresses, `.local`), at
+  most 10; email optional (--register-unsafely-without-email); the
+  subscriber agreement must be ticked. Removal asks for the password again.
+- **Verified live** on mf-oh-astlab1.allstarlink.org (Debian 13, appliance
+  Apache layout, certbot 4.0.0): install, staging certificate, renewal dry
+  run, redirect off/on, a real certificate (trusted: curl without -k), the
+  page in a browser, removal with deletion, and Turn on HTTPS after
+  disabling default-ssl. The server was restored afterwards.
+
 ## Mockup
 
 [mockup/](mockup/) holds the source of the published mockup. To rebuild:

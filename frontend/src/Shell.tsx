@@ -25,6 +25,7 @@ import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
 import FileCodeIcon from "@patternfly/react-icons/dist/esm/icons/file-code-icon";
 import NetworkIcon from "@patternfly/react-icons/dist/esm/icons/network-icon";
 import HistoryIcon from "@patternfly/react-icons/dist/esm/icons/history-icon";
+import LockIcon from "@patternfly/react-icons/dist/esm/icons/lock-icon";
 import MonitoringIcon from "@patternfly/react-icons/dist/esm/icons/monitoring-icon";
 import StethoscopeIcon from "@patternfly/react-icons/dist/esm/icons/stethoscope-icon";
 import TachometerAltIcon from "@patternfly/react-icons/dist/esm/icons/tachometer-alt-icon";
@@ -44,6 +45,7 @@ const NAV: NavEntry[] = [
   { route: "allmon3", label: "Allmon3", icon: <MonitoringIcon /> },
   { route: "diagnostics", label: "Diagnostics", icon: <StethoscopeIcon /> },
   { route: "backups", label: "Backups", icon: <HistoryIcon /> },
+  { route: "https", label: "HTTPS", icon: <LockIcon /> },
 ];
 
 // Shown once sa818-menu or this page has saved SA818 settings (or while on it);
