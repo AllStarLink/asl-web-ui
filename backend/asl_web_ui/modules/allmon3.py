@@ -15,6 +15,9 @@
     DELETE /api/v1/allmon3/users/{user}
     PUT    /api/v1/allmon3/users/{user}/nodes  {"nodes": [...]|null}
 
+files/{name} also reads any other file in /etc/allmon3 except users (for
+Manual Config Edit), but writes only Allmon3's own files (conf.FILES).
+
 The files belong to root or allmon3, so they are read and written through
 the privileged helper; the users file only through its allmon3.* commands,
 which never return the password hashes. Every change restarts Allmon3 (its
@@ -31,6 +34,8 @@ import time
 
 from aiohttp import web
 from aiohttp_session import get_session
+
+from asl_web_ui_priv.commands import ALLMON3_NAME_RE
 
 from .. import allmon3conf as conf
 from ..configengine.model import load
@@ -68,8 +73,9 @@ async def _priv(request: web.Request, command: str, args: dict | None = None) ->
 
 
 def _name(request: web.Request) -> str:
+    """One of Allmon3's files, or (to read only) another file in /etc/allmon3."""
     name = request.match_info["name"]
-    if name not in conf.FILES:
+    if name not in conf.FILES and (not ALLMON3_NAME_RE.match(name) or name == "users"):
         raise web.HTTPNotFound(text="No such Allmon3 file")
     return name
 
@@ -232,7 +238,10 @@ async def read_file(request: web.Request) -> web.Response:
         f = await _read(request, name)
     except PrivError as exc:
         return _priv_error(exc)
+    if not f["exists"] and name not in conf.FILES:
+        return error(404, "not_found", f"{conf.path(name)} does not exist.")
     return web.json_response({**f, "name": name, "path": conf.path(name), "optional": name in conf.OPTIONAL,
+                              "writable": name in conf.FILES,
                               "findings": conf.check(name, f["content"]) if f["exists"] else []})
 
 
@@ -253,6 +262,8 @@ async def plan_file(request: web.Request) -> web.Response:
     content, expected = body.get("content"), body.get("hash")
     if not isinstance(content, str) or not isinstance(expected, str):
         return error(400, "invalid", "content and hash are required.")
+    if name not in conf.FILES:
+        return error(403, "read_only", f"Allmon3 does not read {name}, so it cannot be changed here.")
     try:
         current = await _read(request, name)
     except PrivError as exc:

@@ -1134,6 +1134,45 @@ nginx the page says to use certbot --nginx.
   page in a browser, removal with deletion, and Turn on HTTPS after
   disabling default-ssl. The server was restored afterwards.
 
+## 30. All configuration files and the Asterisk log (2026-10-16, issue #14)
+
+Manual Config Edit keeps its table of main files and adds an "All files"
+card with one tab each for /etc/asterisk, /etc/allmon3 and /etc/sa818.conf,
+a name filter, and /etc/asterisk grouped by folder.
+
+- **/etc/asterisk:** every file in the tree (`GET /api/v1/config/tree`,
+  capped at 5000), named by its relative path (`config/files/custom/rpt/x.conf`).
+  Names that leave the directory or pass through a symbolic link are refused;
+  links are listed with their target but not opened. Files over 1 MiB are not
+  opened. The service already owns the directory, so no privilege is needed.
+- **Checking custom/ files (mkmer's suggestion on #14):** a top-level .conf
+  file is checked as before. Any other file is checked through the top-level
+  files whose #include/#tryinclude reach it, keeping the findings about that
+  file; the tree shows "Included by rpt.conf". Mapping the includes of every
+  top-level file takes about 50 ms on a stock ASL3 tree, so it is not cached.
+  A file nothing includes is marked as not read by Asterisk and not checked.
+- **/etc/allmon3:** the helper's new `file.list` lists the regular files
+  there (not links); `file.read` reads any of them except `users` (password
+  hashes stay in the helper). `file.write` is unchanged: only the files
+  Allmon3 reads. The others are read-only because some are web server
+  configuration that root loads (nginx.conf is meant to be included in an
+  nginx server block; allmon3.conf is Apache's), so writing them would give
+  root to anyone who can log in to the web interface. They open in the
+  Allmon3 file editor, now shared as SystemFileEditor.
+- **/etc/sa818.conf:** raw editing through `file.write`, but sa818-menu
+  sources the file as root, so the helper accepts only blank lines, #
+  comments and `CURRENT_*=VALUE` lines with known keys and plain values
+  (letters, digits, `. _ / : + -`, optionally quoted), with lines split at
+  \n as the shell does. Such errors cannot be saved anyway; values the SA818
+  page would refuse are warnings. Saving does not program the module.
+- **Snapshots** are kept only for /etc/asterisk (the configengine store);
+  helper writes are recorded in the audit log, as for the Allmon3 page.
+- **Asterisk log (Diagnostics):** the last 100-10000 lines of
+  /var/log/asterisk/messages.log (Settings.asterisk_log), read backwards from
+  the end (at most 8 MiB), and a download of the whole file
+  (`messages-HOST-YYYYmmdd-HHMM.log`, audited). The service user owns the log,
+  so no privilege is needed.
+
 ## Mockup
 
 [mockup/](mockup/) holds the source of the published mockup. To rebuild:

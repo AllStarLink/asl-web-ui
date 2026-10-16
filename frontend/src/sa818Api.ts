@@ -1,3 +1,4 @@
+import { Allmon3Applied, Allmon3File, Allmon3Finding, Allmon3Plan, Allmon3Unchanged } from "./allmon3Api";
 import { get, post, request } from "./api";
 
 // /etc/sa818.conf's keys, as sa818-menu names them.
@@ -36,3 +37,11 @@ export const readSA818 = () => get<SA818State>("sa818");
 export const applySA818 = (settings: SA818Settings) => request<SA818Result>("PUT", "sa818", { settings });
 export const programSA818 = () => post<SA818Result>("sa818/program");
 export const sa818Version = () => post<SA818Version>("sa818/version");
+
+// /etc/sa818.conf as text (Manual Config Edit); same shapes as Allmon3's files.
+export const readSA818File = () => get<Allmon3File>("sa818/file");
+export const checkSA818File = (content: string) => post<{ findings: Allmon3Finding[] }>("sa818/file/check", { content });
+export const planSA818File = (content: string, hash: string) =>
+  post<Allmon3Plan | Allmon3Unchanged>("sa818/file/plan", { content, hash });
+export const applySA818FilePlan = (id: string, confirmErrors = false) =>
+  post<Allmon3Applied>(`sa818/file/plans/${encodeURIComponent(id)}/apply`, { confirm_errors: confirmErrors });

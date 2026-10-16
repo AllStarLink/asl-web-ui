@@ -81,9 +81,18 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.allstarlink.asl-web-ui.file-list">
+    <description>List Allmon3's and the SA818 module's settings files</description>
+    <message>Authentication is required to: list Allmon3's and the SA818 module's settings files</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
   <action id="org.allstarlink.asl-web-ui.file-read">
-    <description>Read Allmon3's settings</description>
-    <message>Authentication is required to: read Allmon3's settings</message>
+    <description>Read Allmon3's and the SA818 module's settings files</description>
+    <message>Authentication is required to: read Allmon3's and the SA818 module's settings files</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>
@@ -91,8 +100,8 @@
     </defaults>
   </action>
   <action id="org.allstarlink.asl-web-ui.file-write">
-    <description>Change Allmon3's settings</description>
-    <message>Authentication is required to: change Allmon3's settings</message>
+    <description>Change Allmon3's and the SA818 module's settings files</description>
+    <message>Authentication is required to: change Allmon3's and the SA818 module's settings files</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>

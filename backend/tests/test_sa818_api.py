@@ -106,3 +106,34 @@ def test_ports(tmp_path):
     for name in ("serial0", "ttyUSB0", "ttyUSB1", "tty1"):
         (tmp_path / "dev" / name).touch()
     assert sa818.ports(str(tmp_path)) == ["/dev/serial0", "/dev/ttyUSB0", "/dev/ttyUSB1"]
+
+
+async def test_edit_the_file_as_text(module):
+    module.install()
+    a = await module.make()
+    status_, _ = await a.call("GET", "sa818/file")
+    assert status_ == 404  # nothing saved yet
+    await a.call("PUT", "sa818", {"settings": WANTED})
+    _, f = await a.call("GET", "sa818/file")
+    assert f["findings"] == [] and f["path"] == "/etc/sa818.conf"
+    new = f["content"].replace("CURRENT_VOLUME=6", "CURRENT_VOLUME=7") + "# note\n"
+    _, plan = await a.call("POST", "sa818/file/plan", {"content": new, "hash": f["hash"]})
+    assert "+CURRENT_VOLUME=7" in plan["diff"]
+    status_, _ = await a.call("POST", f"sa818/file/plans/{plan['id']}/apply", {})
+    assert status_ == 200 and module.conf.read_text() == new
+    _, body = await a.call("GET", "config/system-files")
+    assert body["sa818"]["path"] == "/etc/sa818.conf" and body["sa818"]["writable"]
+
+
+async def test_text_that_the_shell_could_run_is_refused(module):
+    module.install()
+    a = await module.make()
+    await a.call("PUT", "sa818", {"settings": WANTED})
+    _, f = await a.call("GET", "sa818/file")
+    for bad in ("CURRENT_VOLUME=$(reboot)\n", "touch /tmp/x\n", "CURRENT_BAND=VHF\x0b;id\n"):
+        _, check = await a.call("POST", "sa818/file/check", {"content": f["content"] + bad})
+        assert check["findings"][-1]["severity"] == "error", bad
+        _, plan = await a.call("POST", "sa818/file/plan", {"content": f["content"] + bad, "hash": f["hash"]})
+        status_, body = await a.call("POST", f"sa818/file/plans/{plan['id']}/apply", {"confirm_errors": True})
+        assert status_ == 400 and "Nothing was written" in body["message"], bad
+    assert module.conf.read_text() == f["content"]

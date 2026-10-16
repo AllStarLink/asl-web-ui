@@ -74,7 +74,7 @@ flowchart LR
 | Start, stop, restart `asterisk`, `allmon3`, `asl3-update-nodelist`; reboot; power off | `systemctl` called by the service. A shipped polkit rule allows only those units and only the asterisk user. |
 | Create, restore, delete, import backups; edit the backup include list | `asl-web-ui-priv` commands |
 | Factory restore (reinstall `asl3-asterisk-config`, keeping the AMI secret) | `asl-web-ui-priv`, with output streamed back |
-| Edit `/etc/allmon3/allmon3.ini` | `asl-web-ui-priv file.write`. The path must be on an allowlist, and the hash is checked. The edit itself is computed without privilege. |
+| Edit `/etc/allmon3/allmon3.ini` (and Allmon3's other files, `/etc/sa818.conf`) | `asl-web-ui-priv file.write`. The path must be on an allowlist, and the hash is checked. The edit itself is computed without privilege. `file.list` and `file.read` also show Allmon3's other files, read-only. |
 | Give root-owned files in `/etc/asterisk` back to the asterisk user | `asl-web-ui-priv asterisk.fix_ownership`. Only regular files under `/etc/asterisk`. |
 | Everything else (config edits, AstDB, tuning, diagnostics) | No privilege needed: the service runs as `asterisk` |
 

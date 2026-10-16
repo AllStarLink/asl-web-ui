@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { Bullseye, Button, Modal, ModalBody, ModalFooter, ModalHeader, Spinner } from "@patternfly/react-core";
 
 import { ApiError, get, post, Session, setCsrfToken, SystemInfo } from "./api";
-import { Allmon3Editor } from "./Allmon3Editor";
 import { Allmon3Page } from "./Allmon3Page";
 import { AsteriskPage } from "./AsteriskPage";
 import { Backups } from "./Backups";
@@ -15,6 +14,7 @@ import { NodePage } from "./NodePage";
 import { Nodes } from "./Nodes";
 import { Overview } from "./Overview";
 import { SA818Page } from "./SA818Page";
+import { Allmon3Editor, SA818FileEditor } from "./SystemFileEditor";
 import { Shell } from "./Shell";
 import { useRoute } from "./useRoute";
 import { useStatus } from "./useStatus";
@@ -41,6 +41,9 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   else if (base === "https") page = <HttpsPage />;
   else if (base === "sa818") page = <SA818Page />;
   else if (base === "allmon3") page = <Allmon3Page tab={sub ?? "status"} />;
+  else if (base === "config" && sub === "~allmon3" && third)
+    page = <Allmon3Editor key={third} name={decodeURIComponent(third)} from="config" />;
+  else if (base === "config" && sub === "~sa818") page = <SA818FileEditor />;
   else if (base === "config" && sub) page = <ConfigEditor key={sub} name={decodeURIComponent(sub)} />;
   else if (base === "config") page = <ConfigFiles />;
   else page = <Overview status={status} system={system} />;

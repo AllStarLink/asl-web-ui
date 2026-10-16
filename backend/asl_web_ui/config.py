@@ -34,6 +34,8 @@ class Settings:
     # log are kept (the service's StateDirectory).
     config_dir: str = "/etc/asterisk"
     state_dir: str = "/var/lib/asl-web-ui"
+    # Asterisk's main log (logger.conf's messages.log), shown on Diagnostics.
+    asterisk_log: str = "/var/log/asterisk/messages.log"
     # Set only by --dev; never read from the settings file.
     dev: bool = False
 

@@ -216,6 +216,37 @@ def test_allmon3_file_read_and_write(root):
     assert result("file.read", {"path": "/etc/shadow"})["code"] == "invalid"
 
 
+def test_other_allmon3_files_are_listed_and_read_only(root):
+    allmon3 = root / "etc" / "allmon3"
+    (allmon3 / "nginx.conf").write_text("location {}\n")
+    (allmon3 / "users").write_text("user|pass\nadmin|$argon2id$hash\n")
+    (allmon3 / "link.ini").symlink_to("/etc/passwd")
+    listed = result("file.list")["data"]
+    assert [e["path"] for e in listed["allmon3"]] == [
+        "/etc/allmon3/allmon3.ini", "/etc/allmon3/nginx.conf", "/etc/allmon3/users"]
+    assert [e["writable"] for e in listed["allmon3"]] == [True, False, False]
+    assert not listed["allmon3"][2]["readable"] and listed["sa818"] is None
+    read = result("file.read", {"path": "/etc/allmon3/nginx.conf"})["data"]
+    assert read["content"] == "location {}\n"
+    assert result("file.write", {"path": "/etc/allmon3/nginx.conf", "content": "x",
+                                 "expected_hash": read["hash"]})["code"] == "invalid"
+    assert result("file.read", {"path": "/etc/allmon3/users"})["code"] == "invalid"
+    assert not result("file.read", {"path": "/etc/allmon3/link.ini"})["ok"]  # not followed
+    assert result("file.read", {"path": "/etc/allmon3/../shadow"})["code"] == "invalid"
+
+
+def test_sa818_conf_is_written_only_when_safe_to_source(root):
+    conf = root / "etc" / "sa818.conf"
+    conf.write_text("CURRENT_BAND=VHF\n")
+    read = result("file.read", {"path": "/etc/sa818.conf"})["data"]
+    bad = result("file.write", {"path": "/etc/sa818.conf", "content": "CURRENT_BAND=VHF; reboot\n",
+                                "expected_hash": read["hash"]})
+    assert bad["code"] == "invalid" and conf.read_text() == "CURRENT_BAND=VHF\n"
+    good = "# by hand\nCURRENT_BAND=UHF\nCURRENT_PORT='/dev/ttyUSB0'\n"
+    assert result("file.write", {"path": "/etc/sa818.conf", "content": good, "expected_hash": read["hash"]})["ok"]
+    assert conf.read_text() == good
+
+
 def test_fix_ownership_stays_in_etc_asterisk(root):
     assert result("asterisk.fix_ownership", {"path": "rpt.conf"})["ok"]
     assert result("asterisk.fix_ownership", {"path": "../allmon3/allmon3.ini"})["code"] == "invalid"

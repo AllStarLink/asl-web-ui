@@ -22,6 +22,7 @@ import hashlib
 import io
 import os
 import posixpath
+import pwd
 import re
 import stat
 import subprocess
@@ -38,10 +39,16 @@ INCLUDE_LIST = "/var/asl-backups/asl-backup-files"
 STAGING_DIR = "/var/lib/asl-web-ui/staging"
 CONFIG_DIR = "/etc/asterisk"
 MARKER = "etc/asterisk/rpt_http_registrations.conf"  # asl-backup-menu's "made on ASL3" check
-# Files outside /etc/asterisk the web UI may read and replace (Allmon3's
-# users file only through the allmon3.* commands, so hashes never leave).
+# Files outside /etc/asterisk the web UI may replace: the files Allmon3 reads,
+# and the SA818 settings (only with content that is safe to source, see
+# sa818.lint_text). Every other file directly in /etc/allmon3 can be listed and
+# read, but not written: some are web server configuration (allmon3.conf,
+# nginx.conf) that root reads. Allmon3's users file is never read here (only
+# through the allmon3.* commands, so hashes never leave).
+ALLMON3_DIR = "/etc/allmon3"
 FILE_ALLOWLIST = {"/etc/allmon3/allmon3.ini", "/etc/allmon3/web.ini", "/etc/allmon3/menu.ini",
-                  "/etc/allmon3/custom.css", "/etc/allmon3/user-restrictions"}
+                  "/etc/allmon3/custom.css", "/etc/allmon3/user-restrictions", sa818.CONF}
+ALLMON3_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.+~-]{0,100}$")
 # Of those, the ones that may be created or removed: Allmon3 works without them.
 OPTIONAL_FILES = {"/etc/allmon3/menu.ini"}
 ALLMON3_USERS = "/etc/allmon3/users"
@@ -479,11 +486,39 @@ def factory_restore(args: dict, output: Output, run=subprocess.Popen) -> dict:
 # ---- files outside /etc/asterisk -----------------------------------------------------------
 
 
-def _allowed_file(args: dict) -> str:
+def _allowed_file(args: dict, write: bool = False) -> str:
     path = _str(args, "path", 200)
-    if path not in FILE_ALLOWLIST:
-        raise CommandError("That file cannot be accessed.", "invalid")
-    return _path(path)
+    if path in FILE_ALLOWLIST:
+        return _path(path)
+    directory, name = posixpath.split(path)
+    if not write and directory == ALLMON3_DIR and ALLMON3_NAME_RE.match(name) and path != ALLMON3_USERS:
+        return _path(path)
+    if write and directory == ALLMON3_DIR:
+        raise CommandError(f"Allmon3 does not read {name}, so it cannot be changed here.", "invalid")
+    raise CommandError("That file cannot be accessed.", "invalid")
+
+
+def file_list(args: dict, output: Output) -> dict:
+    """The files directly in /etc/allmon3, and /etc/sa818.conf."""
+    def entry(path: str, st: os.stat_result) -> dict:
+        try:
+            owner = pwd.getpwuid(st.st_uid).pw_name
+        except KeyError:
+            owner = str(st.st_uid)
+        return {"path": path, "size": st.st_size, "modified": int(st.st_mtime), "owner": owner,
+                "writable": path in FILE_ALLOWLIST, "readable": path != ALLMON3_USERS}
+
+    allmon3 = None
+    directory = _path(ALLMON3_DIR)
+    if os.path.isdir(directory) and not os.path.islink(directory):
+        allmon3 = []
+        for name in sorted(os.listdir(directory)):
+            st = os.lstat(os.path.join(directory, name))
+            if stat.S_ISREG(st.st_mode) and ALLMON3_NAME_RE.match(name):
+                allmon3.append(entry(f"{ALLMON3_DIR}/{name}", st))
+    conf = _path(sa818.CONF)
+    st = os.lstat(conf) if os.path.lexists(conf) else None
+    return {"allmon3": allmon3, "sa818": entry(sa818.CONF, st) if st and stat.S_ISREG(st.st_mode) else None}
 
 
 def file_read(args: dict, output: Output) -> dict:
@@ -511,9 +546,14 @@ def _existing(path: str, name: str, optional: bool) -> os.stat_result | None:
 
 
 def file_write(args: dict, output: Output) -> dict:
-    path = _allowed_file(args)
+    path = _allowed_file(args, write=True)
     content = _str(args, "content", MAX_FILE)
     expected = _str(args, "expected_hash", 80)
+    if args["path"] == sa818.CONF:
+        unsafe = [f for f in sa818.lint_text(content) if f["severity"] == "error"]
+        if unsafe:
+            line = unsafe[0]["line"]
+            raise CommandError(f"{sa818.CONF} line {line}: {unsafe[0]['message']} Nothing was written.", "invalid")
     st = _existing(path, args["path"], args["path"] in OPTIONAL_FILES)
     current = _read(path) if st is not None else None
     if (_digest(current) if current is not None else "absent") != expected:
@@ -745,6 +785,7 @@ COMMANDS = {
     "backup.read_include_list": read_include_list,
     "backup.write_include_list": write_include_list,
     "factory.restore": factory_restore,
+    "file.list": file_list,
     "file.read": file_read,
     "file.write": file_write,
     "file.delete": file_delete,

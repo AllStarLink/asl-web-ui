@@ -15,6 +15,7 @@ export type Allmon3File = {
   path: string;
   exists: boolean;
   optional: boolean;
+  writable: boolean;
   content: string;
   hash: string;
   findings: Allmon3Finding[];

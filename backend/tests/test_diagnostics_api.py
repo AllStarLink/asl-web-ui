@@ -23,3 +23,23 @@ async def test_connectivity_check_is_cached(env, tmp_path, monkeypatch):
     _, after = await a.call("GET", "diagnostics")
     assert after["connectivity"]["result"] == "error"
     assert [s["node"] for s in after["connectivity"]["sections"] if s["id"] == "node"] == ["2701", "2702"]
+
+
+async def test_asterisk_log_tail_and_download(env, tmp_path):
+    log = tmp_path / "messages.log"
+    log.write_text("".join(f"[Oct 16 10:00:{i % 60:02d}] NOTICE line {i}\n" for i in range(500)))
+    a = await env.make(asterisk_log=str(log))
+    status_, body = await a.call("GET", "diagnostics/log?lines=3")
+    assert status_ == 200 and body["more"] and body["text"].splitlines()[-1].endswith("line 499")
+    assert len(body["text"].splitlines()) == 3 and body["size"] == log.stat().st_size
+    _, body = await a.call("GET", "diagnostics/log?lines=100000")
+    assert body["lines"] == diagnostics.MAX_LINES and not body["more"] and body["text"] == log.read_text()
+    status_, _ = await a.call("GET", "diagnostics/log?lines=x")
+    assert status_ == 400
+    resp = await a.client_.get("/api/v1/diagnostics/log/download")
+    assert resp.status == 401 or resp.status == 403  # needs the session
+    status_, data = await a.call("GET", "diagnostics/log/download")
+    assert status_ == 200 and data == log.read_bytes()
+    log.unlink()
+    _, body = await a.call("GET", "diagnostics/log")
+    assert body["exists"] is False

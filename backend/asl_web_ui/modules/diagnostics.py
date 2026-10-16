@@ -5,6 +5,8 @@
     POST /api/v1/diagnostics/ping                  ping 8.8.8.8 four times (job)
     POST /api/v1/diagnostics/registration-server   is register.allstarlink.org reachable?
     POST /api/v1/diagnostics/nodelist/restart      restart asl3-update-nodelist.service
+    GET  /api/v1/diagnostics/log?lines=N           the last N lines of Asterisk's messages.log
+    GET  /api/v1/diagnostics/log/download          the whole log, as a file
 
 Asterisk's version and registrations are on the Asterisk page; starting,
 stopping and restarting it are in modules/control.py.
@@ -14,6 +16,9 @@ import asyncio
 import json
 import logging
 import os
+import re
+import socket
+import time
 
 import aiohttp
 from aiohttp import web
@@ -33,6 +38,8 @@ REGISTRATION_SERVER = "http://register.allstarlink.org"
 PACKAGE_PATTERNS = ["asl-apt-repos", "asl3*", "dahdi*", "allmon3*", "cockpit*", "asl-web-ui"]
 AUTHCHECK_KEY = web.AppKey("authcheck_tool", str)
 CACHE = "connectivity.json"
+MAX_LINES = 10000
+MAX_TAIL_BYTES = 8 << 20
 
 
 def _cache_path(request: web.Request) -> str:
@@ -143,6 +150,62 @@ async def restart_nodelist(request: web.Request) -> web.Response:
     if code != 0:
         return error(500, "failed", f"The node list service could not be restarted: {output[-300:]}")
     return web.json_response({"done": True, "state": await nodelist_state()})
+
+
+# ---- Asterisk's log ----------------------------------------------------------------------
+
+
+def tail(path: str, lines: int) -> tuple[str, bool]:
+    """The last ``lines`` lines of a file (at most MAX_TAIL_BYTES of them), and
+    whether the file has more before them."""
+    block = 64 << 10
+    with open(path, "rb") as f:
+        end = f.seek(0, os.SEEK_END)
+        pos, data = end, b""
+        # One newline more than wanted, as the file normally ends with one.
+        while pos > 0 and data.count(b"\n") <= lines and end - pos < MAX_TAIL_BYTES:
+            step = min(block, pos)
+            pos -= step
+            f.seek(pos)
+            data = f.read(step) + data
+    parts = data.splitlines(keepends=True)
+    if pos > 0:
+        parts = parts[1:]  # it starts in the middle of a line
+    return b"".join(parts[-lines:]).decode("utf-8", "replace"), pos > 0 or len(parts) > lines
+
+
+@routes.get("/api/v1/diagnostics/log")
+async def log_tail(request: web.Request) -> web.Response:
+    path = request.app[SETTINGS_KEY].asterisk_log
+    try:
+        lines = int(request.query.get("lines", "200"))
+    except ValueError:
+        return error(400, "invalid", "lines must be a number.")
+    lines = max(1, min(lines, MAX_LINES))
+    try:
+        st = os.stat(path)
+        text, more = await asyncio.to_thread(tail, path, lines)
+    except FileNotFoundError:
+        return web.json_response({"path": path, "exists": False})
+    except OSError as exc:
+        return error(500, "unreadable", f"Cannot read {path}: {exc.strerror}")
+    return web.json_response({"path": path, "exists": True, "size": st.st_size, "modified": int(st.st_mtime),
+                              "lines": lines, "text": text, "more": more})
+
+
+@routes.get("/api/v1/diagnostics/log/download")
+async def log_download(request: web.Request) -> web.StreamResponse:
+    path = request.app[SETTINGS_KEY].asterisk_log
+    if not os.path.isfile(path):
+        raise web.HTTPNotFound(text=f"{path} does not exist")
+    if not os.access(path, os.R_OK):
+        raise web.HTTPForbidden(text=f"Cannot read {path}")
+    stem, ext = os.path.splitext(os.path.basename(path))
+    host = re.sub(r"[^A-Za-z0-9.-]", "", socket.gethostname()) or "asl"
+    name = f"{stem}-{host}-{time.strftime('%Y%m%d-%H%M')}{ext}"
+    request.app[STORE_KEY].record(request[USER_KEY], "download Asterisk log", "done", [path])
+    return web.FileResponse(path, headers={"Content-Disposition": f'attachment; filename="{name}"',
+                                           "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store"})
 
 
 def setup(app: web.Application) -> None:

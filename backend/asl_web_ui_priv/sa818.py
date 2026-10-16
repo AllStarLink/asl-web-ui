@@ -96,6 +96,47 @@ def parse(text: str) -> dict[str, str]:
     return settings
 
 
+_SAFE_VALUE = re.compile(r"""^(?:[A-Za-z0-9._/:+-]*|"[A-Za-z0-9._/:+ -]*"|'[A-Za-z0-9._/:+ -]*')$""")
+
+
+def lint_text(text: str) -> list[dict]:
+    """Check a sa818.conf edited by hand (findings by 1-based line).
+
+    sa818-menu sources the file as root, so errors are lines the shell could
+    run as anything but a plain assignment of a known setting: only those
+    lines, comments and blank lines are allowed. Warnings are values the
+    SA818 page would not accept."""
+    findings, seen = [], {}
+    # Lines as the shell splits them: at newlines only, so no other line break
+    # (\r, \v, U+2028 ...) can hide a command inside an accepted line.
+    for number, line in enumerate(text.split("\n"), 1):
+        stripped = line.removesuffix("\r").strip(" \t")
+        if not stripped or stripped.startswith("#"):
+            continue
+        m = re.match(r"^(CURRENT_[A-Z_]+)=(.*)$", stripped)
+        if not m or m.group(1) not in DEFAULTS:
+            findings.append({"line": number, "severity": "error", "message":
+                             "Only KEY=VALUE lines for the SA818 settings (CURRENT_BAND=...), comments (#) and "
+                             "blank lines are allowed: sa818-menu runs this file as a shell script as root."})
+            continue
+        if not _SAFE_VALUE.match(m.group(2)):
+            findings.append({"line": number, "severity": "error", "message":
+                             f"The value of {m.group(1)} may contain only letters, digits and . _ / : + -."})
+            continue
+        if m.group(1) in seen:
+            findings.append({"line": number, "severity": "warning", "message":
+                             f"{m.group(1)} is also set on line {seen[m.group(1)]}; this line wins."})
+        seen[m.group(1)] = number
+    if not any(f["severity"] == "error" for f in findings):
+        settings = parse(text)
+        try:
+            check(settings, ports_exist=lambda port: True)
+        except Invalid as exc:
+            findings.append({"line": seen.get(exc.field) if exc.field else None, "severity": "warning",
+                             "message": str(exc)})
+    return findings
+
+
 def render(settings: dict[str, str]) -> str:
     return "".join(f"{k}={settings[k]}\n" for k in DEFAULTS)
 

@@ -5,14 +5,15 @@ import { message } from "./api";
 import { Allmon3Applied, Allmon3Finding, Allmon3Plan, Allmon3Unchanged, applyAllmon3Plan } from "./allmon3Api";
 import { DiffView } from "./DiffView";
 
-export function Findings({ findings }: { findings: Allmon3Finding[] }) {
+export function Findings({ findings, errorsTitle = "Allmon3 would not load the file as it is" }:
+  { findings: Allmon3Finding[]; errorsTitle?: string }) {
   const errors = findings.filter((f) => f.severity === "error");
   const warnings = findings.filter((f) => f.severity !== "error");
   const line = (f: Allmon3Finding) => `${f.line ? `Line ${f.line}: ` : ""}${f.message}`;
   return (
     <>
       {errors.length > 0 && (
-        <Alert variant="danger" isInline title="Allmon3 would not load the file as it is">
+        <Alert variant="danger" isInline title={errorsTitle}>
           <ul>{errors.map((f, i) => <li key={i}>{line(f)}</li>)}</ul>
         </Alert>
       )}
@@ -27,10 +28,27 @@ export function Findings({ findings }: { findings: Allmon3Finding[] }) {
 
 type Review = { plan: Allmon3Plan; resolve: (applied: Allmon3Applied | null) => void };
 
+// How a reviewed plan is saved: by default one of Allmon3's files (Allmon3
+// is restarted to load it). The SA818 settings file passes its own.
+export type ReviewTarget = {
+  apply: (id: string, confirmErrors: boolean) => Promise<Allmon3Applied>;
+  dir: string;
+  note: string;
+  errorsBlock?: boolean; // errors cannot be saved anyway
+  errorsTitle?: string;
+};
+
+const ALLMON3: ReviewTarget = {
+  apply: applyAllmon3Plan,
+  dir: "/etc/allmon3",
+  note: "Allmon3 is restarted to load the change; anyone logged in to Allmon3 has to log in again.",
+};
+
 // Shows a planned change to one of Allmon3's files, and saves it when
-// confirmed (Allmon3 is restarted to load it). review() rejects with the
-// planning error and resolves to null when cancelled or nothing changes.
-export function useAllmon3Review(): [ReactNode, (planned: Promise<Allmon3Plan | Allmon3Unchanged>) => Promise<Allmon3Applied | null>] {
+// confirmed. review() rejects with the planning error and resolves to null
+// when cancelled or nothing changes.
+export function useAllmon3Review(target: ReviewTarget = ALLMON3):
+  [ReactNode, (planned: Promise<Allmon3Plan | Allmon3Unchanged>) => Promise<Allmon3Applied | null>] {
   const [review, setReview] = useState<Review | null>(null);
   const [nothing, setNothing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -52,7 +70,7 @@ export function useAllmon3Review(): [ReactNode, (planned: Promise<Allmon3Plan | 
     setError(null);
     try {
       const errors = review.plan.findings.some((f) => f.severity === "error");
-      const applied = await applyAllmon3Plan(review.plan.id, errors);
+      const applied = await target.apply(review.plan.id, errors);
       review.resolve(applied);
       setReview(null);
     } catch (err) {
@@ -78,18 +96,17 @@ export function useAllmon3Review(): [ReactNode, (planned: Promise<Allmon3Plan | 
           {plan && (
             <div className="asl-stack">
               {error && <Alert variant="danger" isInline title={error} />}
-              <Findings findings={plan.findings} />
-              {plan.created && <Content component="p">Creates <code>/etc/allmon3/{plan.name}</code>.</Content>}
+              <Findings findings={plan.findings} errorsTitle={target.errorsTitle} />
+              {plan.created && <Content component="p">Creates <code>{target.dir}/{plan.name}</code>.</Content>}
               <DiffView diff={plan.diff} />
-              <Content component="p" className="asl-sub">
-                Allmon3 is restarted to load the change; anyone logged in to Allmon3 has to log in again.
-              </Content>
+              <Content component="p" className="asl-sub">{target.note}</Content>
             </div>
           )}
         </ModalBody>
         <ModalFooter>
-          <Button variant={errors ? "danger" : "primary"} onClick={save} isLoading={busy} isDisabled={busy}>
-            {errors ? "Save anyway" : "Save"}
+          <Button variant={errors ? "danger" : "primary"} onClick={save} isLoading={busy}
+                  isDisabled={busy || (errors && target.errorsBlock)}>
+            {errors && !target.errorsBlock ? "Save anyway" : "Save"}
           </Button>
           <Button variant="link" onClick={cancel}>Cancel</Button>
         </ModalFooter>

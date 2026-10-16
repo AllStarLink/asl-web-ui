@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -12,6 +12,8 @@ import {
   DescriptionListGroup,
   DescriptionListTerm,
   ExpandableSection,
+  FormSelect,
+  FormSelectOption,
   Gallery,
   Label,
   PageSection,
@@ -25,7 +27,7 @@ import InfoCircleIcon from "@patternfly/react-icons/dist/esm/icons/info-circle-i
 import TimesCircleIcon from "@patternfly/react-icons/dist/esm/icons/times-circle-icon";
 
 import { get, message, post, Status } from "./api";
-import { Started } from "./backupsApi";
+import { size, Started } from "./backupsApi";
 import { useJob } from "./Job";
 import { go } from "./useRoute";
 
@@ -129,6 +131,84 @@ function ConnectivityResult({ c }: { c: Connectivity }) {
         </ExpandableSection>
       )}
     </div>
+  );
+}
+
+type AsteriskLog =
+  | { path: string; exists: false }
+  | { path: string; exists: true; size: number; modified: number; lines: number; text: string; more: boolean };
+
+const LINE_CHOICES = [100, 200, 500, 1000, 5000, 10000];
+
+// Asterisk's messages.log: the last lines, newest at the bottom.
+function LogLine({ line }: { line: string }) {
+  const cls = /\] (ERROR|WARNING)\[/.exec(line)?.[1];
+  return <span className={cls === "ERROR" ? "asl-log-error" : cls === "WARNING" ? "asl-log-warning" : undefined}>{line}{"\n"}</span>;
+}
+
+function AsteriskLogCard() {
+  const [lines, setLines] = useState(200);
+  const [log, setLog] = useState<AsteriskLog | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const pre = useRef<HTMLPreElement>(null);
+
+  const load = useCallback(async (n: number) => {
+    setBusy(true);
+    try {
+      setLog(await get<AsteriskLog>(`diagnostics/log?lines=${n}`));
+      setError(null);
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+  useEffect(() => {
+    void load(lines);
+  }, [load, lines]);
+  useLayoutEffect(() => {
+    if (pre.current) pre.current.scrollTop = pre.current.scrollHeight;
+  }, [log]);
+
+  return (
+    <Card>
+      <CardTitle>Asterisk log</CardTitle>
+      <CardBody>
+        <div className="asl-stack">
+          <div className="asl-buttons">
+            <span>Show the last</span>
+            <FormSelect id="log-lines" aria-label="Number of lines" value={String(lines)} className="asl-log-lines"
+                        onChange={(_e, v) => setLines(Number(v))}>
+              {LINE_CHOICES.map((n) => (
+                <FormSelectOption key={n} value={String(n)} label={`${n.toLocaleString()} lines`} />
+              ))}
+            </FormSelect>
+            <Button variant="secondary" onClick={() => load(lines)} isLoading={busy} isDisabled={busy}>Refresh</Button>
+            {log?.exists && (
+              <Button variant="link" component="a" href="api/v1/diagnostics/log/download">
+                Download the whole log ({size(log.size)})
+              </Button>
+            )}
+          </div>
+          {error && <Alert variant="danger" isInline title={error} />}
+          {log && !log.exists && <Content component="p" className="asl-sub">{log.path} does not exist yet.</Content>}
+          {log?.exists && (
+            <>
+              <pre ref={pre} className="asl-job-log asl-log" aria-label="Asterisk log">
+                {log.text ? log.text.replace(/\n$/, "").split("\n").map((l, i) => <LogLine key={i} line={l} />)
+                  : <span className="asl-sub">The log is empty.</span>}
+              </pre>
+              <Content component="p" className="asl-sub">
+                <code>{log.path}</code>, last written {when(log.modified)}.
+                {log.more ? ` Showing the last ${log.lines.toLocaleString()} lines.` : ""} Older entries are in the
+                rotated files next to it (messages.log.1 …).
+              </Content>
+            </>
+          )}
+        </div>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -293,6 +373,7 @@ export function Diagnostics({ status }: { status: Status | null }) {
                 </CardBody>
               </Card>
             </Gallery>
+            <AsteriskLogCard />
           </div>
         )}
       </PageSection>

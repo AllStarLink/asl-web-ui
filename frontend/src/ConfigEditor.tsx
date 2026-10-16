@@ -137,8 +137,7 @@ export function ConfigEditor({ name }: { name: string }) {
         search({ top: true }),
         highlightSelectionMatches(),
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
-        asteriskConf,
-        syntaxHighlighting(highlight),
+        ...(name.endsWith(".conf") ? [asteriskConf, syntaxHighlighting(highlight)] : []),
         editorTheme,
         lintGutter(),
         lint,
@@ -206,7 +205,7 @@ export function ConfigEditor({ name }: { name: string }) {
     const url = URL.createObjectURL(new Blob([v.state.doc.toString()], { type: "text/plain" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = name;
+    a.download = name.split("/").pop() ?? name;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -246,8 +245,22 @@ export function ConfigEditor({ name }: { name: string }) {
                   </Alert>
                 )}
                 {message && <Alert variant={message.variant} isInline title={message.text} />}
+                {file.read_by && file.read_by.length > 0 && (
+                  <Content component="p" className="asl-sub">
+                    Asterisk reads this file through {file.read_by.map((r, i) => (
+                      <span key={r}>{i > 0 && ", "}<a href={`#/config/${encodeURIComponent(r)}`}><code>{r}</code></a></span>
+                    ))}, which #include{file.read_by.length === 1 ? "s" : ""} it. It is checked as part of{" "}
+                    {file.read_by.length === 1 ? "that file" : "those files"}.
+                  </Content>
+                )}
+                {file.read_by && file.read_by.length === 0 && (
+                  <Alert variant="info" isInline isPlain title="No configuration file includes this file">
+                    Asterisk does not read it unless a file such as rpt.conf has an #include or #tryinclude line for
+                    it, so it is not checked.
+                  </Alert>
+                )}
                 <div className="asl-editor-bar">
-                  <code>/etc/asterisk/{name}</code>
+                  <code>{file.path}</code>
                   {dirty && <Label color="orange">Unsaved changes</Label>}
                   <span className="asl-spacer" />
                   <Button variant="link" onClick={revert} isDisabled={!dirty}>

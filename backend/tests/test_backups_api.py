@@ -85,11 +85,11 @@ async def env(aiohttp_client, tmp_path, monkeypatch, cloud):
     async def connect():
         return FakeTransport()
 
-    async def make(recent_auth=600):
+    async def make(recent_auth=600, **more):
         settings = config.Settings(config_dir=str(etc), state_dir=str(tmp_path / "state"), recent_auth=recent_auth,
                                    backup_dir=str(root / "var" / "asl-backups"),
                                    staging_dir=str(root / "var" / "lib" / "asl-web-ui" / "staging"),
-                                   backup_server=server)
+                                   backup_server=server, **more)
         app = create_app(settings, auth_connect=connect, overrides={
             status.CLI_KEY: FakeCLI(), status.UNIT_STATE_KEY: unit("active"), control.SYSTEMCTL_KEY: str(systemctl),
             PRIV_KEY: InProcessClient(str(root))})

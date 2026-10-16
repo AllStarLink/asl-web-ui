@@ -128,3 +128,63 @@ async def test_status_reports_rpt_errors(api):
     (etc / "rpt.conf").write_text("[1999](nope)\n")
     _, data = await a.get("status")
     assert data["config"]["rpt_errors"] == 1 and data["config"]["rpt_first_error"]["code"] == "undefined_template"
+
+
+@pytest.fixture
+async def custom(api):
+    a, etc = api
+    (etc / "rpt.conf").write_text("[1999]\nduplex = 2\n#tryinclude custom/rpt/*.conf\n")
+    (etc / "custom" / "rpt").mkdir(parents=True)
+    (etc / "custom" / "rpt" / "extra.conf").write_text("[1999](+)\nlinktolink = yes\n")
+    (etc / "custom" / "README.md").write_text("Put your own files here.\n")
+    (etc / "custom" / "link.conf").symlink_to("/etc/passwd")
+    (etc / ".asl-web-ui-tmp").write_text("")
+    return a, etc
+
+
+async def test_tree_lists_every_file(custom):
+    a, _ = custom
+    status_, body = await a.get("config/tree")
+    files = {f["name"]: f for f in body["files"]}
+    assert status_ == 200 and ".asl-web-ui-tmp" not in files and not body["truncated"]
+    assert files["rpt.conf"]["main"] and files["rpt.conf"]["read_by"] == ["Asterisk"]
+    assert files["custom/rpt/extra.conf"]["read_by"] == ["rpt.conf"] and files["custom/rpt/extra.conf"]["writable"]
+    assert files["custom/README.md"]["read_by"] == []
+    assert files["custom/link.conf"]["link"] == "/etc/passwd"
+
+
+async def test_included_file_is_checked_through_its_includer(custom):
+    a, etc = custom
+    _, f = await a.get("config/files/custom%2Frpt%2Fextra.conf")
+    assert f["read_by"] == ["rpt.conf"] and f["findings"] == [] and f["path"].endswith("custom/rpt/extra.conf")
+    bad = "[1998](+)\nlinktolink = yes\n"
+    _, check = await a.post("config/files/custom/rpt/extra.conf/check", {"content": bad})
+    assert check["counts"]["error"] == 1 and check["findings"][0]["file"] == "custom/rpt/extra.conf"
+    _, plan = await a.post("config/files/custom/rpt/extra.conf/plan",
+                           {"content": "[1999](+)\nlinktolink = no\n", "base_hash": f["hash"]})
+    status_, res = await a.post(f"changes/{plan['id']}/apply", {})
+    assert status_ == 200 and "no" in (etc / "custom" / "rpt" / "extra.conf").read_text()
+
+
+async def test_files_nothing_includes_are_not_checked(custom):
+    a, _ = custom
+    _, f = await a.get("config/files/custom/README.md")
+    assert f["read_by"] == [] and f["findings"] == []
+    _, check = await a.post("config/files/custom/README.md/check", {"content": "no section = here\n"})
+    assert check["findings"] == []
+
+
+async def test_names_outside_or_through_links_are_refused(custom):
+    a, etc = custom
+    (etc.parent / "secret.conf").write_text("[x]\n")
+    for name in ("..%2Fsecret.conf", "custom/..%2F..%2Fsecret.conf", "custom/link.conf", "custom", "%2Fetc%2Fpasswd",
+                 ".asl-web-ui-tmp", "custom//README.md"):
+        status_, _ = await a.get(f"config/files/{name}")
+        assert status_ == 404, name
+
+
+async def test_large_files_are_not_opened(custom):
+    a, etc = custom
+    (etc / "custom" / "big.conf").write_bytes(b";" * ((1 << 20) + 1))
+    status_, body = await a.get("config/files/custom/big.conf")
+    assert status_ == 413 and body["error"] == "too_large"

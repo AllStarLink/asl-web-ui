@@ -238,3 +238,18 @@ async def test_users_and_restrictions(allmon3):
     assert (allmon3.dir / "user-restrictions").read_text() == RESTRICTIONS
     status_, _ = await a.call("DELETE", "allmon3/users/alice")
     assert status_ == 404
+
+
+async def test_other_files_are_read_only_and_listed(allmon3):
+    (allmon3.dir / "nginx.conf").write_text("location /allmon3 {}\n")
+    a = await allmon3.make()
+    status_, f = await a.call("GET", "allmon3/files/nginx.conf")
+    assert status_ == 200 and f["content"].startswith("location") and not f["writable"] and f["findings"] == []
+    status_, body = await a.call("POST", "allmon3/files/nginx.conf/plan", {"content": "x", "hash": f["hash"]})
+    assert status_ == 403 and body["error"] == "read_only"
+    status_, _ = await a.call("GET", "allmon3/files/missing.ini")
+    assert status_ == 404
+    status_, body = await a.call("GET", "config/system-files")
+    names = {e["path"]: e for e in body["allmon3"]}
+    assert names["/etc/allmon3/web.ini"]["writable"] and not names["/etc/allmon3/nginx.conf"]["writable"]
+    assert body["sa818"] is None
