@@ -7,6 +7,31 @@ if [ -e /usr/share/apache2/apache2-maintscript-helper ]; then
 	. /usr/share/apache2/apache2-maintscript-helper
 fi
 
+# The web UI refuses logins over plain HTTP, so without HTTPS it cannot be
+# used at all (not even to set HTTPS up). If nothing serves port 443, enable
+# Debian's default-ssl site with the self-signed certificate. apache2_invoke
+# leaves alone a module or site the admin disabled.
+enable_https() {
+	command -v ss >/dev/null || return 0
+	[ -z "$(ss -Hltn 'sport = :443' 2>/dev/null)" ] || return 0
+	! apache2ctl -S 2>/dev/null | grep -Eq '^\*?[^[:space:]]*:443[[:space:]]' || return 0
+	[ -e /etc/apache2/sites-available/default-ssl.conf ] || return 0
+	if [ ! -e /etc/ssl/certs/ssl-cert-snakeoil.pem ] && command -v make-ssl-cert >/dev/null; then
+		make-ssl-cert generate-default-snakeoil || return 0
+	fi
+	[ -e /etc/ssl/certs/ssl-cert-snakeoil.pem ] || return 0
+	apache2_invoke enmod ssl || exit $?
+	apache2_invoke ensite default-ssl || exit $?
+	a2query -m ssl >/dev/null 2>&1 && a2query -s default-ssl >/dev/null 2>&1 || return 0
+	cat <<'EOF'
+
+asl-web-ui: enabled HTTPS in Apache (port 443) with a self-signed
+certificate. Browsers will warn about it; the HTTPS page in asl-web-ui
+can get a Let's Encrypt certificate instead.
+
+EOF
+}
+
 do_configure() {
 	# Only members of this group may log in to the web UI.
 	if ! getent group asl-web-ui >/dev/null; then
@@ -18,6 +43,7 @@ do_configure() {
 		apache2_invoke enmod proxy_http || exit $?
 		apache2_invoke enmod headers || exit $?
 		apache2_invoke enconf asl-web-ui || exit $?
+		enable_https
 	fi
 
 	# nginx cannot enable snippets automatically: the admin includes our file in a site.
