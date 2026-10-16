@@ -26,6 +26,38 @@ asl-web-ui is distributed as a Debian package for AllStarLink 3 on Debian 13
      `server { }` block of your site, then reload nginx.
 3. Open `https://<your-node>/asl-web-ui/`.
 
+### nginx in front of Apache
+
+If nginx owns ports 80/443 and Apache (with asl-web-ui) listens elsewhere,
+for example on 8443 on the same machine, nginx can pass `/asl-web-ui/`
+through to it. Proxy to Apache over HTTPS (asl-web-ui uses the scheme
+Apache sees) and keep the browser's `Host` header, which asl-web-ui
+compares with the `Origin` of requests.
+
+Inside `http { }`, for example in `/etc/nginx/conf.d/websocket.conf`:
+
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+Inside the HTTPS `server { }` block:
+
+    location /asl-web-ui/ {
+        proxy_pass https://127.0.0.1:8443;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 1h;
+        client_max_body_size 64m;
+    }
+
+nginx does not verify Apache's certificate by default, which is fine for
+`127.0.0.1`. asl-web-ui then sees nginx's address as the client address
+(for example in the PAM log) unless Apache's `mod_remoteip` is set to
+trust nginx.
+
 ## Building
 
 Build the package in the builder container (Podman by default, no

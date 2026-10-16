@@ -1110,7 +1110,21 @@ nginx the page says to use certbot --nginx.
   snakeoil certificate with make-ssl-cert if needed) when nothing serves
   443. A server without HTTPS cannot log in to asl-web-ui at all (plain
   HTTP is refused), so this button helps only where the page is reached
-  otherwise; open question: should the package enable default-ssl itself?
+  otherwise.
+- **The package enables default-ssl too:** on every configure, postinst
+  enables mod_ssl and default-ssl through apache2_invoke when nothing
+  listens on port 443 (ss) and Apache has no port 443 site (apache2ctl -S),
+  creating the snakeoil certificate if needed (ssl-cert is a dependency, so
+  it is configured first). apache2_invoke leaves alone a module or site the
+  admin disabled. Tested in a trixie container: enables, re-run is a no-op,
+  admin-disabled stays disabled.
+- **nginx in front of Apache:** README documents a `location /asl-web-ui/`
+  proxy to Apache over HTTPS with `Host $http_host` and the usual
+  `$connection_upgrade` map. Over HTTPS so Apache's REQUEST_SCHEME (and so
+  X-Forwarded-Proto) is https; Apache's automatic X-Forwarded-Host carries
+  the browser's host for the Origin check. The client address becomes
+  nginx's unless Apache's mod_remoteip trusts it. Smoke test passed through
+  a private nginx on 8092 in front of the dev box's Apache on 8443.
 - Names: public host names only (no wildcards, IP addresses, `.local`), at
   most 10; email optional (--register-unsafely-without-email); the
   subscriber agreement must be ticked. Removal asks for the password again.
