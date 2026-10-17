@@ -1,0 +1,15 @@
+#!/usr/bin/python3 -I
+"""Update the 44Net Connect split-routing routes (installed in
+/usr/libexec/asl-web-ui, run by asl-web-ui-net44-routes.timer as root)."""
+
+import sys
+
+sys.path.insert(0, "/usr/share/asl-web-ui/python")
+
+from asl_web_ui_priv.net44 import Net44Error, refresh_routes  # noqa: E402
+
+try:
+    print(refresh_routes())
+except Net44Error as exc:
+    print(exc.message, file=sys.stderr)
+    sys.exit(1)

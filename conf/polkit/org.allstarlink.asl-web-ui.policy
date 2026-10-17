@@ -261,4 +261,85 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.allstarlink.asl-web-ui.net44-status">
+    <description>Show the 44Net Connect tunnel and its firewall zone</description>
+    <message>Authentication is required to: show the 44Net Connect tunnel and its firewall zone</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.net44-zone">
+    <description>Set up the 44Net Connect firewall zone</description>
+    <message>Authentication is required to: set up the 44Net Connect firewall zone</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.net44-configure">
+    <description>Set up the 44Net Connect tunnel</description>
+    <message>Authentication is required to: set up the 44Net Connect tunnel</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.net44-migrate">
+    <description>Move a hand-made 44Net Connect tunnel to NetworkManager</description>
+    <message>Authentication is required to: move a hand-made 44Net Connect tunnel to NetworkManager</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.net44-mode">
+    <description>Choose full tunnel or split routing for 44Net Connect</description>
+    <message>Authentication is required to: choose full tunnel or split routing for 44Net Connect</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.net44-start">
+    <description>Start the 44Net Connect tunnel</description>
+    <message>Authentication is required to: start the 44Net Connect tunnel</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.net44-confirm">
+    <description>Keep the 44Net Connect tunnel running</description>
+    <message>Authentication is required to: keep the 44Net Connect tunnel running</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.net44-stop">
+    <description>Stop the 44Net Connect tunnel</description>
+    <message>Authentication is required to: stop the 44Net Connect tunnel</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.net44-remove">
+    <description>Remove the 44Net Connect tunnel</description>
+    <message>Authentication is required to: remove the 44Net Connect tunnel</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
 </policyconfig>

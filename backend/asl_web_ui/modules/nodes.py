@@ -312,6 +312,8 @@ async def plan(request: web.Request) -> web.Response:
     after_steps = [("astdb", list(a)) for a in fx.astdb]
     if fx.reload and not fx.restart:
         after_steps.append(("reload", list(fx.reload)))
+    if any(o["op"] in ("iax_port", "voter") for o in ops):
+        after_steps.append(("net44_zone", {}))  # the 44Net Connect zone follows the ports
     files = [{"name": os.path.relpath(c.path, settings.config_dir), "diff": c.diff(
         os.path.relpath(c.path, settings.config_dir))} for c in changes]
     manual = [a["text"] for a in fx.allmon3]

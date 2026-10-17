@@ -50,8 +50,8 @@ earlier.
   reachable only by **asterisk**): backups, restores, the default
   configuration, Allmon3's settings and users, the SA818 radio module, HTTPS
   and Let's Encrypt certificates in Apache, ownership fixes in
-  */etc/asterisk*, the network interface list, and the ASL3 appliance's
-  fallback access point.
+  */etc/asterisk*, the network interface list, the ASL3 appliance's
+  fallback access point, and the 44Net Connect tunnel.
   Every request is authorized with polkit (**pkcheck**) for the calling
   process.
 
@@ -98,6 +98,14 @@ allowed for the **asterisk** user by the polkit rule below.
 : The fallback access point of **asl3-appliance-pc** or **asl3-appliance-pi**.
   The Network page offers it only when these are installed, and enables or
   disables the timer. Its settings stay in */etc/default/fallback-ap*.
+
+*/etc/NetworkManager/system-connections/44net-connect.nmconnection*
+: The 44Net Connect tunnel (on the ASL3 appliance only): a NetworkManager
+  WireGuard connection on interface **wg44net** in the firewalld zone
+  **44NetConnect**, written by the 44Net Connect page. It holds the tunnel's
+  private key, so it is never included in backups or restored from them. In
+  split-routing mode, **asl-web-ui-net44-routes.timer** keeps the routes to
+  the AllStarLink servers up to date.
 
 */var/asl-backups/*
 : Backups, shared with **asl-backup-menu** (same names and format). The

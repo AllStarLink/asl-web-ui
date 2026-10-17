@@ -23,6 +23,7 @@ import AsteriskIcon from "@patternfly/react-icons/dist/esm/icons/asterisk-icon";
 import BroadcastTowerIcon from "@patternfly/react-icons/dist/esm/icons/broadcast-tower-icon";
 import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
 import FileCodeIcon from "@patternfly/react-icons/dist/esm/icons/file-code-icon";
+import GlobeRouteIcon from "@patternfly/react-icons/dist/esm/icons/globe-route-icon";
 import NetworkIcon from "@patternfly/react-icons/dist/esm/icons/network-icon";
 import HistoryIcon from "@patternfly/react-icons/dist/esm/icons/history-icon";
 import LockIcon from "@patternfly/react-icons/dist/esm/icons/lock-icon";
@@ -53,7 +54,10 @@ const NAV: NavEntry[] = [
 // the node Tuning tab links to it for a first setup.
 const SA818: NavEntry = { route: "sa818", label: "SA818 radio", icon: <BroadcastTowerIcon /> };
 
-const NETWORKING: NavEntry[] = [{ route: "network", label: "Network", icon: <WifiIcon /> }];
+const NETWORKING: NavEntry[] = [
+  { route: "network", label: "Network", icon: <WifiIcon /> },
+  { route: "44net", label: "44Net Connect", icon: <GlobeRouteIcon /> },
+];
 
 // Kept apart, at the bottom, so that newcomers reach for the guided pages first.
 const ADVANCED: NavEntry[] = [{ route: "config", label: "Manual Config Edit", icon: <FileCodeIcon />, expert: true }];

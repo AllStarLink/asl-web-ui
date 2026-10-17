@@ -28,7 +28,8 @@ Depends: ${misc:Depends},
  asl3-asterisk,
  asl3-menu,
  ssl-cert,
- adduser
+ adduser,
+ wireguard-tools
 Recommends: allmon3
 Suggests: asl3-appliance-pc | asl3-appliance-pi
 Description: Web management interface for AllStarLink 3

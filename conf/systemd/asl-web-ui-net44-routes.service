@@ -1,0 +1,12 @@
+[Unit]
+Description=ASL Web UI: update the 44Net Connect split-routing routes
+Documentation=man:asl-web-ui(8)
+After=NetworkManager.service
+
+[Service]
+# Looks up the AllStarLink servers again and updates the host routes through
+# the 44Net Connect tunnel. Enabled (through its timer) only in split mode.
+Type=oneshot
+ExecStart=/usr/libexec/asl-web-ui/asl-web-ui-net44-routes
+ProtectHome=yes
+PrivateTmp=yes
