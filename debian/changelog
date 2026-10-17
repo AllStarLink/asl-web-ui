@@ -1,3 +1,10 @@
+asl-web-ui (0.3-2) stable; urgency=medium
+
+  * Don't flag repeated schedule entries in rpt.conf as duplicate keys,
+    even when the stanza is not named by scheduler= (#18)
+
+ -- Helium <jason@mfamily.org>  Sat, 17 Oct 2026 17:12:25 -0400
+
 asl-web-ui (0.3-1) stable; urgency=medium
 
   * Feature-complete test #1
