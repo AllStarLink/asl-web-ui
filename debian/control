@@ -30,6 +30,7 @@ Depends: ${misc:Depends},
  ssl-cert,
  adduser
 Recommends: allmon3
+Suggests: asl3-appliance-pc | asl3-appliance-pi
 Description: Web management interface for AllStarLink 3
  A browser-based interface for managing an AllStarLink 3 node server:
  node configuration, interface tuning, diagnostics, backups and the

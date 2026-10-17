@@ -6,7 +6,9 @@ Documentation=man:asl-web-ui(8)
 # One process per request, connected through the socket. Runs as root for
 # backups, restores, the factory reset (apt-get), Allmon3's settings, the
 # SA818 radio module (serial port), HTTPS and Let's Encrypt certificates in
-# Apache, and ownership fixes in /etc/asterisk; every request is checked with pkcheck.
+# Apache, ownership fixes in /etc/asterisk, the network interface list (ip
+# needs AF_NETLINK) and the appliance's fallback access point; every request
+# is checked with pkcheck.
 ExecStart=/usr/libexec/asl-web-ui/asl-web-ui-priv
 StandardInput=socket
 StandardOutput=socket

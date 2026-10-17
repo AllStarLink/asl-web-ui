@@ -243,4 +243,22 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.allstarlink.asl-web-ui.network-status">
+    <description>List the network interfaces and the fallback access point's state</description>
+    <message>Authentication is required to: list the network interfaces and the fallback access point's state</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.network-fallback-ap">
+    <description>Enable or disable the fallback access point</description>
+    <message>Authentication is required to: enable or disable the fallback access point</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
 </policyconfig>
