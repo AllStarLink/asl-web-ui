@@ -323,24 +323,29 @@ export function Diagnostics({ status }: { status: Status | null }) {
                         </div>
                       </DescriptionListDescription>
                     </DescriptionListGroup>
-                    <DescriptionListGroup>
-                      <DescriptionListTerm>Node list service</DescriptionListTerm>
-                      <DescriptionListDescription>
-                        {!data.nodelist.installed ? (
-                          <span className="asl-sub">Not installed (nodes are looked up through DNS).</span>
-                        ) : (
-                          <div className="asl-buttons">
-                            {data.nodelist.enabled && data.nodelist.timer_active ? (
-                              <Label color="green">Running</Label>
-                            ) : (
-                              <Label color="orange">{data.nodelist.enabled ? "Not running" : "Not enabled"}</Label>
-                            )}
-                            <Button variant="link" isInline onClick={restartNodelist}>Restart</Button>
-                            {nodelistMsg && <span className="asl-sub">{nodelistMsg}</span>}
-                          </div>
-                        )}
-                      </DescriptionListDescription>
-                    </DescriptionListGroup>
+                    {data.nodelist.installed && (
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>Node list service</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          {!data.nodelist.enabled ? (
+                            <div className="asl-buttons">
+                              <Label color="green">Not enabled</Label>
+                              <span className="asl-sub">Not needed unless a legacy application requires it.</span>
+                            </div>
+                          ) : (
+                            <div className="asl-buttons">
+                              {data.nodelist.timer_active ? (
+                                <Label color="green">Running</Label>
+                              ) : (
+                                <Label color="orange">Not running</Label>
+                              )}
+                              <Button variant="link" isInline onClick={restartNodelist}>Restart</Button>
+                              {nodelistMsg && <span className="asl-sub">{nodelistMsg}</span>}
+                            </div>
+                          )}
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                    )}
                     <DescriptionListGroup>
                       <DescriptionListTerm>Asterisk</DescriptionListTerm>
                       <DescriptionListDescription>
