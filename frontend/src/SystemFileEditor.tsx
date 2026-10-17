@@ -115,7 +115,7 @@ export function Allmon3Editor({ name, from }: { name: string; from?: "config" })
 const SA818_TARGET: ReviewTarget = {
   apply: applySA818FilePlan,
   dir: "/etc",
-  note: "The module keeps its old settings until you program it again on the SA818 page.",
+  note: "The module keeps its old settings until you program it again on the Hardware page.",
   errorsBlock: true,
   errorsTitle: "sa818-menu runs this file as root, so it can hold only the settings",
 };
@@ -129,10 +129,10 @@ export function SA818FileEditor() {
     target: SA818_TARGET,
     crumb: { label: "Manual Config Edit", to: "#/config" },
     route: "config/~sa818",
-    saved: "sa818.conf saved. Program the module on the SA818 page to use the new settings.",
-    missing: "Save the settings on the SA818 page first.",
+    saved: "sa818.conf saved. Program the module on the Hardware page to use the new settings.",
+    missing: "Save the settings on the Hardware page first.",
     readOnly: "",
-    help: "The SA818 page's settings as sa818-menu stores them: one KEY=VALUE line each. sa818-menu loads this file "
+    help: "The Hardware page's SA818 settings as sa818-menu stores them: one KEY=VALUE line each. sa818-menu loads this file "
       + "as a shell script as root, so only these settings, comments (#) and blank lines can be saved.",
     highlight: true,
   }), []);

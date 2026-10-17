@@ -40,8 +40,6 @@ async def system(request: web.Request) -> web.Response:
         "kernel": platform.release(),
         "uptime": uptime_seconds(),
         "asl_web_ui": VERSION,
-        # sa818-menu has been used here: show the SA818 page in the menu.
-        "sa818": Path("/etc/sa818.conf").exists(),
     })
 
 

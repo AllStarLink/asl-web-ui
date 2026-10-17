@@ -223,14 +223,14 @@ function AllFiles() {
               <>
                 <SystemTable label="SA818 settings" files={[system.sa818]} filter="" />
                 <Content component="p" className="asl-sub">
-                  The settings of an SA818 radio module, as sa818-menu and the <a href="#/sa818">SA818</a> page store
+                  The settings of an SA818 radio module, as sa818-menu and the <a href="#/hardware/sa818">Hardware</a> page store
                   them. Saving the file does not program the module.
                 </Content>
               </>
             ) : (
               <Content component="p" className="asl-sub">
-                /etc/sa818.conf does not exist. It is created when you save settings on the SA818 page (shown in
-                the menu when an SA818 module is found).
+                /etc/sa818.conf does not exist. It is created when you save settings on the SA818 tab of the
+                Hardware page.
               </Content>
             )
           )}

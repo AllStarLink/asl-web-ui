@@ -8,6 +8,7 @@ import { Backups } from "./Backups";
 import { Diagnostics } from "./Diagnostics";
 import { ConfigEditor } from "./ConfigEditor";
 import { ConfigFiles } from "./ConfigFiles";
+import { HardwarePage } from "./HardwarePage";
 import { HttpsPage } from "./HttpsPage";
 import { Login } from "./Login";
 import { Net44Page } from "./Net44Page";
@@ -15,7 +16,6 @@ import { NetworkPage } from "./NetworkPage";
 import { NodePage } from "./NodePage";
 import { Nodes } from "./Nodes";
 import { Overview } from "./Overview";
-import { SA818Page } from "./SA818Page";
 import { Allmon3Editor, SA818FileEditor } from "./SystemFileEditor";
 import { Shell } from "./Shell";
 import { useRoute } from "./useRoute";
@@ -41,7 +41,8 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   else if (base === "asterisk") page = <AsteriskPage status={status} tab={sub ?? "status"} />;
   else if (base === "allmon3" && sub === "files" && third) page = <Allmon3Editor key={third} name={decodeURIComponent(third)} />;
   else if (base === "https") page = <HttpsPage />;
-  else if (base === "sa818") page = <SA818Page />;
+  // #/sa818 was the SA818 page before it moved to Hardware.
+  else if (base === "hardware" || base === "sa818") page = <HardwarePage />;
   else if (base === "network") page = <NetworkPage />;
   else if (base === "44net") page = <Net44Page />;
   else if (base === "allmon3") page = <Allmon3Page tab={sub ?? "status"} />;
@@ -52,7 +53,7 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   else if (base === "config") page = <ConfigFiles />;
   else page = <Overview status={status} system={system} />;
   return (
-    <Shell user={session.user ?? ""} hostname={system?.hostname ?? ""} sa818={system?.sa818 ?? false} route={route} status={status} onLogout={onLogout}>
+    <Shell user={session.user ?? ""} hostname={system?.hostname ?? ""} route={route} status={status} onLogout={onLogout}>
       {page}
       <Modal isOpen={leaving !== null} onClose={() => answer(false)} variant="small" aria-labelledby="leave-title">
         <ModalHeader title="Leave without saving?" labelId="leave-title" titleIconVariant="warning" />

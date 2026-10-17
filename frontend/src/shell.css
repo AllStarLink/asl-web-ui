@@ -219,3 +219,4 @@ td.asl-indent { padding-inline-start: 2rem !important; }
   .asl-level > :first-child { grid-column: 1 / -1; }
 }
 .asl-filename { overflow-wrap: anywhere; font-size: .85rem; }
+.asl-scroll-target { scroll-margin-top: 1rem; }

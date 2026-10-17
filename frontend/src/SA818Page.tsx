@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -18,7 +18,6 @@ import {
   Radio,
   Spinner,
   Switch,
-  Title,
   ToggleGroup,
   ToggleGroupItem,
 } from "@patternfly/react-core";
@@ -75,12 +74,20 @@ function Log({ lines }: { lines: string[] }) {
   return <pre className="asl-job-log">{lines.join("\n")}</pre>;
 }
 
-export function SA818Page() {
+// The SA818 tab of the Hardware page.
+export function SA818Tab() {
   const [state, setState] = useState<SA818State | null>(null);
   const [draft, setDraft] = useState<SA818Settings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"save" | "program" | "test" | null>(null);
   const [result, setResult] = useState<{ variant: "success" | "danger" | "warning"; title: string; log: string[] } | null>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+
+  // The buttons are at the bottom of a long page and the outcome is shown at
+  // the top: bring it into view (issue #31).
+  useEffect(() => {
+    if (result) resultRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [result]);
 
   const load = useCallback(async () => {
     try {
@@ -97,7 +104,7 @@ export function SA818Page() {
   }, [load]);
 
   const dirty = !!state && !!draft && JSON.stringify(state.settings) !== JSON.stringify(draft);
-  const stays = useCallback((r: string) => r === "sa818", []);
+  const stays = useCallback((r: string) => r === "hardware" || r === "hardware/sa818", []);
   useLeaveGuard(dirty ? stays : null);
 
   if (loadError) {
@@ -189,14 +196,11 @@ export function SA818Page() {
 
   return (
     <>
-      <PageSection className="asl-page-head">
-        <Title headingLevel="h1">SA818 radio module</Title>
-        <Content component="p" className="asl-sub">
-          The built-in transceiver of SHARI and similar node interfaces, as sa818-menu sets it up.
-        </Content>
-      </PageSection>
       <PageSection>
         <div className="asl-stack">
+          <Content component="p" className="asl-sub">
+            The built-in transceiver of SHARI and similar node interfaces, as sa818-menu sets it up.
+          </Content>
           {!state.tool && (
             <Alert variant="warning" isInline title="The sa818 command is missing">
               It comes with the asl3 package; the module cannot be programmed without it.
@@ -206,13 +210,15 @@ export function SA818Page() {
                  title={state.saved ? "The module cannot be read back: these are the settings last saved by this page or sa818-menu."
                    : "No settings are saved yet; these are sa818-menu's defaults."} />
           {result && (
-            <Alert variant={result.variant} isInline title={result.title}>
-              {result.log.length > 0 && (
-                <ExpandableSection toggleText="What sa818 reported">
-                  <Log lines={result.log} />
-                </ExpandableSection>
-              )}
-            </Alert>
+            <div ref={resultRef} className="asl-scroll-target">
+              <Alert variant={result.variant} isInline title={result.title}>
+                {result.log.length > 0 && (
+                  <ExpandableSection toggleText="What sa818 reported">
+                    <Log lines={result.log} />
+                  </ExpandableSection>
+                )}
+              </Alert>
+            </div>
           )}
 
           <Card>

@@ -45,14 +45,11 @@ const NAV: NavEntry[] = [
   { route: "nodes", label: "Nodes", icon: <NetworkIcon /> },
   { route: "asterisk", label: "Asterisk", icon: <AsteriskIcon /> },
   { route: "allmon3", label: "Allmon3", icon: <MonitoringIcon /> },
+  { route: "hardware", label: "Hardware", icon: <BroadcastTowerIcon /> },
   { route: "diagnostics", label: "Diagnostics", icon: <StethoscopeIcon /> },
   { route: "backups", label: "Backups", icon: <HistoryIcon /> },
   { route: "https", label: "HTTPS", icon: <LockIcon /> },
 ];
-
-// Shown once sa818-menu or this page has saved SA818 settings (or while on it);
-// the node Tuning tab links to it for a first setup.
-const SA818: NavEntry = { route: "sa818", label: "SA818 radio", icon: <BroadcastTowerIcon /> };
 
 const NETWORKING: NavEntry[] = [
   { route: "network", label: "Network", icon: <WifiIcon /> },
@@ -65,7 +62,6 @@ const ADVANCED: NavEntry[] = [{ route: "config", label: "Manual Config Edit", ic
 type Props = {
   user: string;
   hostname: string;
-  sa818: boolean;
   route: string;
   status: Status | null;
   onLogout: () => void;
@@ -139,9 +135,9 @@ function RestartPending({ status }: { status: Status | null }) {
   );
 }
 
-export function Shell({ user, hostname, sa818, route, status, onLogout, children }: Props) {
+export function Shell({ user, hostname, route, status, onLogout, children }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const base = route.split("/")[0];
+  const base = route.split("/")[0] === "sa818" ? "hardware" : route.split("/")[0];
 
   const masthead = (
     <Masthead className="asl-masthead">
@@ -188,7 +184,7 @@ export function Shell({ user, hostname, sa818, route, status, onLogout, children
     <PageSidebar className="asl-sidebar">
       <PageSidebarBody>
         <nav aria-label="Main">
-          <NavLinks base={base} entries={sa818 || base === "sa818" ? [...NAV.slice(0, 4), SA818, ...NAV.slice(4)] : NAV} />
+          <NavLinks base={base} entries={NAV} />
           <div className="asl-nav-section">Networking</div>
           <NavLinks base={base} entries={NETWORKING} />
           <div className="asl-nav-section">Advanced</div>

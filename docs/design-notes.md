@@ -1069,8 +1069,9 @@ settings in /etc/sa818.conf and program the module from them.
   service runs with PrivateDevices and never sees /dev/tty*. Serial ports
   offered: /dev/serial[0-9], ttyAMA*, ttyUSB*, ttyACM*, ttyS0, or sa818's
   automatic choice (/dev/serial0, then /dev/ttyUSB0).
-- **Where:** an "SA818 radio" page, in the sidebar once /etc/sa818.conf
-  exists, and linked from the Tuning tab of SimpleUSB and USBRadio nodes.
+- **Where:** the SA818 tab of the Hardware page (#/hardware/sa818; it was
+  its own "SA818 radio" page, shown once /etc/sa818.conf existed, until
+  issue #33), linked from the Tuning tab of SimpleUSB and USBRadio nodes.
   /etc/sa818.conf is already in the backup include list.
 - **Verified on hardware** (node40608, SA818S firmware V1.1 on a USB
   programming cable, 2026-10-15): the connection test, and save and program
