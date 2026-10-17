@@ -1,6 +1,8 @@
 name: 'Make and Publish Pkgs'
+permissions:
+  contents: read
 run-name: Package ${{ github.event.repository.name }}(${{ github.ref_name }}) for ${{ inputs.os }}/${{ inputs.arch }}, Publish to ${{ inputs.deployment-environment }}
-on: 
+on:
   workflow_dispatch:
     inputs:
       os:
@@ -32,7 +34,7 @@ jobs:
   make-packages:
     uses: AllStarLink/asl3-workflows/.github/workflows/ephemeral_ec2_run-this.yml@develop
     with:
-      run-this: ./builder/dockerbuild.sh -a ${{ inputs.arch	}} -o ${{ inputs.os }} --gh-rel ${{ inputs.gh-rel }} -r ${{ inputs.aptly-repo }} 
+      run-this: ./builder/dockerbuild.sh -a ${{ inputs.arch	}} -o ${{ inputs.os }} --gh-rel ${{ inputs.gh-rel }} -r ${{ inputs.aptly-repo }}
       arch: ${{ inputs.arch == 'armhf' && 'arm64' || inputs.arch == 'aarch64' && 'arm64' || inputs.arch == 'amd64' && 'x86_64' || inputs.arch == 'riscv64' && 'x86_64' || inputs.arch }}
       artifact-path: '/actions-runner/_work/asl-web-ui/_debs/'
     secrets: inherit
