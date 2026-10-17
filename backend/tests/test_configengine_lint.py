@@ -39,6 +39,19 @@ def test_repeatable_keys_are_not_flagged():
     assert findings("[registrations]\nregister => 1:a@h\nregister => 2:b@h\n") == []
 
 
+def test_repeated_macros_in_a_scheduler_stanza_are_not_flagged():
+    text = (
+        "[node-main](!)\nscheduler = schedule_east\n[1999](node-main)\n"
+        "[schedule_east]\n85 = 00 06 * * *\n85 = 30 06 * * *\n85 = 00 07 * * *\n"
+    )
+    assert findings(text) == []
+
+
+def test_repeated_keys_in_an_unreferenced_schedule_like_stanza_still_warn():
+    (f,) = findings("[schedule_east]\n85 = 00 06 * * *\n85 = 30 06 * * *\n")
+    assert f.code == "duplicate_key"
+
+
 def test_errors_sort_before_warnings_and_counts():
     fs_ = findings("[s]\nnope\n[x](missing)\n")
     assert [f.severity for f in fs_] == ["error", "warning"]

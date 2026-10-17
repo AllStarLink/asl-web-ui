@@ -105,8 +105,17 @@ def _from_problem(cfg: Config, p: Problem, config_dir: str) -> Finding:
 def lint(cfg: Config, config_dir: str = "/etc/asterisk") -> list[Finding]:
     findings = [_from_problem(cfg, p, config_dir) for p in cfg.errors + cfg.notes]
 
+    # rpt.conf scheduler stanzas: app_rpt walks every line with
+    # ast_variable_browse() (apps/app_rpt.c), so one macro scheduled at
+    # several times is several entries, not an override.
+    schedulers = {
+        v.lower() for c in cfg.categories if not c.template and (v := c.value("scheduler"))
+    }
+
     # The same key twice among a section's own lines: only the last counts.
     for cat in cfg.categories:
+        if cat.name.lower() in schedulers:
+            continue
         seen: dict[str, object] = {}
         for var in cat.own():
             key = var.key.lower()
