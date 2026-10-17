@@ -1,32 +1,51 @@
 # asl-web-ui
 
-A web interface for managing AllStarLink 3 node servers. It replaces the
-text menus of [asl3-menu](https://github.com/AllStarLink/asl3-menu) with a
+A web interface for managing AllStarLink 3 node servers with a
 browser UI in the style of Cockpit, built with PatternFly.
 
-**Status:** early development. Milestones M0 (package skeleton), M1 (login,
-shell, status and console), M2 (Manual Config Edit), M3 (nodes, Asterisk
-settings and restart), M4 (backups, privileged helper), M5 (diagnostics),
-M6 (radio interface tuning; hardware check pending) and M7 (hardening) are done;
-see [docs/DESIGN.md](docs/DESIGN.md) for the design and the milestone plan.
+> [!CAUTION]
+> This package is under heavy development and most assuredly
+> has bugs. Don't run this on a node that you cannot easily
+> fix or rebuild if something goes wrong.
 
 ## Installing
 
 asl-web-ui is distributed as a Debian package for AllStarLink 3 on Debian 13
-(trixie). After installing it:
+(trixie). Currently, it only lives in the "devel" package repo. To install:
 
-1. Add each person who should manage the node to the `asl-web-ui` group:
+```bash
+asl-repo-switch -l devel
+apt update
+apt install -y asl-web-ui
+```
 
-       sudo usermod -aG asl-web-ui <username>
+### Authentication Config Post-Install
 
-2. Make sure the web server serves the site over HTTPS. asl-web-ui refuses
-   logins over plain HTTP.
-   - **Apache:** the package enables its configuration automatically.
-   - **nginx:** add `include /etc/asl-web-ui/nginx.conf;` inside the
+The authentication fo asl-web-ui is via system accounts in the same
+manner as Cockpit. Currently, each account who should manage the
+node must be manually added to the `asl-web-ui` group:
+
+```bash
+sudo usermod -aG asl-web-ui <username>
+```
+
+ASL3 Appliances will have a mechanism to auto-add system accounts
+when the software is fully released.
+
+### Access Must be via HTTPS
+
+Make sure the web server serves the site over HTTPS. asl-web-ui refuses
+logins over plain HTTP.
+
+* **Apache:** the package enables its configuration automatically.
+
+* **nginx:** add `include /etc/asl-web-ui/nginx.conf;` inside the
      `server { }` block of your site, then reload nginx.
-3. Open `https://<your-node>/asl-web-ui/`.
 
-### nginx in front of Apache
+Open `https://<your-node>/asl-web-ui/`.
+
+
+### NGINX Proxy Configuration
 
 If nginx owns ports 80/443 and Apache (with asl-web-ui) listens elsewhere,
 for example on 8443 on the same machine, nginx can pass `/asl-web-ui/`
@@ -36,6 +55,7 @@ compares with the `Origin` of requests.
 
 Inside `http { }`, for example in `/etc/nginx/conf.d/websocket.conf`:
 
+```nginx
     map $http_upgrade $connection_upgrade {
         default upgrade;
         ''      close;
@@ -52,19 +72,22 @@ Inside the HTTPS `server { }` block:
         proxy_read_timeout 1h;
         client_max_body_size 64m;
     }
+```
 
 nginx does not verify Apache's certificate by default, which is fine for
 `127.0.0.1`. asl-web-ui then sees nginx's address as the client address
 (for example in the PAM log) unless Apache's `mod_remoteip` is set to
 trust nginx.
 
-## Building
+## Building Locally
 
 Build the package in the builder container (Podman by default, no
 publishing); see [Developing from source](#developing-from-source) for the
 full setup:
 
-    make podman-deb
+```bash
+make podman-deb
+```
 
 Packages are written to `../_debs/`. The builder image provides a pinned,
 checksum-verified Node.js for the frontend; `dpkg-buildpackage` itself never
@@ -85,44 +108,63 @@ from a checkout, run every test suite, and build and try the package.
 
 ### 1. What you need
 
-- **Debian 13 (trixie)**, amd64 or arm64, with the AllStarLink 3 package
+* **Debian 13 (trixie)**, amd64 or arm64, with the AllStarLink 3 package
   repository configured (the `asl-apt-repos` package; see the ASL3 manual).
   A virtual machine or a spare node is fine.
-- **AllStarLink itself**, for the private test Asterisk, the conformance
+
+* **AllStarLink itself**, for the private test Asterisk, the conformance
   tests and the parity tests:
 
-      sudo apt install asl3-asterisk asl3-menu
+```bash
+sudo apt install asl3-asterisk asl3-menu
+```
 
-- **Python and the backend's libraries** (the same versions the package
+* **Python and the backend's libraries** (the same versions the package
   uses):
 
-      sudo apt install python3 python3-aiohttp python3-aiohttp-session \
-          python3-pytest python3-pytest-aiohttp python3-hypothesis python3-argon2 pandoc
+```bash
+sudo apt install python3 python3-aiohttp python3-aiohttp-session \
+    python3-pytest python3-pytest-aiohttp python3-hypothesis python3-argon2 pandoc
+```
 
-- **Node.js and npm**, only to build the browser code (see
+* **Node.js and npm**, only to build the browser code (see
   [Installing Node.js](#installing-nodejs) below). Packages built with
   `make podman-deb` get Node.js from the builder image, so you need it
   locally only for frontend work.
-- **Podman** (or Docker), to build the Debian package:
-  `sudo apt install podman`.
-- **Firefox** (`firefox-esr`), for `tests/e2e/screenshot.py`.
-- To try an installed package: **Apache or nginx with HTTPS**.
 
-### Installing Node.js
+* **Podman** (or Docker), to build the Debian package:
+
+```bash
+sudo apt install podman
+```
+
+* **Firefox** (`firefox-esr`), for `tests/e2e/screenshot.py`.
+
+```bash
+sudo apt install firefox-esr
+```
+
+* To try an installed package: **Apache or nginx with HTTPS**.
+
+### 2. Installing Node.js
 
 The package builds use one pinned Node.js release, installed by
 `builder/install-node.sh`. Use the same script on your machine, so that
 `node` and `npm` match the builds exactly; the version and the SHA-256
 checksums of the release archives are kept in that script and nowhere else.
 
-1. Install the tools the script uses (most systems have them):
+* Install the tools the script uses (most systems have them):
 
-       sudo apt install curl xz-utils
+```bash
+sudo apt install curl xz-utils
+```
 
-2. From the top of your checkout (`git clone`, step 2 below), install
+* From the top of your checkout (`git clone`, step 2 below), install
    Node.js into */opt/node*:
 
-       sudo builder/install-node.sh
+```bash
+sudo builder/install-node.sh
+```
 
    The script downloads the release for your architecture (amd64 or arm64)
    from nodejs.org, refuses it unless its checksum matches the pinned one,
@@ -131,16 +173,20 @@ checksums of the release archives are kept in that script and nowhere else.
    directory, give it as an argument (`sudo builder/install-node.sh
    /opt/node-24`).
 
-3. Put it first on your `PATH`, for your account:
+* Put it first on your `PATH`, for your account:
 
-       echo 'export PATH=/opt/node/bin:$PATH' >> ~/.profile
+```bash
+echo 'export PATH=/opt/node/bin:$PATH' >> ~/.bashrc
+```
 
-   then log out and back in (or run `. ~/.profile`).
+    then log out and back in (or run `. ~/.bashrc`).
 
-4. Check:
+* Check:
 
-       node --version     # v24.21.0
-       npm --version      # 11.19.0
+```bash
+node --version     # v24.21.0
+npm --version      # 11.19.0
+```
 
 **Updating:** when the pinned version changes in `builder/install-node.sh`,
 run `sudo builder/install-node.sh` again. It replaces the earlier
@@ -161,28 +207,32 @@ To move to a newer Node.js: change `NODE_VERSION` and both checksums in
 that file's signature as described in Node.js's README), rebuild with
 `make podman-deb`, and rerun the script on your machine.
 
-### 2. Get the code and build the frontend
+### 3. Get the code and build the frontend
 
-    git clone https://github.com/AllStarLink/asl-web-ui.git
-    cd asl-web-ui
-    make frontend
+```bash
+git clone https://github.com/AllStarLink/asl-web-ui.git
+cd asl-web-ui
+make frontend
+```
 
 `make frontend` installs the npm packages exactly as listed in
 `frontend/package-lock.json` (`npm ci`, with install scripts disabled) and
 writes the bundle to `frontend/dist/`. Run it again after changing anything
 under `frontend/`.
 
-### 3. Run it in development mode
+### 4. Run it in development mode
 
-Development mode serves the UI and the API on http://127.0.0.1:8099/ with a
+Development mode serves the UI and the API on `http://127.0.0.1:8099/` with a
 fake login (user `dev`, password `dev`). It works best with a private,
 unprivileged Asterisk built from the installed ASL packages, which never
 touches the system's Asterisk or */etc/asterisk*:
 
-    tests/asterisk/instance.sh start /tmp/asl-dev-asterisk
-    cd backend
-    python3 -m asl_web_ui.server --dev \
-        --asterisk-conf /tmp/asl-dev-asterisk/etc/asterisk.conf
+```bash
+tests/asterisk/instance.sh start /tmp/asl-dev-asterisk
+cd backend
+python3 -m asl_web_ui.server --dev \
+    --asterisk-conf /tmp/asl-dev-asterisk/etc/asterisk.conf
+```
 
 Open http://127.0.0.1:8099/ and log in as `dev` / `dev`. Stop the private
 Asterisk with `tests/asterisk/instance.sh stop /tmp/asl-dev-asterisk`.
@@ -202,14 +252,18 @@ To try your code against a node with real hardware without installing
 anything there, copy the checkout (or just `backend/` and `frontend/dist/`)
 to the node and run, as an ordinary user with passwordless sudo:
 
-    cd backend
-    python3 -m asl_web_ui.server --dev \
-        --asterisk-cmd "sudo -n /usr/sbin/asterisk" \
-        --state-dir ~/asl-web-ui-state
+```bash
+cd backend
+python3 -m asl_web_ui.server --dev \
+    --asterisk-cmd "sudo -n /usr/sbin/asterisk" \
+    --state-dir ~/asl-web-ui-state
+```
 
 then tunnel to it from your computer and open http://127.0.0.1:8099/:
 
-    ssh -N -L 8099:127.0.0.1:8099 user@node
+```bash
+ssh -N -L 8099:127.0.0.1:8099 user@node
+```
 
 The server listens only on the node's localhost. It talks to the node's real
 Asterisk, so radio settings and Asterisk restarts are real: copy
@@ -233,32 +287,43 @@ package never builds with failing unit tests.
 
 ### 6. Build and try the package
 
-    make podman-deb
+```bash
+make podman-deb
+```
 
 The package is written to `../_debs/`. Install it with its dependencies:
 
-    sudo apt install ../_debs/asl-web-ui_*.deb
+```bash
+sudo apt install ../_debs/asl-web-ui_*.deb
+```
 
 Then:
 
 1. Make sure the web server has HTTPS. For a test machine, Apache's
    self-signed default site is enough:
 
-       sudo a2enmod ssl
-       sudo a2ensite default-ssl
-       sudo systemctl reload apache2
+```bash
+sudo a2enmod ssl
+sudo a2ensite default-ssl
+sudo systemctl reload apache2
+```
 
    With nginx, add `include /etc/asl-web-ui/nginx.conf;` to the HTTPS
    `server { }` block and reload nginx.
-2. Create or choose a test account and put it in the group:
 
-       sudo usermod -aG asl-web-ui <username>
+1. Create or choose a test account and put it in the group:
 
-3. Open `https://<host>/asl-web-ui/`, or run the smoke test with the
+```bash
+sudo usermod -aG asl-web-ui <username>
+```
+
+1. Open `https://<host>/asl-web-ui/`, or run the smoke test with the
    account's password in a file only you can read:
 
-       tests/e2e/smoke.py https://localhost/asl-web-ui/ <username> \
-           ~/.asl-web-ui-test-password --insecure
+```bash
+tests/e2e/smoke.py https://localhost/asl-web-ui/ <username> \
+    ~/.asl-web-ui-test-password --insecure
+```
 
 Reinstalling the package restarts the service, which logs everyone out
 (sessions are kept in memory).
@@ -271,7 +336,9 @@ use.
 
 Edit `frontend/package.json`, then regenerate the lock file:
 
-    make -C frontend lock
+```bash
+make -C frontend lock
+```
 
 npm only picks versions published before the date in `frontend/Makefile`
 (`NPM_BEFORE`), so new releases are taken deliberately. Move that date
@@ -279,10 +346,11 @@ forward when upgrading.
 
 ### More
 
-- `docs/DESIGN.md` describes the architecture and `docs/design-notes.md` the
+* `docs/DESIGN.md` describes the architecture and `docs/design-notes.md` the
   decisions behind it; read them before larger changes. Open work is in
   `docs/backlog.md`.
-- Contributions with AI involvement follow [AGENTS.md](AGENTS.md) and
+
+* Contributions with AI involvement follow [AGENTS.md](AGENTS.md) and
   AllStarLink's ASL003 practice.
 
 ## Repository layout
