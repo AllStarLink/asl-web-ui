@@ -49,8 +49,9 @@ earlier.
 : One root process per privileged request (socket **asl-web-ui-priv.socket**,
   reachable only by **asterisk**): backups, restores, the default
   configuration, Allmon3's settings and users, the SA818 radio module, HTTPS
-  and Let's Encrypt certificates in Apache, and ownership fixes in
-  */etc/asterisk*.
+  and Let's Encrypt certificates in Apache, ownership fixes in
+  */etc/asterisk*, the network interface list, and the ASL3 appliance's
+  fallback access point.
   Every request is authorized with polkit (**pkcheck**) for the calling
   process.
 
@@ -92,6 +93,11 @@ allowed for the **asterisk** user by the polkit rule below.
 */etc/sa818.conf*
 : The SA818 radio module's settings, shared with **sa818-menu**(1) (same
   format), and programmed into the module with **sa818**(1).
+
+*/usr/libexec/asl3/fallback-ap\**, *fallback-ap.timer*
+: The fallback access point of **asl3-appliance-pc** or **asl3-appliance-pi**.
+  The Network page offers it only when these are installed, and enables or
+  disables the timer. Its settings stay in */etc/default/fallback-ap*.
 
 */var/asl-backups/*
 : Backups, shared with **asl-backup-menu** (same names and format). The

@@ -29,6 +29,7 @@ import LockIcon from "@patternfly/react-icons/dist/esm/icons/lock-icon";
 import MonitoringIcon from "@patternfly/react-icons/dist/esm/icons/monitoring-icon";
 import StethoscopeIcon from "@patternfly/react-icons/dist/esm/icons/stethoscope-icon";
 import TachometerAltIcon from "@patternfly/react-icons/dist/esm/icons/tachometer-alt-icon";
+import WifiIcon from "@patternfly/react-icons/dist/esm/icons/wifi-icon";
 import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
 
 import { Status } from "./api";
@@ -51,6 +52,8 @@ const NAV: NavEntry[] = [
 // Shown once sa818-menu or this page has saved SA818 settings (or while on it);
 // the node Tuning tab links to it for a first setup.
 const SA818: NavEntry = { route: "sa818", label: "SA818 radio", icon: <BroadcastTowerIcon /> };
+
+const NETWORKING: NavEntry[] = [{ route: "network", label: "Network", icon: <WifiIcon /> }];
 
 // Kept apart, at the bottom, so that newcomers reach for the guided pages first.
 const ADVANCED: NavEntry[] = [{ route: "config", label: "Manual Config Edit", icon: <FileCodeIcon />, expert: true }];
@@ -182,6 +185,8 @@ export function Shell({ user, hostname, sa818, route, status, onLogout, children
       <PageSidebarBody>
         <nav aria-label="Main">
           <NavLinks base={base} entries={sa818 || base === "sa818" ? [...NAV.slice(0, 4), SA818, ...NAV.slice(4)] : NAV} />
+          <div className="asl-nav-section">Networking</div>
+          <NavLinks base={base} entries={NETWORKING} />
           <div className="asl-nav-section">Advanced</div>
           <NavLinks base={base} entries={ADVANCED} />
         </nav>

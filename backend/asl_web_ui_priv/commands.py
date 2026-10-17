@@ -31,7 +31,7 @@ import tempfile
 import time
 from collections.abc import Callable
 
-from . import https, sa818
+from . import https, network, sa818
 
 ROOT = "/"
 BACKUP_DIR = "/var/asl-backups"
@@ -776,6 +776,26 @@ def https_remove(args: dict, output: Output) -> dict:
     return _https(https.remove, ROOT, args.get("delete_certificate") is True, output)
 
 
+# ---- Network interfaces and the appliance's fallback AP --------------------------------------
+
+
+def _network(fn, *args):
+    try:
+        return fn(*args)
+    except network.NetworkError as exc:
+        raise CommandError(exc.message, exc.code)
+
+
+def network_status(args: dict, output: Output) -> dict:
+    return _network(network.status, ROOT)
+
+
+def network_fallback_ap(args: dict, output: Output) -> dict:
+    if not isinstance(args.get("enable"), bool):
+        raise CommandError("enable must be true or false", "invalid")
+    return _network(network.set_fallback_ap, ROOT, args["enable"])
+
+
 COMMANDS = {
     "backup.create": backup_create,
     "backup.delete": backup_delete,
@@ -803,4 +823,6 @@ COMMANDS = {
     "https.redirect": https_redirect,
     "https.renew_test": https_renew_test,
     "https.remove": https_remove,
+    "network.status": network_status,
+    "network.fallback_ap": network_fallback_ap,
 }
