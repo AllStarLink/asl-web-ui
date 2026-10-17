@@ -47,8 +47,12 @@ def test_repeated_macros_in_a_scheduler_stanza_are_not_flagged():
     assert findings(text) == []
 
 
-def test_repeated_keys_in_an_unreferenced_schedule_like_stanza_still_warn():
-    (f,) = findings("[schedule_east]\n85 = 00 06 * * *\n85 = 30 06 * * *\n")
+def test_repeated_schedule_entries_in_an_unreferenced_stanza_are_not_flagged():
+    assert findings("[scheduler]\n;Time on the hour\n85=00 06 * * *\n85=30 06 * * *\n85=00 07 * * *\n") == []
+
+
+def test_a_schedule_entry_repeating_a_non_schedule_value_still_warns():
+    (f,) = findings("[schedule_east]\n85 = 00 06 * * *\n85 = *3\n")
     assert f.code == "duplicate_key"
 
 

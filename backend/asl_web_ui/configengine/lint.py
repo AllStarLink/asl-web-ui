@@ -12,6 +12,7 @@ Every finding says what happens and cites where Asterisk does it.
 """
 
 import os
+import re
 from dataclasses import asdict, dataclass
 
 from .model import Config, Problem
@@ -27,6 +28,9 @@ REPEATABLE = {
     "register", "load", "noload", "preload", "require", "exten", "same", "include", "switch",
     "ignorepat", "allow", "disallow", "permit", "deny", "eventfilter", "setvar", "member",
 }
+
+# An app_rpt scheduler entry value: minute hour dom month dow, each a number or *.
+SCHEDULE_ENTRY = re.compile(r"\s*[\d*]+(\s+[\d*]+){4}\s*")
 
 
 @dataclass
@@ -107,7 +111,9 @@ def lint(cfg: Config, config_dir: str = "/etc/asterisk") -> list[Finding]:
 
     # rpt.conf scheduler stanzas: app_rpt walks every line with
     # ast_variable_browse() (apps/app_rpt.c), so one macro scheduled at
-    # several times is several entries, not an override.
+    # several times is several entries, not an override. A stanza can be
+    # named by scheduler= elsewhere or swapped in later, so schedule-shaped
+    # values are recognised on their own too.
     schedulers = {
         v.lower() for c in cfg.categories if not c.template and (v := c.value("scheduler"))
     }
@@ -123,6 +129,9 @@ def lint(cfg: Config, config_dir: str = "/etc/asterisk") -> list[Finding]:
                 continue
             if key in seen:
                 first = seen[key]
+                if SCHEDULE_ENTRY.fullmatch(first.value) and SCHEDULE_ENTRY.fullmatch(var.value):
+                    seen[key] = var
+                    continue
                 findings.append(Finding(
                     "warning", "duplicate_key", _rel(var.file, config_dir), var.line + 1,
                     f"{var.key} is set more than once in [{cat.name}]. This value (line {var.line + 1}) wins; "
