@@ -140,8 +140,9 @@ td.asl-indent { padding-inline-start: 2rem !important; }
 .asl-codemirror .cm-activeLine, .asl-codemirror .cm-activeLineGutter { background: rgb(127 127 127 / .08); }
 .asl-codemirror .cm-cursor { border-inline-start-color: var(--pf-t--global--text--color--regular); }
 .asl-codemirror .cm-tooltip { white-space: pre-line; max-width: 36rem; }
-.asl-problems ul { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .4rem; }
-.asl-problems li { display: grid; grid-template-columns: auto 5.5rem 1fr; gap: .5rem; align-items: baseline; }
+.asl-problems ul { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; grid-template-columns: auto fit-content(40%) 1fr; column-gap: .5rem; row-gap: .4rem; }
+.asl-problems li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; }
+.asl-problems li > .asl-sub { min-width: 5.5rem; overflow-wrap: anywhere; }
 .asl-problem-text { display: grid; }
 
 /* ---- diff ---- */
