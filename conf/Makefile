@@ -4,7 +4,7 @@ unitdir ?= /usr/lib/systemd/system
 polkitdir ?= /usr/share/polkit-1/rules.d
 polkitactiondir ?= /usr/share/polkit-1/actions
 
-UNITS = $(wildcard systemd/*.service systemd/*.socket)
+UNITS = $(wildcard systemd/*.service systemd/*.socket systemd/*.timer)
 
 INSTALLABLES = \
 	$(DESTDIR)$(sysconfdir)/asl-web-ui.ini \

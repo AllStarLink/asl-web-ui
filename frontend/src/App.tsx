@@ -10,6 +10,7 @@ import { ConfigEditor } from "./ConfigEditor";
 import { ConfigFiles } from "./ConfigFiles";
 import { HttpsPage } from "./HttpsPage";
 import { Login } from "./Login";
+import { Net44Page } from "./Net44Page";
 import { NetworkPage } from "./NetworkPage";
 import { NodePage } from "./NodePage";
 import { Nodes } from "./Nodes";
@@ -42,6 +43,7 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   else if (base === "https") page = <HttpsPage />;
   else if (base === "sa818") page = <SA818Page />;
   else if (base === "network") page = <NetworkPage />;
+  else if (base === "44net") page = <Net44Page />;
   else if (base === "allmon3") page = <Allmon3Page tab={sub ?? "status"} />;
   else if (base === "config" && sub === "~allmon3" && third)
     page = <Allmon3Editor key={third} name={decodeURIComponent(third)} from="config" />;

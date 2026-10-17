@@ -3,8 +3,8 @@
 // power off (the web UI asks for the user's password again first), and the
 // commands of its privileged helper (backups, factory reset, Allmon3's
 // settings and users, the SA818 radio module, HTTPS and Let's Encrypt in
-// Apache, ownership fixes in /etc/asterisk, the network interface list and
-// the appliance's fallback access point).
+// Apache, ownership fixes in /etc/asterisk, the network interface list,
+// the appliance's fallback access point and the 44Net Connect tunnel).
 // To restrict them further, add a rule with a lower number in
 // /etc/polkit-1/rules.d/ that returns polkit.Result.NO.
 

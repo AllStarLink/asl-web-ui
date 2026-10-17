@@ -34,13 +34,14 @@ The following is currently supported (almost feature-parity with asl-menu):
 * Node Backup Management
 * TLS certificate automation with Let's Encrypt to remove SSL browser
 errors
+* 44Net Connect (WireGuard) setup on the ASL3 appliance: firewall zone,
+tunnel, full or split routing, and migration of a tunnel set up by hand
 * "Expert Mode" for advanced editing of `/etc/asterisk` and `/etc/allmon3` files
 * Syntax checker for Asterisk configuration files and a normalization
 engine to make customized files editable with asl-web-ui
 
 Major items remaining before release:
 
-* Wireguard / 44Net Connect Interface (maybe)
 * Tighter integration with the ASL3 Appliance package
 * All important bugs
 * Specific links/redirections to Cockpit management items

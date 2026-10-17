@@ -31,7 +31,7 @@ import tempfile
 import time
 from collections.abc import Callable
 
-from . import https, network, sa818
+from . import https, net44, network, sa818
 
 ROOT = "/"
 BACKUP_DIR = "/var/asl-backups"
@@ -39,6 +39,10 @@ INCLUDE_LIST = "/var/asl-backups/asl-backup-files"
 STAGING_DIR = "/var/lib/asl-web-ui/staging"
 CONFIG_DIR = "/etc/asterisk"
 MARKER = "etc/asterisk/rpt_http_registrations.conf"  # asl-backup-menu's "made on ASL3" check
+# Never in a backup, and never restored, whatever the include list says:
+# the 44Net Connect keyfile holds the tunnel's private key, which is not
+# ours to copy.
+NEVER_BACKED_UP = {net44.KEYFILE.lstrip("/")}
 # Files outside /etc/asterisk the web UI may replace: the files Allmon3 reads,
 # and the SA818 settings (only with content that is safe to source, see
 # sa818.lint_text). Every other file directly in /etc/allmon3 can be listed and
@@ -233,7 +237,9 @@ def _create(name: str) -> dict:
     included = []
 
     def skip_archives(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
-        return None if info.name.endswith(".tgz") else info
+        if info.name.endswith(".tgz") or posixpath.normpath(info.name) in NEVER_BACKED_UP:
+            return None
+        return info
 
     try:
         with tarfile.open(tmp, "w:gz") as tar:
@@ -354,6 +360,8 @@ def _restore_plan(path: str) -> dict:
                 reason = "path leaves the archive"
             elif not _within(norm, allowed):
                 reason = "not in the include list"
+            elif norm in NEVER_BACKED_UP:
+                reason = "never restored (holds a private key)"
             elif m.issym():
                 target = posixpath.normpath(posixpath.join(posixpath.dirname(norm), m.linkname)) \
                     if not m.linkname.startswith("/") else posixpath.normpath(m.linkname).lstrip("/")
@@ -796,6 +804,52 @@ def network_fallback_ap(args: dict, output: Output) -> dict:
     return _network(network.set_fallback_ap, ROOT, args["enable"])
 
 
+# ---- 44Net Connect (WireGuard through NetworkManager, firewalld) ------------------------------
+
+
+def _net44(fn, *args):
+    try:
+        return fn(*args)
+    except net44.Net44Error as exc:
+        raise CommandError(exc.message, exc.code)
+
+
+def net44_status(args: dict, output: Output) -> dict:
+    return _net44(net44.status, ROOT)
+
+
+def net44_zone(args: dict, output: Output) -> dict:
+    return _net44(net44.set_zone, ROOT, args)
+
+
+def net44_configure(args: dict, output: Output) -> dict:
+    return _net44(net44.configure, ROOT, args)
+
+
+def net44_migrate(args: dict, output: Output) -> dict:
+    return _net44(net44.migrate, ROOT, args)
+
+
+def net44_mode(args: dict, output: Output) -> dict:
+    return _net44(net44.set_mode, ROOT, args)
+
+
+def net44_start(args: dict, output: Output) -> dict:
+    return _net44(net44.start, ROOT, args)
+
+
+def net44_confirm(args: dict, output: Output) -> dict:
+    return _net44(net44.confirm, ROOT, args)
+
+
+def net44_stop(args: dict, output: Output) -> dict:
+    return _net44(net44.stop, ROOT, args)
+
+
+def net44_remove(args: dict, output: Output) -> dict:
+    return _net44(net44.remove, ROOT, args)
+
+
 COMMANDS = {
     "backup.create": backup_create,
     "backup.delete": backup_delete,
@@ -825,4 +879,13 @@ COMMANDS = {
     "https.remove": https_remove,
     "network.status": network_status,
     "network.fallback_ap": network_fallback_ap,
+    "net44.status": net44_status,
+    "net44.zone": net44_zone,
+    "net44.configure": net44_configure,
+    "net44.migrate": net44_migrate,
+    "net44.mode": net44_mode,
+    "net44.start": net44_start,
+    "net44.confirm": net44_confirm,
+    "net44.stop": net44_stop,
+    "net44.remove": net44_remove,
 }

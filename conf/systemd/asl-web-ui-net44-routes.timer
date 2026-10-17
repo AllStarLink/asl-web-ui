@@ -1,0 +1,11 @@
+[Unit]
+Description=ASL Web UI: update the 44Net Connect split-routing routes regularly
+Documentation=man:asl-web-ui(8)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target
