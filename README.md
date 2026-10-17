@@ -43,6 +43,8 @@ Major items remaining before release:
 * Wireguard / 44Net Connect Interface (maybe)
 * Tighter integration with the ASL3 Appliance package
 * All important bugs
+* Specific links/redirections to Cockpit management items
+such as WiFi Manager
 
 ## Installing
 
