@@ -16,6 +16,10 @@ import {
   FormSelectOption,
   Gallery,
   Label,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
   PageSection,
   Spinner,
   Title,
@@ -45,6 +49,8 @@ type DiagnosticsData = {
   connectivity: Connectivity | null;
   nodelist: { installed: boolean; enabled: boolean; timer_active: boolean; last_result?: string };
   packages: { name: string; version: string }[];
+  // dahdi-dkms, while it is installed; blockers say why it should stay.
+  dahdi: { version: string; blockers: string[] } | null;
 };
 
 // What to do about a problem, keyed on the check's finding id.
@@ -222,6 +228,7 @@ export function Diagnostics({ status }: { status: Status | null }) {
   const [regserver, setRegserver] = useState<{ available: boolean; message: string } | null>(null);
   const [checking, setChecking] = useState(false);
   const [nodelistMsg, setNodelistMsg] = useState<string | null>(null);
+  const [confirmDahdi, setConfirmDahdi] = useState(false);
   const [jobElement, runJob] = useJob();
 
   const load = useCallback(async () => {
@@ -258,6 +265,12 @@ export function Diagnostics({ status }: { status: Status | null }) {
     } catch (err) {
       setNodelistMsg(message(err));
     }
+  };
+
+  const removeDahdi = async () => {
+    setConfirmDahdi(false);
+    await runJob("Uninstall the DAHDI kernel modules", () => post<Started>("diagnostics/dahdi/remove", {}));
+    await load();
   };
 
   const c = data?.connectivity;
@@ -346,6 +359,28 @@ export function Diagnostics({ status }: { status: Status | null }) {
                         </DescriptionListDescription>
                       </DescriptionListGroup>
                     )}
+                    {data.dahdi && (
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>DAHDI kernel modules</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          {data.dahdi.blockers.length === 0 ? (
+                            <div className="asl-buttons">
+                              <Label color="orange" icon={<ExclamationTriangleIcon />}>Still installed</Label>
+                              <Button variant="link" isInline onClick={() => setConfirmDahdi(true)}>Uninstall…</Button>
+                              <span className="asl-sub">
+                                AllStarLink no longer needs them, and they are rebuilt, often unsuccessfully, on every
+                                kernel update.
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="asl-buttons">
+                              <Label color="grey">Installed</Label>
+                              <span className="asl-sub">Still needed: {data.dahdi.blockers.join(" ")}</span>
+                            </div>
+                          )}
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                    )}
                     <DescriptionListGroup>
                       <DescriptionListTerm>Asterisk</DescriptionListTerm>
                       <DescriptionListDescription>
@@ -382,6 +417,19 @@ export function Diagnostics({ status }: { status: Status | null }) {
           </div>
         )}
       </PageSection>
+      <Modal isOpen={confirmDahdi} onClose={() => setConfirmDahdi(false)} variant="small" aria-labelledby="dahdi-title">
+        <ModalHeader title="Uninstall the DAHDI kernel modules?" labelId="dahdi-title" />
+        <ModalBody>
+          This removes the dahdi-dkms package, and nothing else: if apt would remove other packages with it, it is
+          left installed. Telephony boards for autopatch need it; USB and other radio interfaces do not. The modules
+          already loaded stay loaded until the next restart. You can install it again with{" "}
+          <code>apt install dahdi-dkms</code>.
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="primary" onClick={removeDahdi}>Uninstall</Button>
+          <Button variant="link" onClick={() => setConfirmDahdi(false)}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
     </>
   );
 }

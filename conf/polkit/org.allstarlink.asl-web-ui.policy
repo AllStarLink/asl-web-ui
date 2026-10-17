@@ -342,4 +342,13 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.allstarlink.asl-web-ui.dahdi-remove">
+    <description>Uninstall the DAHDI kernel modules (dahdi-dkms)</description>
+    <message>Authentication is required to: uninstall the DAHDI kernel modules (dahdi-dkms)</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
 </policyconfig>

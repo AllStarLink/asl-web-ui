@@ -5,6 +5,7 @@
     POST /api/v1/diagnostics/ping                  ping 8.8.8.8 four times (job)
     POST /api/v1/diagnostics/registration-server   is register.allstarlink.org reachable?
     POST /api/v1/diagnostics/nodelist/restart      restart asl3-update-nodelist.service
+    POST /api/v1/diagnostics/dahdi/remove          uninstall dahdi-dkms (job)
     GET  /api/v1/diagnostics/log?lines=N           the last N lines of Asterisk's messages.log
     GET  /api/v1/diagnostics/log/download          the whole log, as a file
 
@@ -23,7 +24,10 @@ import time
 import aiohttp
 from aiohttp import web
 
+from asl_web_ui_priv import dahdi
+
 from .. import authcheck
+from ..privileged import PRIV_KEY, PrivError
 from ..security import SETTINGS_KEY, USER_KEY
 from ..systemd import unit_state
 from .changes import STORE_KEY, error
@@ -82,11 +86,21 @@ async def nodelist_state() -> dict:
             "timer_active": timer.get("ActiveState") == "active", "last_result": service.get("Result")}
 
 
+def dahdi_state(pkgs: list[dict], config_dir: str) -> dict | None:
+    """dahdi-dkms, if it is installed, and why it should stay if it should."""
+    versions = {p["name"]: p["version"] for p in pkgs}
+    if dahdi.PACKAGE not in versions:
+        return None
+    return {"version": versions[dahdi.PACKAGE],
+            "blockers": dahdi.blockers(versions, os.path.join(config_dir, "rpt.conf"), dahdi.PROC_DAHDI)}
+
+
 @routes.get("/api/v1/diagnostics")
 async def overview(request: web.Request) -> web.Response:
+    settings = request.app[SETTINGS_KEY]
     state, pkgs = await asyncio.gather(nodelist_state(), packages())
-    return web.json_response({"connectivity": cached(request.app[SETTINGS_KEY].state_dir),
-                              "nodelist": state, "packages": pkgs})
+    return web.json_response({"connectivity": cached(settings.state_dir), "nodelist": state, "packages": pkgs,
+                              "dahdi": dahdi_state(pkgs, settings.config_dir)})
 
 
 @routes.post("/api/v1/diagnostics/connectivity")
@@ -150,6 +164,24 @@ async def restart_nodelist(request: web.Request) -> web.Response:
     if code != 0:
         return error(500, "failed", f"The node list service could not be restarted: {output[-300:]}")
     return web.json_response({"done": True, "state": await nodelist_state()})
+
+
+@routes.post("/api/v1/diagnostics/dahdi/remove")
+async def remove_dahdi(request: web.Request) -> web.Response:
+    if request.app[SETTINGS_KEY].dev:
+        return error(501, "dev_mode", "Development mode does not remove packages.")
+
+    async def work(job):
+        try:
+            res = await request.app[PRIV_KEY].call("dahdi.remove", {}, request[USER_KEY], job.output)
+        except PrivError as exc:
+            request.app[STORE_KEY].record(request[USER_KEY], "uninstall dahdi-dkms", "failed", [exc.message[-200:]])
+            raise  # the job reports its message
+        request.app[STORE_KEY].record(request[USER_KEY], "uninstall dahdi-dkms", "done", [])
+        job.output("Done. The DAHDI kernel modules already loaded stay loaded until the next restart.")
+        return res
+
+    return await start_job(request, "Uninstall the DAHDI kernel modules", work)
 
 
 # ---- Asterisk's log ----------------------------------------------------------------------

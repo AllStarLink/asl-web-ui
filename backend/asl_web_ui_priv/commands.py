@@ -31,7 +31,7 @@ import tempfile
 import time
 from collections.abc import Callable
 
-from . import https, net44, network, sa818
+from . import dahdi, https, net44, network, sa818
 
 ROOT = "/"
 BACKUP_DIR = "/var/asl-backups"
@@ -850,6 +850,17 @@ def net44_remove(args: dict, output: Output) -> dict:
     return _net44(net44.remove, ROOT, args)
 
 
+# ---- DAHDI ---------------------------------------------------------------------------------
+
+
+def dahdi_remove(args: dict, output: Output) -> dict:
+    """Uninstall dahdi-dkms once app_rpt no longer needs it (dahdi.py has the checks)."""
+    try:
+        return dahdi.remove(ROOT, output)
+    except dahdi.DahdiError as exc:
+        raise CommandError(exc.message, exc.code)
+
+
 COMMANDS = {
     "backup.create": backup_create,
     "backup.delete": backup_delete,
@@ -888,4 +899,5 @@ COMMANDS = {
     "net44.confirm": net44_confirm,
     "net44.stop": net44_stop,
     "net44.remove": net44_remove,
+    "dahdi.remove": dahdi_remove,
 }

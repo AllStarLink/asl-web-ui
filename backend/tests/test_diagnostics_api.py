@@ -43,3 +43,12 @@ async def test_asterisk_log_tail_and_download(env, tmp_path):
     log.unlink()
     _, body = await a.call("GET", "diagnostics/log")
     assert body["exists"] is False
+
+
+def test_dahdi_state(tmp_path):
+    pkgs = [{"name": "asl3-asterisk", "version": "2:22.8.2+asl3-3.8.3-1.deb12"}]
+    assert diagnostics.dahdi_state(pkgs, str(tmp_path)) is None
+    pkgs.append({"name": "dahdi-dkms", "version": "1:3.4.0-11"})
+    assert diagnostics.dahdi_state(pkgs, str(tmp_path)) == {"version": "1:3.4.0-11", "blockers": []}
+    (tmp_path / "rpt.conf").write_text("[1999]\nrxchannel=dahdi/pseudo\n")
+    assert diagnostics.dahdi_state(pkgs, str(tmp_path))["blockers"] == ["rpt.conf still uses dahdi/pseudo."]

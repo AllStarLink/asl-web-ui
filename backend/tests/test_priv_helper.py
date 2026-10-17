@@ -272,3 +272,63 @@ def test_factory_restore_keeps_the_ami_secret(root):
     assert "secret = old-secret-1234" in (root / "etc" / "asterisk" / "manager.conf").read_text()
     assert not (root / "etc" / "asterisk" / "rpt.conf.dpkg-old").exists()
     assert "Reinstalling" in lines and res["before"].endswith("_before-factory.tgz")
+
+
+# ---- DAHDI ------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def apt(monkeypatch):
+    """Stand-ins for dpkg-query and apt-get; .calls lists each argv."""
+    from asl_web_ui_priv import dahdi
+
+    class Apt:
+        calls: list = []
+        installed = {"dahdi-dkms": "1:3.4.0-11", "asl3-asterisk": "2:22.8.2+asl3-3.8.3-1.deb12"}
+        plan = "Remv dahdi-dkms [1:3.4.0-11]\n"
+
+        def __call__(self, argv, output=None):
+            self.calls.append(argv)
+            if argv[0] == dahdi.DPKG_QUERY:
+                return 0, "".join(f"ii \t{n}\t{v}\n" for n, v in self.installed.items())
+            if argv[1] == "-s":
+                return 0, self.plan
+            if output:
+                output("Removing dahdi-dkms (1:3.4.0-11) ...")
+            return 0, ""
+
+    fake = Apt()
+    fake.calls = []
+    monkeypatch.setattr(dahdi, "run", fake)
+    return fake
+
+
+def test_dahdi_remove_only_removes_dahdi_dkms(root, apt):
+    replies = run("dahdi.remove")
+    assert replies[-1] == {"op": "result", "ok": True, "data": {"removed": ["dahdi-dkms"]}}
+    assert {"op": "output", "text": "Removing dahdi-dkms (1:3.4.0-11) ..."} in replies
+    assert apt.calls[-1][-3:] == ["-y", "remove", "dahdi-dkms"]
+
+    apt.calls.clear()
+    apt.plan = "Remv dahdi-dkms [1:3.4.0-11]\nRemv asl3 [3.16]\n"
+    res = result("dahdi.remove")
+    assert res["code"] == "conflict" and "asl3" in res["error"]
+    assert not any("-y" in argv for argv in apt.calls)
+
+
+def test_dahdi_stays_while_something_uses_it(root, apt):
+    from asl_web_ui_priv import dahdi
+
+    apt.installed = {"asl3-asterisk": "2:22.8.2+asl3-3.8.3-1.deb12"}
+    assert result("dahdi.remove")["code"] == "not_found"
+    apt.installed = {"dahdi-dkms": "1:3.4.0-11", "asl3-asterisk": "2:22.5.1+asl3-3.6.4-1.deb12"}
+    assert "still uses DAHDI" in result("dahdi.remove")["error"]
+    apt.installed["asl3-asterisk"] = "2:22.9.0+asl3-3.10.0-1.deb13"
+    (root / "etc" / "asterisk" / "rpt.conf").write_text(
+        "[1999]\n;rxchannel = DAHDI/pseudo\nrxchannel = DAHDI/1 ; a telephony board\n")
+    assert "rpt.conf still uses DAHDI/1" in result("dahdi.remove")["error"]
+    (root / "etc" / "asterisk" / "rpt.conf").write_text("[1999]\nrxchannel = Local/pseudo\n")
+    (root / "proc" / "dahdi" / "1").mkdir(parents=True)
+    assert "span 1" in result("dahdi.remove")["error"]
+    assert not any("-y" in argv for argv in apt.calls)
+    assert dahdi.app_rpt_version("22.8.2+asl3-3.8.3-1") == (3, 8, 3) and dahdi.app_rpt_version("1.0") is None

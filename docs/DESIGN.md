@@ -76,6 +76,7 @@ flowchart LR
 | Factory restore (reinstall `asl3-asterisk-config`, keeping the AMI secret) | `asl-web-ui-priv`, with output streamed back |
 | Edit `/etc/allmon3/allmon3.ini` (and Allmon3's other files, `/etc/sa818.conf`) | `asl-web-ui-priv file.write`. The path must be on an allowlist, and the hash is checked. The edit itself is computed without privilege. `file.list` and `file.read` also show Allmon3's other files, read-only. |
 | Give root-owned files in `/etc/asterisk` back to the asterisk user | `asl-web-ui-priv asterisk.fix_ownership`. Only regular files under `/etc/asterisk`. |
+| Uninstall `dahdi-dkms` (Diagnostics) | `asl-web-ui-priv dahdi.remove`. Only once app_rpt is 3.8.3 or later, with no DAHDI span and no `DAHDI/` rxchannel, and only if `apt-get -s` shows that nothing else would be removed. |
 | Everything else (config edits, AstDB, tuning, diagnostics) | No privilege needed: the service runs as `asterisk` |
 
 How `asl-web-ui-priv` works:
