@@ -46,6 +46,39 @@ function CockpitLink({ path, children }: { path: string; children: string }) {
   );
 }
 
+function FallbackApAbout() {
+  return (
+    <>
+      <Content component="p">
+        When enabled, this server checks its network connection every minute. If it has none, it starts its own
+        Wi-Fi network so that you can connect to it and set up Wi-Fi in Cockpit. The access point stops once the
+        connection is back.
+      </Content>
+      <Alert variant="warning" isInline title="Not for mobile nodes">
+        If this node is mobile and routinely drops off its network, for example on a phone hotspot in a vehicle, you
+        likely do not want this enabled. Each time the connection drops, the Wi-Fi adapter switches to running the
+        access point and does not join your other Wi-Fi networks while it is on.
+      </Alert>
+    </>
+  );
+}
+
+function FallbackApUnavailable() {
+  return (
+    <Card>
+      <CardTitle>Fallback access point</CardTitle>
+      <CardBody>
+        <div className="asl-stack">
+          <FallbackApAbout />
+          <Alert variant="info" isInline title="The fallback access point needs the AllStarLink appliance to function">
+            It is part of the asl3-appliance-pc and asl3-appliance-pi packages, and neither is installed.
+          </Alert>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
 function FallbackApCard({ ap, onChanged }: { ap: Extract<FallbackAp, { available: true }>; onChanged: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -71,11 +104,7 @@ function FallbackApCard({ ap, onChanged }: { ap: Extract<FallbackAp, { available
       <CardTitle>Fallback access point</CardTitle>
       <CardBody>
         <div className="asl-stack">
-          <Content component="p">
-            When enabled, this server checks its network connection every minute. If it has none, it starts its own
-            Wi-Fi network so that you can connect to it and set up Wi-Fi in Cockpit. The access point stops once the
-            connection is back.
-          </Content>
+          <FallbackApAbout />
           {notice && <Alert variant={notice.variant} isInline title={notice.text} />}
           <DescriptionList isHorizontal>
             <DescriptionListGroup>
@@ -217,7 +246,7 @@ export function NetworkPage() {
             </CardBody>
           </Card>
 
-          {ap.available && <FallbackApCard ap={ap} onChanged={load} />}
+          {ap.available ? <FallbackApCard ap={ap} onChanged={load} /> : <FallbackApUnavailable />}
         </div>
       </PageSection>
     </>
