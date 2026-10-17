@@ -110,14 +110,17 @@ function MeterBar({ meter, marks }: { meter: Meter | null; marks: Record<string,
   );
 }
 
-function Lamp({ label, state }: { label: string; state: string | boolean | undefined }) {
+function Lamp({ label, help, state }: { label: string; help: string; state: string | boolean | undefined }) {
   const on = state === true || state === "keyed";
   const off = state === "off";
   return (
     <div className="asl-lamp">
       <span className={`asl-lamp-dot${on ? " on" : ""}${off ? " disabled" : ""}`} />
-      {label}
-      <span className="asl-sub">{state === undefined ? "—" : off ? "not used" : on ? "active" : "clear"}</span>
+      <span>
+        {label}
+        <span className="asl-sub"> {state === undefined ? "" : off ? "not used" : on ? "active" : "clear"}</span>
+      </span>
+      <span className="asl-sub">{help}</span>
     </div>
   );
 }
@@ -142,14 +145,13 @@ export function TuningPanel({ node, status }: { node: string; status: Status | n
   const [state, setState] = useState<TuneState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [meterOn, setMeterOn] = useState(false);
-  const [statusOn, setStatusOn] = useState(false);
+  const [liveOn, setLiveOn] = useState(false);
   const [saved, setSaved] = useState<{ diff: string; file: string; files?: string[] } | null>(null);
   const [classic, setClassic] = useState(false);
   const [toning, setToning] = useState(false);
   const [jobElement, runJob] = useJob();
-  const [meter, meterProblem] = useLive<Meter>(node, "meter", meterOn);
-  const [rxtx, statusProblem] = useLive<RxTx>(node, "status", statusOn);
+  const [meter, meterProblem] = useLive<Meter>(node, "meter", liveOn);
+  const [rxtx, statusProblem] = useLive<RxTx>(node, "status", liveOn);
   const touched = useRef(false);
 
   const load = useCallback(async () => {
@@ -236,36 +238,42 @@ export function TuningPanel({ node, status }: { node: string; status: Status | n
       {notice && <Alert variant="danger" isInline title={notice} />}
       <Gallery hasGutter minWidths={{ default: "100%", xl: "34rem" }}>
         <Card>
-          <CardTitle>Live</CardTitle>
+          <CardTitle>Live activity</CardTitle>
           <CardBody>
             <div className="asl-stack">
-              <Switch id="tune-meter" label="Receive level" isChecked={meterOn} isDisabled={noDevice}
-                      onChange={(_e, v) => { touched.current = true; setMeterOn(v); }} />
-              {meterOn && (
-                <>
-                  <MeterBar meter={meter} marks={state.meter_marks} />
+              <Content component="p" className="asl-sub">
+                Watch what the interface hears and does, as the driver sees it right now. Turn this on while you set
+                the levels, then turn it off. Nothing here changes a setting, but while it is on nobody else can
+                tune this node.
+              </Content>
+              <Switch id="tune-live" label="Show live activity" isChecked={liveOn} isDisabled={noDevice}
+                      onChange={(_e, v) => { touched.current = true; setLiveOn(v); }} />
+              <div className={`asl-stack${liveOn ? "" : " asl-dimmed"}`} aria-disabled={!liveOn}>
+                <div>
+                  <strong>Receive level</strong>
+                  <MeterBar meter={liveOn ? meter : null} marks={state.meter_marks} />
                   <Content component="p" className="asl-sub">
-                    {meterProblem ?? (meter?.keyed ? "Receiving." : "Waiting for a signal. Transmit a tone at 3 kHz deviation and set the receive level so the bar reaches the 3 kHz mark.")}
+                    {!liveOn
+                      ? "How loud the receiver audio is, shown while a signal is being received."
+                      : meterProblem ?? (meter?.keyed ? "Receiving." : "Waiting for a signal. Transmit a tone at 3 kHz deviation and set the receive level so the bar reaches the 3 kHz mark.")}
                   </Content>
-                </>
-              )}
-              <Switch id="tune-status" label="COS, CTCSS and PTT" isChecked={statusOn} isDisabled={noDevice}
-                      onChange={(_e, v) => { touched.current = true; setStatusOn(v); }} />
-              {statusOn && (
-                <div className="asl-lamps">
-                  <Lamp label="COS in" state={rxtx?.cos} />
-                  <Lamp label="CTCSS in" state={rxtx?.ctcss} />
-                  <Lamp label="Receiving" state={rxtx?.rx_keyed} />
-                  <Lamp label="PTT out" state={rxtx?.ptt} />
-                  {statusProblem && <span className="asl-sub">{statusProblem}</span>}
                 </div>
-              )}
-              {statusOn && (
+                <div className="asl-lamps">
+                  <Lamp label="COS in" state={liveOn ? rxtx?.cos : undefined}
+                        help="Carrier detect from the radio: its squelch is open." />
+                  <Lamp label="CTCSS in" state={liveOn ? rxtx?.ctcss : undefined}
+                        help="Tone detect: the right CTCSS tone is present." />
+                  <Lamp label="Receiving" state={liveOn ? rxtx?.rx_keyed : undefined}
+                        help="The node accepts the signal, from COS and CTCSS as configured." />
+                  <Lamp label="PTT out" state={liveOn ? rxtx?.ptt : undefined}
+                        help="The node is keying the transmitter." />
+                </div>
+                {liveOn && statusProblem && <span className="asl-sub">{statusProblem}</span>}
                 <Content component="p" className="asl-sub">
-                  PTT shows what the driver asks for, not the transmitter itself: with the wrong PTT polarity the
-                  radio transmits while this reads clear.
+                  A lamp reads "not used" when the interface is set to ignore that input. PTT shows what the driver asks
+                  for, not the transmitter itself: with the wrong PTT polarity the radio transmits while this reads clear.
                 </Content>
-              )}
+              </div>
               <div>
                 <Button variant="secondary" onClick={tone} isLoading={toning} isDisabled={noDevice || toning}>
                   {toning ? "Sending test tone…" : "Send test tone"}
