@@ -332,3 +332,9 @@ def test_dahdi_stays_while_something_uses_it(root, apt):
     assert "span 1" in result("dahdi.remove")["error"]
     assert not any("-y" in argv for argv in apt.calls)
     assert dahdi.app_rpt_version("22.8.2+asl3-3.8.3-1") == (3, 8, 3) and dahdi.app_rpt_version("1.0") is None
+
+
+def test_apt_update(root, apt):
+    replies = run("apt.update")
+    assert replies[-1] == {"op": "result", "ok": True, "data": {"updated": True}}
+    assert apt.calls == [[commands.dahdi.APT_GET, "update"]]

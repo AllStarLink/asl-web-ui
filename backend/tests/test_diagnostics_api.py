@@ -52,3 +52,48 @@ def test_dahdi_state(tmp_path):
     assert diagnostics.dahdi_state(pkgs, str(tmp_path)) == {"version": "1:3.4.0-11", "blockers": []}
     (tmp_path / "rpt.conf").write_text("[1999]\nrxchannel=dahdi/pseudo\n")
     assert diagnostics.dahdi_state(pkgs, str(tmp_path))["blockers"] == ["rpt.conf still uses dahdi/pseudo."]
+
+
+APT_PLAN = """\
+NOTE: This is only a simulation!
+      apt-get needs root privileges for real execution.
+Inst libssl3t64 [3.5.1-1] (3.5.1-1+deb13u1 Debian-Security:13/stable-security [amd64])
+Inst asl3-asterisk [2:22.8.2+asl3-3.8.3-1.deb13] (2:22.8.3+asl3-3.8.4-1.deb13 . trixie:trixie [amd64])
+Inst linux-image-6.12.48+deb13-amd64 (6.12.48-1 Debian:13.2/stable, Debian-Security:13/stable-security [amd64])
+Conf libssl3t64 (3.5.1-1+deb13u1 Debian-Security:13/stable-security [amd64])
+"""
+
+
+def test_pending_updates():
+    assert diagnostics.pending_updates(APT_PLAN) == [
+        {"name": "asl3-asterisk", "installed": "2:22.8.2+asl3-3.8.3-1.deb13",
+         "available": "2:22.8.3+asl3-3.8.4-1.deb13", "security": False},
+        {"name": "libssl3t64", "installed": "3.5.1-1", "available": "3.5.1-1+deb13u1", "security": True},
+    ]
+    assert diagnostics.pending_updates("NOTE: This is only a simulation!\n") == []
+
+
+async def test_updates_endpoint(env, tmp_path, monkeypatch):
+    tool = tmp_path / "apt-get"
+    tool.write_text("#!/bin/sh\n[ \"$4\" = dist-upgrade ] || exit 100\ncat <<'EOF'\n" + APT_PLAN + "EOF\n")
+    tool.chmod(0o755)
+    real_setup = diagnostics.setup
+
+    def setup(app):
+        app[diagnostics.APT_GET_KEY] = str(tool)
+        real_setup(app)
+    monkeypatch.setattr(diagnostics, "setup", setup)
+    a = await env.make()
+    status_, body = await a.call("GET", "diagnostics/updates")
+    assert status_ == 200, body
+    assert [u["name"] for u in body["updates"]] == ["asl3-asterisk", "libssl3t64"]
+    assert isinstance(body["cockpit"], bool)
+    tool.write_text("#!/bin/sh\necho 'E: broken' ; exit 100\n")
+    status_, body = await a.call("GET", "diagnostics/updates")
+    assert status_ == 500 and "E: broken" in body["message"], body
+
+
+async def test_refreshing_package_lists_is_refused_in_dev_mode(env):
+    a = await env.make()
+    job = await a.job("POST", "diagnostics/updates/refresh", {})
+    assert not job["ok"] and job["code"] == "dev_mode", job

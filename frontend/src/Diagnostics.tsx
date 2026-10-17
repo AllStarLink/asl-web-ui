@@ -27,12 +27,14 @@ import {
 import { Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
 import CheckCircleIcon from "@patternfly/react-icons/dist/esm/icons/check-circle-icon";
 import ExclamationTriangleIcon from "@patternfly/react-icons/dist/esm/icons/exclamation-triangle-icon";
+import ExternalLinkAltIcon from "@patternfly/react-icons/dist/esm/icons/external-link-alt-icon";
 import InfoCircleIcon from "@patternfly/react-icons/dist/esm/icons/info-circle-icon";
 import TimesCircleIcon from "@patternfly/react-icons/dist/esm/icons/times-circle-icon";
 
 import { get, message, post, Status } from "./api";
 import { size, Started } from "./backupsApi";
 import { useJob } from "./Job";
+import { cockpitUrl } from "./networkApi";
 import { go } from "./useRoute";
 
 export type AuthFinding = { id: string; level: "ok" | "info" | "warning" | "error"; message: string; data: Record<string, unknown> };
@@ -214,6 +216,130 @@ function AsteriskLogCard() {
           )}
         </div>
       </CardBody>
+    </Card>
+  );
+}
+
+type Updates = {
+  updates: { name: string; installed: string; available: string; security: boolean }[];
+  lists_updated: number | null;
+  cockpit: boolean; // cockpit-packagekit, Cockpit's Software Updates page
+};
+
+// Package lists older than this may not show recent updates.
+const STALE_LISTS = 7 * 24 * 3600;
+
+// Pending package updates, from the lists apt has. "Check for updates"
+// refreshes the lists first; installing updates is left to Cockpit, which asks
+// for an administrator's password.
+function UpdatesCard({ runJob }: { runJob: ReturnType<typeof useJob>[1] }) {
+  const [data, setData] = useState<Updates | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    try {
+      setData(await get<Updates>("diagnostics/updates"));
+      setError(null);
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const refresh = async () => {
+    await runJob("Refresh the package lists", () => post<Started>("diagnostics/updates/refresh", {}));
+    await load();
+  };
+
+  const count = data?.updates.length ?? 0;
+  const security = data?.updates.filter((u) => u.security).length ?? 0;
+  const stale = data?.lists_updated != null && Date.now() / 1000 - data.lists_updated > STALE_LISTS;
+  return (
+    <Card>
+      <CardTitle>Software updates</CardTitle>
+      <CardBody>
+        <div className="asl-stack">
+          {error && <Alert variant="danger" isInline title={error} />}
+          {!data && !error && <Spinner size="md" aria-label="Checking for updates" />}
+          {data && (
+            <>
+              <div className="asl-buttons">
+                {count === 0 ? (
+                  <Label color="green" icon={<CheckCircleIcon />}>Up to date</Label>
+                ) : (
+                  <Label color="orange" icon={<ExclamationTriangleIcon />}>
+                    {count === 1 ? "1 update available" : `${count} updates available`}
+                  </Label>
+                )}
+                {security > 0 && (
+                  <Label color="red">{security === 1 ? "1 security update" : `${security} security updates`}</Label>
+                )}
+                {data.lists_updated != null && (
+                  <span className="asl-sub">Package lists last refreshed {when(data.lists_updated)}</span>
+                )}
+              </div>
+              {stale && (
+                <Content component="p" className="asl-sub">
+                  The package lists are more than a week old, so recent updates may be missing. Check for updates
+                  to refresh them.
+                </Content>
+              )}
+              {count > 0 && (
+                <ExpandableSection toggleText="Packages">
+                  <Table aria-label="Pending updates" variant="compact">
+                    <Thead>
+                      <Tr>
+                        <Th>Package</Th>
+                        <Th>Installed</Th>
+                        <Th>Available</Th>
+                      </Tr>
+                    </Thead>
+                    <Tbody>
+                      {data.updates.map((u) => (
+                        <Tr key={u.name}>
+                          <Td dataLabel="Package">
+                            {u.name}{u.security && <> <Label color="red" isCompact>security</Label></>}
+                          </Td>
+                          <Td dataLabel="Installed"><code>{u.installed}</code></Td>
+                          <Td dataLabel="Available"><code>{u.available}</code></Td>
+                        </Tr>
+                      ))}
+                    </Tbody>
+                  </Table>
+                </ExpandableSection>
+              )}
+              {count > 0 && (data.cockpit ? (
+                <Content component="p">
+                  Install updates in Cockpit, which opens in a new tab. Log in there with an account that can
+                  administer this server.
+                </Content>
+              ) : (
+                <Content component="p">
+                  Cockpit's Software Updates page (package cockpit-packagekit) is not installed. Install the updates
+                  from a shell with <code>sudo apt update && sudo apt upgrade</code>.
+                </Content>
+              ))}
+            </>
+          )}
+        </div>
+      </CardBody>
+      <CardFooter>
+        <div className="asl-buttons">
+          {data?.cockpit && count > 0 && (
+            <Button component="a" variant="primary" href={cockpitUrl("updates")} target="_blank"
+                    rel="noopener noreferrer" icon={<ExternalLinkAltIcon />} iconPosition="end">
+              Apply updates in Cockpit
+            </Button>
+          )}
+          <Button variant="secondary" onClick={refresh} isLoading={busy} isDisabled={busy}>Check for updates</Button>
+        </div>
+      </CardFooter>
     </Card>
   );
 }
@@ -413,6 +539,7 @@ export function Diagnostics({ status }: { status: Status | null }) {
                 </CardBody>
               </Card>
             </Gallery>
+            <UpdatesCard runJob={runJob} />
             <AsteriskLogCard />
           </div>
         )}

@@ -1,6 +1,8 @@
 """Diagnostics: asl-menu's System Diagnostics Menu and the connectivity check.
 
     GET  /api/v1/diagnostics                       cached connectivity result, node list service, packages
+    GET  /api/v1/diagnostics/updates               pending package updates, from apt's current lists
+    POST /api/v1/diagnostics/updates/refresh       refresh apt's package lists (job)
     POST /api/v1/diagnostics/connectivity          run asl-node-auth-check (job, about 30 s)
     POST /api/v1/diagnostics/ping                  ping 8.8.8.8 four times (job)
     POST /api/v1/diagnostics/registration-server   is register.allstarlink.org reachable?
@@ -41,6 +43,11 @@ NODELIST = "asl3-update-nodelist"
 REGISTRATION_SERVER = "http://register.allstarlink.org"
 PACKAGE_PATTERNS = ["asl-apt-repos", "asl3*", "dahdi*", "allmon3*", "cockpit*", "asl-web-ui"]
 AUTHCHECK_KEY = web.AppKey("authcheck_tool", str)
+APT_GET_KEY = web.AppKey("apt_get", str)
+APT_GET = "/usr/bin/apt-get"
+APT_LISTS = "/var/lib/apt/lists"
+APT_STAMP = "/var/lib/apt/periodic/update-success-stamp"
+COCKPIT_UPDATES = "cockpit-packagekit"  # Cockpit's Software Updates page
 CACHE = "connectivity.json"
 MAX_LINES = 10000
 MAX_TAIL_BYTES = 8 << 20
@@ -58,12 +65,12 @@ def cached(state_dir: str) -> dict | None:
         return None
 
 
-async def packages() -> list[dict]:
-    """Installed AllStarLink packages, as asl-show-version lists them."""
+async def packages(patterns: list[str] = PACKAGE_PATTERNS) -> list[dict]:
+    """Installed packages; by default the AllStarLink ones, as asl-show-version lists them."""
     try:
         proc = await asyncio.create_subprocess_exec(
             "dpkg-query", "--show", "--showformat=${db:Status-Abbrev}\t${binary:Package}\t${Version}\n",
-            *PACKAGE_PATTERNS, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            *patterns, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
         out, _ = await asyncio.wait_for(proc.communicate(), 20)
     except (OSError, asyncio.TimeoutError):
         return []
@@ -93,6 +100,71 @@ def dahdi_state(pkgs: list[dict], config_dir: str) -> dict | None:
         return None
     return {"version": versions[dahdi.PACKAGE],
             "blockers": dahdi.blockers(versions, os.path.join(config_dir, "rpt.conf"), dahdi.PROC_DAHDI)}
+
+
+# "Inst name [old] (new origin:archive[, origin:archive…] [arch])"; [old] is absent for new packages.
+_INST_RE = re.compile(r"^Inst (\S+) (?:\[([^\]]*)\] )?\((\S+) ([^\[]*)\[[^\]]*\]\)", re.M)
+
+
+def pending_updates(text: str) -> list[dict]:
+    """The upgrades in ``apt-get -s dist-upgrade`` output (newly installed packages left out)."""
+    rows = []
+    for m in _INST_RE.finditer(text):
+        if m[2] is None:
+            continue
+        rows.append({"name": m[1], "installed": m[2], "available": m[3], "security": "security" in m[4].lower()})
+    return sorted(rows, key=lambda r: r["name"])
+
+
+def lists_updated() -> int | None:
+    """When apt's package lists were last refreshed, as best the files tell."""
+    times = []
+    for path in (APT_STAMP, APT_LISTS, os.path.join(APT_LISTS, "partial")):
+        try:
+            times.append(os.stat(path).st_mtime)
+        except OSError:
+            pass
+    return int(max(times)) if times else None
+
+
+@routes.get("/api/v1/diagnostics/updates")
+async def updates(request: web.Request) -> web.Response:
+    """What an upgrade would install, from the package lists apt already has.
+    Refreshing them needs root: see refresh_updates below."""
+    tool = request.app[APT_GET_KEY]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            tool, "-s", "-o", "Debug::NoLocking=1", "dist-upgrade",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"})
+        out, _ = await asyncio.wait_for(proc.communicate(), 60)
+    except FileNotFoundError:
+        return error(501, "not_installed", "apt-get is not installed.")
+    except (OSError, asyncio.TimeoutError) as exc:
+        return error(500, "failed", f"apt-get could not be run: {exc}")
+    text = out.decode(errors="replace")
+    if proc.returncode != 0:
+        return error(500, "failed", f"apt-get could not plan an upgrade (exit code {proc.returncode}): {text[-400:]}")
+    installed = {p["name"] for p in await packages([COCKPIT_UPDATES])}
+    return web.json_response({"updates": pending_updates(text), "lists_updated": lists_updated(),
+                              "cockpit": COCKPIT_UPDATES in installed})
+
+
+@routes.post("/api/v1/diagnostics/updates/refresh")
+async def refresh_updates(request: web.Request) -> web.Response:
+    if request.app[SETTINGS_KEY].dev:
+        return error(501, "dev_mode", "Development mode does not refresh the package lists.")
+
+    async def work(job):
+        try:
+            res = await request.app[PRIV_KEY].call("apt.update", {}, request[USER_KEY], job.output)
+        except PrivError as exc:
+            request.app[STORE_KEY].record(request[USER_KEY], "refresh package lists", "failed", [exc.message[-200:]])
+            raise  # the job reports its message
+        request.app[STORE_KEY].record(request[USER_KEY], "refresh package lists", "done", [])
+        return res
+
+    return await start_job(request, "Refresh the package lists", work)
 
 
 @routes.get("/api/v1/diagnostics")
@@ -243,4 +315,6 @@ async def log_download(request: web.Request) -> web.StreamResponse:
 def setup(app: web.Application) -> None:
     if AUTHCHECK_KEY not in app:
         app[AUTHCHECK_KEY] = authcheck.TOOL
+    if APT_GET_KEY not in app:
+        app[APT_GET_KEY] = APT_GET
     app.add_routes(routes)

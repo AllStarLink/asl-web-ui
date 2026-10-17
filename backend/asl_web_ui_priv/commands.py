@@ -861,6 +861,20 @@ def dahdi_remove(args: dict, output: Output) -> dict:
         raise CommandError(exc.message, exc.code)
 
 
+# ---- package lists -----------------------------------------------------------------------
+
+
+def apt_update(args: dict, output: Output) -> dict:
+    """Refresh apt's package lists (apt-get update), so the service can see pending updates."""
+    try:
+        code, text = dahdi.run([dahdi.APT_GET, "update"], output)
+    except dahdi.DahdiError as exc:
+        raise CommandError(exc.message, exc.code)
+    if code != 0:
+        raise CommandError(f"apt-get update failed (exit code {code}): {text[-400:]}")
+    return {"updated": True}
+
+
 COMMANDS = {
     "backup.create": backup_create,
     "backup.delete": backup_delete,
@@ -900,4 +914,5 @@ COMMANDS = {
     "net44.stop": net44_stop,
     "net44.remove": net44_remove,
     "dahdi.remove": dahdi_remove,
+    "apt.update": apt_update,
 }

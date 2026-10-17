@@ -351,4 +351,13 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.allstarlink.asl-web-ui.apt-update">
+    <description>Refresh the package lists (apt-get update)</description>
+    <message>Authentication is required to: refresh the package lists (apt-get update)</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
 </policyconfig>

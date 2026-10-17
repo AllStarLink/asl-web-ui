@@ -69,8 +69,9 @@ class InProcessClient:
         fn = self.commands.COMMANDS.get(command)
         if fn is None:
             raise PrivError(f"unknown command {command}", "invalid")
-        if command in ("factory.restore", "dahdi.remove"):
-            raise PrivError("Development mode cannot reinstall or remove packages.", "dev_mode")
+        if command in ("factory.restore", "dahdi.remove", "apt.update"):
+            raise PrivError("Development mode cannot reinstall or remove packages or refresh their lists.",
+                            "dev_mode")
         loop = asyncio.get_running_loop()
 
         def output(text: str) -> None:
