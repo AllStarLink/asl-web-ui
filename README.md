@@ -8,6 +8,42 @@ browser UI in the style of Cockpit, built with PatternFly.
 > has bugs. Don't run this on a node that you cannot easily
 > fix or rebuild if something goes wrong.
 
+The following is currently supported (almost feature-parity with asl-menu):
+
+* Basic Node Configuration
+  * Supported node channels: SimpleUSB, USBRadio, Hubs/Pseudo, Voter/RTCM
+  * "Shortcut"/Customizations for some commercial nodes
+  * Web-based audio tuning for SimpleUSB and USBRadio (usbradio has known issues/deficiencies)
+  * Access-control management
+  * SA818 programming interface
+* Basic Asterisk Management
+  * Start/restart Asterisk
+  * AMI password management and synchronization with Allmon3
+  * IAX port configuration
+  * Web-based asterisk console
+* Allmon3 Management
+  * Node add/remove
+  * User management
+  * Web Settings
+  * Advanced editor for all other file-based customizations except custom CSS
+* Diagnostics
+  * Web-based view of `asl-node-auth-check`
+  * Basic network diagnostics
+  * Package lists
+  * Asterisk log view/export
+* Node Backup Management
+* TLS certificate automation with Let's Encrypt to remove SSL browser
+errors
+* "Expert Mode" for advanced editing of `/etc/asterisk` and `/etc/allmon3` files
+* Syntax checker for Asterisk configuration files and a normalization
+engine to make customized files editable with asl-web-ui
+
+Major items remaining before release:
+
+* Wireguard / 44Net Connect Interface (maybe)
+* Tighter integration with the ASL3 Appliance package
+* All important bugs
+
 ## Installing
 
 asl-web-ui is distributed as a Debian package for AllStarLink 3 on Debian 13
@@ -56,13 +92,15 @@ compares with the `Origin` of requests.
 Inside `http { }`, for example in `/etc/nginx/conf.d/websocket.conf`:
 
 ```nginx
-    map $http_upgrade $connection_upgrade {
-        default upgrade;
-        ''      close;
-    }
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+```
 
 Inside the HTTPS `server { }` block:
 
+```nginx
     location /asl-web-ui/ {
         proxy_pass https://127.0.0.1:8443;
         proxy_http_version 1.1;
@@ -153,13 +191,13 @@ The package builds use one pinned Node.js release, installed by
 `node` and `npm` match the builds exactly; the version and the SHA-256
 checksums of the release archives are kept in that script and nowhere else.
 
-* Install the tools the script uses (most systems have them):
+Install the tools the script uses (most systems have them):
 
 ```bash
 sudo apt install curl xz-utils
 ```
 
-* From the top of your checkout (`git clone`, step 2 below), install
+From the top of your checkout (`git clone`, step 2 below), install
    Node.js into */opt/node*:
 
 ```bash
@@ -173,15 +211,15 @@ sudo builder/install-node.sh
    directory, give it as an argument (`sudo builder/install-node.sh
    /opt/node-24`).
 
-* Put it first on your `PATH`, for your account:
+Put it first on your `PATH`, for your account:
 
 ```bash
 echo 'export PATH=/opt/node/bin:$PATH' >> ~/.bashrc
 ```
 
-    then log out and back in (or run `. ~/.bashrc`).
+then log out and back in (or run `. ~/.bashrc`).
 
-* Check:
+Check:
 
 ```bash
 node --version     # v24.21.0
