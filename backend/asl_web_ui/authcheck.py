@@ -126,20 +126,23 @@ def _summarize(sections: list[dict]) -> dict:
     return {"schema": 1, "result": result, "counts": counts, "sections": sections}
 
 
-async def supports_json(tool: str = TOOL) -> bool:
+def supports_json(tool: str = TOOL) -> bool:
+    """Look for the option in the installed script rather than asking it.
+
+    Current versions take no arguments, so "--help" runs a full check; the real
+    run right after it then trips nodeping's rate limit (issue #27).
+    """
     try:
-        proc = await asyncio.create_subprocess_exec(tool, "--help", stdout=asyncio.subprocess.PIPE,
-                                                    stderr=asyncio.subprocess.STDOUT)
-        out, _ = await asyncio.wait_for(proc.communicate(), 20)
-    except (OSError, asyncio.TimeoutError):
+        with open(tool, "rb") as f:
+            return b"--json" in f.read()
+    except OSError:
         return False
-    return b"--json" in out
 
 
 async def run(tool: str = TOOL, node: str | None = None) -> dict:
     """Run the check and return the structured result (plus the raw text)."""
     started = time.time()
-    use_json = await supports_json(tool)
+    use_json = supports_json(tool)
     args = [tool] + (["--json"] if use_json else []) + (["--node", node] if node and use_json else [])
     proc = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.DEVNULL,
                                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)

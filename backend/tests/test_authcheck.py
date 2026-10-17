@@ -90,15 +90,26 @@ def test_aborted_run():
 
 async def test_run_uses_text_mode_without_json(tmp_path):
     tool = tmp_path / "asl-node-auth-check"
-    tool.write_text("#!/bin/sh\nif [ \"$1\" = --help ]; then echo usage; exit 0; fi\ncat <<'EOF'\n" + ABORTED + "EOF\n")
+    tool.write_text("#!/bin/sh\ncat <<'EOF'\n" + ABORTED + "EOF\n")
     tool.chmod(0o755)
     r = await authcheck.run(str(tool))
     assert r["result"] == "aborted" and "raw" in r and r["exit_code"] == 0
 
 
+async def test_run_executes_tool_once(tmp_path):
+    # The real tool ignores its arguments; probing it with --help ran a whole
+    # second check and got the real one rate-limited by nodeping (#27).
+    count = tmp_path / "count"
+    tool = tmp_path / "asl-node-auth-check"
+    tool.write_text(f"#!/bin/sh\necho x >> {count}\ncat <<'EOF'\n" + ABORTED + "EOF\n")
+    tool.chmod(0o755)
+    await authcheck.run(str(tool))
+    assert count.read_text().count("x") == 1
+
+
 async def test_run_prefers_json_mode(tmp_path):
     tool = tmp_path / "asl-node-auth-check"
-    tool.write_text('#!/bin/sh\nif [ "$1" = --help ]; then echo "--json"; exit 0; fi\n'
+    tool.write_text('#!/bin/sh\n# accepts --json\n'
                     'echo \'{"schema": 1, "result": "ok", "counts": {}, "sections": []}\'\n')
     tool.chmod(0o755)
     r = await authcheck.run(str(tool))
