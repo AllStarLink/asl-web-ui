@@ -1,3 +1,9 @@
+asl-web-ui (0.4-1) stable; urgency=medium
+
+  * Lots of fixes 
+
+ -- Helium <jason@mfamily.org>  Sat, 17 Oct 2026 20:09:03 -0400
+
 asl-web-ui (0.3-2) stable; urgency=medium
 
   * Don't flag repeated schedule entries in rpt.conf as duplicate keys,
