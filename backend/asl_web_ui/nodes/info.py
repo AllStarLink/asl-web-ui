@@ -132,6 +132,27 @@ def registrations(ws: Workspace) -> list[dict]:
     return out
 
 
+def iax_registrations(ws: Workspace) -> list[dict]:
+    """Active ``register =>`` lines in iax.conf [general] (IAX registration)."""
+    if not ws.exists("iax.conf"):
+        return []
+    cat = ws.model("iax.conf").get("general")
+    out = []
+    for v in cat.vars if cat else []:
+        if v.key.lower() != "register":
+            continue
+        m = _REGISTER.match(v.value)
+        if m:
+            out.append({**m.groupdict(), "file": v.file, "line": v.line})
+    return out
+
+
+def registration_passwords(ws: Workspace, number: str) -> dict[str, set[str]]:
+    """The node's configured registration passwords: {"http": {...}, "iax": {...}}."""
+    return {kind: {r["password"] for r in regs if r["node"] == number and r["password"]}
+            for kind, regs in (("http", registrations(ws)), ("iax", iax_registrations(ws)))}
+
+
 def iax_port(ws: Workspace) -> int:
     value = ws.model("iax.conf").value("general", "bindport") if ws.exists("iax.conf") else None
     return _int(value, DEFAULT_IAX_PORT) or DEFAULT_IAX_PORT

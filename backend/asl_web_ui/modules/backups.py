@@ -1,6 +1,9 @@
 """Backups: asl-backup-menu's functions, through the privileged helper.
 
     GET    /api/v1/backups                               local archives, cloud settings
+                                                         (cloud.sync: a node whose registration
+                                                         password savenode.conf could take; the
+                                                         change is planned with nodes/plan "savenode")
     POST   /api/v1/backups                {"upload"}     create (job), optionally upload
     GET    /api/v1/backups/local/{name}/contents          what a restore would write
     POST   /api/v1/backups/local/{name}/restore           restore (job; password re-entry)
@@ -33,6 +36,7 @@ from aiohttp_session import get_session
 
 from ..configengine.edit import Workspace
 from ..nodes import savenode
+from ..nodes.info import PRIVATE_LIMIT, node_numbers, registration_passwords
 from ..privileged import PRIV_KEY, PrivError
 from ..security import SETTINGS_KEY, USER_KEY
 from .auth import recently_authenticated
@@ -132,6 +136,26 @@ def cloud_credentials(config_dir: str, body: dict | None = None) -> tuple[str, s
     return node, password
 
 
+def sync_candidate(config_dir: str) -> str | None:
+    """The public node whose registration password savenode.conf lacks: the
+    node it names, or else the first registered one. None when they agree."""
+    ws = Workspace(config_dir)
+    try:
+        registered = []
+        for number in node_numbers(ws.model("rpt.conf")):
+            passwords = registration_passwords(ws, number)
+            if int(number) >= PRIVATE_LIMIT and (passwords["http"] or passwords["iax"]):
+                registered.append((number, passwords["http"] | passwords["iax"]))
+    except (OSError, ValueError):
+        return None
+    save = savenode.read(ws)
+    for number, passwords in registered:
+        if number == save.get("NODE"):
+            in_step = save.get("PASSWORD") in passwords and save.get("ENABLE", "0") not in ("", "0")
+            return None if in_step else number
+    return registered[0][0] if registered else None
+
+
 async def _cloud(method: str, url: str, node: str, password: str, data: bytes | None = None) -> bytes:
     auth = aiohttp.BasicAuth(node, password)
     headers = {"Content-Type": "application/x-www-form-urlencoded"} if data is not None else {}
@@ -182,6 +206,7 @@ async def list_backups(request: web.Request) -> web.Response:
         cloud = {"configured": True, "node": node, "reason": None}
     except CloudError as exc:
         cloud = {"configured": False, "node": None, "reason": exc.message}
+    cloud["sync"] = sync_candidate(settings.config_dir)
     return web.json_response({"local": local_backups(settings.backup_dir), "cloud": cloud,
                               "cloud_max": CLOUD_MAX, "server": settings.backup_server,
                               "directory": "/var/asl-backups"})

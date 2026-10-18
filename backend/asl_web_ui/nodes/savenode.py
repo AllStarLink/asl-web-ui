@@ -6,7 +6,7 @@ it), matching node-setup's ``sed "/^KEY\\s*=/ s/KEY\\s*=.*/KEY=value/"``.
 
 import re
 
-from ..configengine.edit import Workspace, set_raw
+from ..configengine.edit import Workspace, insert, set_raw
 
 NAME = "savenode.conf"
 _ASSIGN = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*=(?P<value>.*)$")
@@ -32,3 +32,18 @@ def set_value(ws: Workspace, key: str, value: str) -> None:
         m = _ASSIGN.match(line.text)
         if m and m.group("key") == key:
             set_raw(text, i, f"{key}={value}" + (line.ending or text.newline))
+
+
+def assign(ws: Workspace, values: dict[str, str]) -> None:
+    """Set each key, adding the ones the file lacks (and the file, if missing)."""
+    text = ws.text(NAME, create=True)
+    found = set()
+    for i, line in enumerate(text.lines):
+        m = _ASSIGN.match(line.text)
+        if m and m.group("key") in values:
+            key = m.group("key")
+            found.add(key)
+            set_raw(text, i, f"{key}={values[key]}" + (line.ending or text.newline))
+    missing = [f"{k}={v}{text.newline}" for k, v in values.items() if k not in found]
+    if missing:
+        insert(text, len(text.lines), missing)

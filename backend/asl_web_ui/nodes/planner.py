@@ -21,7 +21,8 @@ from ..configengine.text import ConfigText
 from . import savenode, voter
 from .info import (
     ALL_CHANNEL_MODULES, CHANNEL_FILES, CHANNEL_MODULES, DEFAULT_IAX_PORT, INTERFACES, PRIVATE_LIMIT,
-    REFERENCE_KEYS, REGISTRATION_HOST, STATPOST_URL, NodeInfo, iax_port, node_info, node_numbers, registrations,
+    REFERENCE_KEYS, REGISTRATION_HOST, STATPOST_URL, NodeInfo, iax_port, node_info, node_numbers,
+    registration_passwords, registrations,
 )
 
 RPT = "rpt.conf"
@@ -426,6 +427,28 @@ class Planner:
             savenode.set_value(self.ws, "PASSWORD", password)
             savenode.set_value(self.ws, "ENABLE", "1")
         self.effects.restart = True
+
+    def sync_savenode(self, number: str, live: set[str]) -> None:
+        """Point savenode.conf (AllStarLink backups) at the node and its
+        registration password, for when the two have drifted apart. ``live``
+        is how Asterisk shows the node registered ("http", "iax"), so the
+        password of that registration is the one AllStarLink accepts."""
+        info = self.info(number)
+        if info.private:
+            raise PlanError("Private nodes cannot use the AllStarLink backup server.", "node")
+        configured = registration_passwords(self.ws, number)
+        if not configured["http"] and not configured["iax"]:
+            raise PlanError(f"Node {number} has no registration in {HTTP_REG} or {IAX}.", "node", code="requirement")
+        passwords = set().union(*(configured[kind] for kind in live))
+        if not passwords:
+            raise PlanError(f"Node {number} is not registered with AllStarLink, so its password cannot be "
+                            "confirmed. Check the node's password and the Diagnostics page.", "node",
+                            code="requirement")
+        if len(passwords) > 1:
+            raise PlanError(f"Node {number} has registrations with different passwords. Remove the one that is "
+                            "not used (see the Diagnostics page), then try again.", "node", code="requirement")
+        savenode.assign(self.ws, {"NODE": number, "PASSWORD": passwords.pop(), "ENABLE": "1"})
+        self.effects.note(f"Backups to AllStarLink use node {number} and its registration password.")
 
     # ---- radio interface -----------------------------------------------------------
 

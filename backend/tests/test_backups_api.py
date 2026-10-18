@@ -7,6 +7,7 @@ client), and the AllStarLink backup server is a local fake.
 import asyncio
 import base64
 import io
+import os
 import tarfile
 
 import pytest
@@ -85,13 +86,13 @@ async def env(aiohttp_client, tmp_path, monkeypatch, cloud):
     async def connect():
         return FakeTransport()
 
-    async def make(recent_auth=600, **more):
+    async def make(recent_auth=600, cli=None, **more):
         settings = config.Settings(config_dir=str(etc), state_dir=str(tmp_path / "state"), recent_auth=recent_auth,
                                    backup_dir=str(root / "var" / "asl-backups"),
                                    staging_dir=str(root / "var" / "lib" / "asl-web-ui" / "staging"),
                                    backup_server=server, **more)
         app = create_app(settings, auth_connect=connect, overrides={
-            status.CLI_KEY: FakeCLI(), status.UNIT_STATE_KEY: unit("active"), control.SYSTEMCTL_KEY: str(systemctl),
+            status.CLI_KEY: cli or FakeCLI(), status.UNIT_STATE_KEY: unit("active"), control.SYSTEMCTL_KEY: str(systemctl),
             PRIV_KEY: InProcessClient(str(root))})
         client = await aiohttp_client(app, cookie_jar=DummyCookieJar())
 
@@ -145,7 +146,7 @@ async def test_create_list_download_delete(env):
     name = job["result"]["name"]
     _, listing = await a.call("GET", "backups")
     assert [b["name"] for b in listing["local"]] == [name]
-    assert listing["cloud"] == {"configured": True, "node": "2701", "reason": None}
+    assert listing["cloud"] == {"configured": True, "node": "2701", "reason": None, "sync": None}
     status_, data = await a.call("GET", f"backups/local/{name}/download")
     assert status_ == 200
     with tarfile.open(fileobj=io.BytesIO(data)) as tar:
@@ -253,3 +254,107 @@ async def test_fix_ownership(env):
     assert status_ == 400
     status_, body = await (await env.make(recent_auth=0)).call("POST", "config/fix-ownership", {"files": ["rpt.conf"]})
     assert status_ == 403
+
+
+def registered_node(env, password="newpass1", started_after=True, iax=None):
+    """Node 63001, which FakeCLI shows as registered, with its registration
+    (HTTP unless password is None) and an active IAX registration (iax)."""
+    with open(env.etc / "rpt.conf", "a") as f:
+        f.write("\n[63001](node-main)\n")
+    http = f"register => 63001:{password}@register.allstarlink.org\n" if password else ""
+    (env.etc / "rpt_http_registrations.conf").write_text(f"[general]\n\n[registrations]\n{http}")
+    if iax:
+        (env.etc / "iax.conf").write_text(f"[general]\nregister => 63001:{iax}@register.allstarlink.org\n"
+                                          "bindport = 4569\n")
+    if started_after:  # Asterisk started after the files were written
+        for p in env.etc.iterdir():
+            os.utime(p, (1_000_000_000, 1_000_000_000))
+
+
+IAX_REGISTRY = (
+    "Host                                           dnsmgr  Username    Perceived                                      Refresh  State\n"
+    "52.21.169.197:4569                             N       63001       203.0.113.24:4569                              60       Registered\n"
+    "1 IAX2 registration.\n"
+)
+
+
+class IaxCLI(FakeCLI):
+    """Node 63001 registered by IAX only."""
+    OUTPUT = {**FakeCLI.OUTPUT, "rpt show registrations": "Host Username Perceived Refresh State\n"
+              "0 HTTP registrations.\n", "iax2 show registry": IAX_REGISTRY}
+
+
+class BothCLI(FakeCLI):
+    """Node 63001 registered by HTTP and IAX."""
+    OUTPUT = {**FakeCLI.OUTPUT, "iax2 show registry": IAX_REGISTRY}
+
+
+async def test_savenode_takes_the_registration_password(env):
+    (env.etc / "savenode.conf").write_text("# config file for /usr/sbin/savenode\nNODE=63001\nPASSWORD=oldpass1\n"
+                                           "ENABLE=1\n")
+    registered_node(env)
+    a = await env.make()
+    _, listing = await a.call("GET", "backups")
+    assert listing["cloud"]["sync"] == "63001"
+    status_, plan = await a.call("POST", "nodes/plan", {"op": "savenode", "node": "63001"})
+    assert status_ == 200 and [f["name"] for f in plan["files"]] == ["savenode.conf"] and not plan["restart"], plan
+    status_, _ = await a.call("POST", f"changes/{plan['id']}/apply", {})
+    assert status_ == 200
+    assert (env.etc / "savenode.conf").read_text() == \
+        "# config file for /usr/sbin/savenode\nNODE=63001\nPASSWORD=newpass1\nENABLE=1\n"
+    _, listing = await a.call("GET", "backups")
+    assert listing["cloud"] == {"configured": True, "node": "63001", "reason": None, "sync": None}
+
+
+async def test_savenode_is_created_when_missing(env):
+    (env.etc / "savenode.conf").unlink()
+    registered_node(env)
+    a = await env.make()
+    status_, plan = await a.call("POST", "nodes/plan", {"op": "savenode", "node": "63001"})
+    assert status_ == 200, plan
+    status_, _ = await a.call("POST", f"changes/{plan['id']}/apply", {})
+    assert status_ == 200
+    assert (env.etc / "savenode.conf").read_text() == "NODE=63001\nPASSWORD=newpass1\nENABLE=1\n"
+
+
+async def test_savenode_needs_a_live_registration(env):
+    registered_node(env, started_after=False)
+    a = await env.make()
+    status_, body = await a.call("POST", "nodes/plan", {"op": "savenode", "node": "63001"})
+    assert status_ == 409 and "changed since Asterisk started" in body["message"]
+    # 2701 has a registration line but Asterisk does not show it registered.
+    with open(env.etc / "rpt.conf", "a") as f:
+        f.write("\n[2701](node-main)\n")
+    with open(env.etc / "rpt_http_registrations.conf", "a") as f:
+        f.write("register => 2701:secret1@register.allstarlink.org\n")
+    for p in env.etc.iterdir():
+        os.utime(p, (1_000_000_000, 1_000_000_000))
+    status_, body = await (await env.make()).call("POST", "nodes/plan", {"op": "savenode", "node": "2701"})
+    assert status_ == 409 and body["error"] == "requirement" and "not registered" in body["message"]
+    assert (env.etc / "savenode.conf").read_text() == "NODE=2701\nPASSWORD=secret1\nENABLE=1\n"
+
+
+async def test_savenode_takes_the_iax_registration_password(env):
+    registered_node(env, password=None, iax="iaxpass1")
+    a = await env.make(cli=IaxCLI())
+    _, listing = await a.call("GET", "backups")
+    assert listing["cloud"]["sync"] == "63001"
+    status_, plan = await a.call("POST", "nodes/plan", {"op": "savenode", "node": "63001"})
+    assert status_ == 200, plan
+    status_, _ = await a.call("POST", f"changes/{plan['id']}/apply", {})
+    assert status_ == 200
+    assert (env.etc / "savenode.conf").read_text() == "NODE=63001\nPASSWORD=iaxpass1\nENABLE=1\n"
+    _, listing = await a.call("GET", "backups")
+    assert listing["cloud"]["sync"] is None
+
+
+async def test_savenode_uses_only_the_live_registration(env):
+    registered_node(env, password="httppass1", iax="iaxpass1")
+    # Only the IAX registration is live: its password is the right one.
+    status_, plan = await (await env.make(cli=IaxCLI())).call("POST", "nodes/plan", {"op": "savenode",
+                                                                                    "node": "63001"})
+    assert status_ == 200 and "PASSWORD=iaxpass1" in plan["files"][0]["diff"], plan
+    # Both live with different passwords: refused rather than guessed.
+    status_, body = await (await env.make(cli=BothCLI())).call("POST", "nodes/plan", {"op": "savenode",
+                                                                                     "node": "63001"})
+    assert status_ == 409 and "different passwords" in body["message"]

@@ -3,7 +3,8 @@ import { ApiError, csrfHeader, del, get, post, request } from "./api";
 export type LocalBackup = { name: string; size: number; modified: number };
 export type BackupList = {
   local: LocalBackup[];
-  cloud: { configured: boolean; node: string | null; reason: string | null };
+  // sync: a node whose registration password savenode.conf could take (nodes/plan "savenode").
+  cloud: { configured: boolean; node: string | null; reason: string | null; sync: string | null };
   cloud_max: number;
   server: string;
   directory: string;

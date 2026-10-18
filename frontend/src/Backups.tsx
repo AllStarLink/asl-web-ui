@@ -30,6 +30,7 @@ import UploadIcon from "@patternfly/react-icons/dist/esm/icons/upload-icon";
 import { PlainTextInput, PlainTextArea } from "./PlainInput";
 import { message } from "./api";
 import { useAsteriskControl } from "./AsteriskControl";
+import { useChange } from "./ChangeReview";
 import {
   BackupList, backupContents, cloudFetch, cloudList, Contents, createBackup, Credentials, deleteBackup, downloadUrl,
   factoryReset, getIncludeList, importBackup, IncludeList, listBackups, putIncludeList, restoreBackup, size,
@@ -107,6 +108,40 @@ function RestoreDialog({ name, onCancel, onRestore }: { name: string; onCancel: 
   );
 }
 
+// savenode.conf disagrees with a node's registration: offer to copy the
+// registration password over, reviewed like any other change.
+function SyncCredentials({ list, reload }: { list: BackupList; reload: () => Promise<void> }) {
+  const [changeElement, propose] = useChange();
+  const [error, setError] = useState<string | null>(null);
+  const node = list.cloud.sync;
+  if (!node) return null;
+  const sync = async () => {
+    setError(null);
+    try {
+      if (await propose("savenode", { node })) await reload();
+    } catch (err) {
+      setError(message(err));
+    }
+  };
+  const stale = list.cloud.configured && list.cloud.node === node;
+  return (
+    <>
+      {changeElement}
+      <Alert variant="warning" isInline
+             title={stale ? `Backups to AllStarLink use an old password for node ${node}`
+               : `Backups to AllStarLink can use node ${node}`}
+             actionLinks={<Button variant="link" isInline onClick={sync}>Use node {node}'s registration password</Button>}>
+        <Content component="p">
+          {stale ? <>The password in <code>savenode.conf</code> is not the one node {node} registers with.</>
+            : <>Node {node} is registered, but <code>savenode.conf</code> is not set up to use it.</>}{" "}
+          The registration password is used only while AllStarLink shows the node as registered.
+        </Content>
+      </Alert>
+      {error && <Alert variant="danger" isInline isPlain title={error} />}
+    </>
+  );
+}
+
 function ThisServer({ list, reload }: { list: BackupList; reload: () => Promise<void> }) {
   const [jobElement, runJob] = useJob();
   const [reauthElement, withReauth] = useReauth();
@@ -154,6 +189,7 @@ function ThisServer({ list, reload }: { list: BackupList; reload: () => Promise<
       {jobElement}
       {reauthElement}
       {after.element}
+      <SyncCredentials list={list} reload={reload} />
       <Card>
         <CardTitle>Create a backup</CardTitle>
         <CardBody>
@@ -263,6 +299,7 @@ function Cloud({ list, reload }: { list: BackupList; reload: () => Promise<void>
       {jobElement}
       {reauthElement}
       {after.element}
+      <SyncCredentials list={list} reload={reload} />
       <Card>
         <CardTitle>AllStarLink backup server</CardTitle>
         <CardBody>

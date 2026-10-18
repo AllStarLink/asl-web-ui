@@ -4,7 +4,8 @@
     GET    /api/v1/nodes/{node}                       one node in detail
     POST   /api/v1/nodes/plan          {"op", ...}    plan a change -> diffs, notes, plan id
     POST   /api/v1/nodes/plan          {"ops": [...]} several of them as one change
-                                       (op "voter": the node's RTCM/voter clients and settings)
+                                       (op "voter": the node's RTCM/voter clients and settings;
+                                       op "savenode": backups use the node's registration password)
     GET    /api/v1/nodes/{node}/access                allow/deny lists (AstDB)
     POST   /api/v1/nodes/{node}/access {"list", "entry", "reason"}
     DELETE /api/v1/nodes/{node}/access/{list}/{entry}
@@ -39,7 +40,7 @@ from ..restart import record_driver_save
 from ..security import SETTINGS_KEY, USER_KEY
 from .changes import STORE_KEY, error, read_json, register_after, unwritable
 from .control import SYSTEMCTL_KEY, systemctl
-from .status import CLI_KEY
+from .status import CLI_KEY, HUB_KEY
 
 log = logging.getLogger("asl-web-ui.nodes")
 routes = web.RouteTableDef()
@@ -158,6 +159,7 @@ def _describe(op: str, body: dict) -> str:
         "startup_link": f"node {node}: connect at startup",
         "permanent_links": f"node {node}: add permanent link commands",
         "password": f"node {node}: password",
+        "savenode": f"node {node}: AllStarLink backup password",
         "interface": f"node {node}: radio interface",
         "customize": f"node {node}: customizations",
         "voter": f"node {node}: voter clients and settings",
@@ -257,6 +259,25 @@ def _run(planner: Planner, op: str, body: dict) -> None:
         raise PlanError(f"Unknown operation: {op}", "op")
 
 
+REGISTRATION_FILES = {"http": "rpt_http_registrations.conf", "iax": "iax.conf"}
+
+
+async def _live_registrations(request: web.Request, number: str) -> set[str]:
+    """How Asterisk shows the node registered ("http", "iax"). A registration
+    password is only known to be right while AllStarLink accepts it, with the
+    settings Asterisk started with."""
+    snap = await request.app[HUB_KEY].snapshot()
+    if not snap["asterisk"]["reachable"]:
+        raise PlanError("Asterisk is not running, so the node's registration cannot be checked.", "node",
+                        code="requirement")
+    live = {kind for kind, key in (("http", "registrations"), ("iax", "iax_registrations"))
+            if any(r["username"] == number and r["state"] == "Registered" for r in snap[key])}
+    if any(REGISTRATION_FILES[kind] in snap["config"]["changed"] for kind in live):
+        raise PlanError("The registration settings changed since Asterisk started. Restart Asterisk, then try "
+                        "again once the node is registered.", "node", code="requirement")
+    return live
+
+
 def _lint(ws: Workspace, config_dir: str, after: bool) -> dict[str, list]:
     out = {}
     for name in LINTED:
@@ -286,7 +307,11 @@ async def plan(request: web.Request) -> web.Response:
     planner = Planner(ws)
     for o in ops:
         try:
-            _run(planner, o["op"], o)
+            if o["op"] == "savenode":
+                node = _str(o, "node")
+                planner.sync_savenode(node, await _live_registrations(request, node))
+            else:
+                _run(planner, o["op"], o)
         except PlanError as exc:
             return _plan_error(exc, o["op"])
     reauth = any(o["op"] == "remove" for o in ops)
