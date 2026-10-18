@@ -36,6 +36,7 @@ import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
 import { Status } from "./api";
 import { useAsteriskControl } from "./AsteriskControl";
 import { Star } from "./Brand";
+import { useDocumentTitle } from "./title";
 import { go } from "./useRoute";
 
 type NavEntry = { route: string; label: string; icon: ReactNode; expert?: boolean };
@@ -58,6 +59,26 @@ const NETWORKING: NavEntry[] = [
 
 // Kept apart, at the bottom, so that newcomers reach for the guided pages first.
 const ADVANCED: NavEntry[] = [{ route: "config", label: "Manual Config Edit", icon: <FileCodeIcon />, expert: true }];
+
+// The name of the page at a route, for the browser tab title: the
+// navigation label, or the node or file being edited.
+function pageName(route: string): string {
+  const [base, sub, third] = route.split("/");
+  const file = (name: string) => {
+    try {
+      return decodeURIComponent(name);
+    } catch {
+      return name;
+    }
+  };
+  if (base === "nodes" && sub) return `Node ${sub}`;
+  if (base === "allmon3" && sub === "files" && third) return file(third);
+  if (base === "config" && sub === "~allmon3" && third) return file(third);
+  if (base === "config" && sub === "~sa818") return "sa818.conf";
+  if (base === "config" && sub) return file(sub);
+  const key = base === "sa818" ? "hardware" : base;
+  return [...NAV, ...NETWORKING, ...ADVANCED].find((n) => n.route === key)?.label ?? "Overview";
+}
 
 type Props = {
   user: string;
@@ -138,6 +159,7 @@ function RestartPending({ status }: { status: Status | null }) {
 export function Shell({ user, hostname, route, status, onLogout, children }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const base = route.split("/")[0] === "sa818" ? "hardware" : route.split("/")[0];
+  useDocumentTitle(pageName(route), hostname);
 
   const masthead = (
     <Masthead className="asl-masthead">

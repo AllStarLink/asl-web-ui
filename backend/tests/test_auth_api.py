@@ -1,5 +1,7 @@
 """Login, sessions and the security middleware, with the fake auth helper."""
 
+import socket
+
 import pytest
 from aiohttp import DummyCookieJar
 
@@ -111,7 +113,7 @@ async def test_logout_ends_session(browser):
     resp, _ = await browser.post("/api/v1/auth/logout")
     assert resp.status == 200
     _, session = await browser.get("/api/v1/auth/session")
-    assert session == {"user": None}
+    assert session == {"user": None, "hostname": socket.gethostname()}
 
 
 async def test_csrf_token_required(browser):

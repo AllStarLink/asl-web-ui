@@ -15,7 +15,7 @@ node_modules/.asl-installed: package.json package-lock.json
 	npm ci --ignore-scripts --no-audit --no-fund
 	touch $@
 
-dist/index.html: node_modules/.asl-installed build.mjs public/index.html $(shell find src -type f)
+dist/index.html: node_modules/.asl-installed build.mjs $(shell find public src -type f)
 	npx tsc -p .
 	node build.mjs
 

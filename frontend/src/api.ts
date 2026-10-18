@@ -83,6 +83,7 @@ export type Session = {
   csrf?: string;
   keep?: boolean;
   recent_auth_until?: number;
+  hostname?: string;
 };
 
 export type LoginStep = {

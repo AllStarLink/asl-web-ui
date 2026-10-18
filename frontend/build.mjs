@@ -3,7 +3,7 @@
 //   node build.mjs --watch    rebuild on change (development)
 
 import * as esbuild from "esbuild";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
 const watch = process.argv.includes("--watch");
 const version = process.env.RELVER || "devel";
@@ -13,6 +13,8 @@ await mkdir("dist", { recursive: true });
 
 const html = await readFile("public/index.html", "utf8");
 await writeFile("dist/index.html", html.replaceAll("@@HEAD-DEVELOP@@", version));
+// Linked from index.html by name, so copied as they are (no hash).
+await cp("public/favicons", "dist/favicons", { recursive: true });
 
 const options = {
   entryPoints: { app: "src/main.tsx" },
@@ -29,6 +31,7 @@ const options = {
     ".svg": "file",
     ".png": "file",
     ".jpg": "file",
+    ".webp": "file",
   },
   assetNames: "assets/[name]-[hash]",
   logLevel: "info",

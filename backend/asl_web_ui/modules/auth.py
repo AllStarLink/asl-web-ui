@@ -2,7 +2,7 @@
 
     POST /api/v1/auth/login            {"user", "keep"}  -> step
     POST /api/v1/auth/login/{id}       {"answer"}        -> step
-    GET  /api/v1/auth/session                            -> current session
+    GET  /api/v1/auth/session                            -> current session, hostname
     POST /api/v1/auth/logout
     POST /api/v1/auth/reauth                             -> step (session user)
     POST /api/v1/auth/reauth/{id}      {"answer"}        -> step
@@ -13,6 +13,7 @@ A step is {"state": "prompt", "id", "prompt": {"echo", "text"}, "messages"},
 
 import logging
 import secrets
+import socket
 import time
 
 from aiohttp import web
@@ -154,9 +155,11 @@ async def _finish(request: web.Request, step: Step, conv_id: str, user: str, kee
 @routes.get("/api/v1/auth/session")
 async def session_info(request: web.Request) -> web.Response:
     session = await get_session(request)
+    # The hostname titles the login page, as in Cockpit.
+    hostname = socket.gethostname()
     if not session.get("user"):
-        return web.json_response({"user": None})
-    return web.json_response(_session_json(request, session))
+        return web.json_response({"user": None, "hostname": hostname})
+    return web.json_response({**_session_json(request, session), "hostname": hostname})
 
 
 @routes.post("/api/v1/auth/logout")

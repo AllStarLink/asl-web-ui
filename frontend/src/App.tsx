@@ -79,11 +79,14 @@ function topicsFor(base: string, sub: string | undefined): StatusTopic[] {
 
 export function App() {
   const [auth, setAuth] = useState<Auth>({ kind: "loading" });
+  // Over plain HTTP the server answers nothing, not even its name.
+  const [hostname, setHostname] = useState(location.hostname);
 
   const load = useCallback(async () => {
     try {
       const session = await get<Session>("auth/session");
       setCsrfToken(session.csrf ?? null);
+      if (session.hostname) setHostname(session.hostname);
       setAuth(session.user ? { kind: "user", session } : { kind: "anonymous" });
     } catch (err) {
       setAuth(err instanceof ApiError && err.code === "https_required" ? { kind: "insecure" } : { kind: "anonymous" });
@@ -114,6 +117,7 @@ export function App() {
     return (
       <Login
         insecure={auth.kind === "insecure"}
+        hostname={hostname}
         onLogin={(session) => {
           setCsrfToken(session.csrf ?? null);
           setAuth({ kind: "user", session });

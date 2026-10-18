@@ -74,7 +74,12 @@ html, body, #root { height: 100%; }
 /* ---- login ---- */
 .asl-login {
   min-height: 100%; display: grid; place-content: center; justify-items: center; padding: 2rem 16px;
-  background: radial-gradient(1200px 600px at 20% 0%, #26323b, #151515 60%);
+  background: #0b120d url("./img/aslbg.webp") center / cover no-repeat;
+}
+/* The logo's own background is translucent white, so it sits on a white tile. */
+.asl-login-logo {
+  width: min(100vw - 32px, 15rem); height: auto; margin-bottom: 1.5rem; padding: .75rem 1rem; background: #fff;
+  border-radius: var(--pf-t--global--border--radius--medium); box-shadow: 0 1rem 3rem rgb(0 0 0 / .45);
 }
 .asl-login-card {
   width: min(100vw - 32px, 28rem); background: var(--pf-t--global--background--color--primary--default);

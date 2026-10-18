@@ -13,13 +13,16 @@ import {
 import { PlainTextInput } from "./PlainInput";
 import { ApiError, LoginStep, post, Session } from "./api";
 import { Brand } from "./Brand";
+import logo from "./img/logo.png";
+import { useDocumentTitle } from "./title";
 
-type Props = { onLogin: (session: Session) => void; insecure: boolean };
+type Props = { onLogin: (session: Session) => void; insecure: boolean; hostname: string };
 
 // The login page. The common case (a password prompt) is answered from the
 // password field directly; any further PAM prompt, such as a verification
 // code, appears as an extra step.
-export function Login({ onLogin, insecure }: Props) {
+export function Login({ onLogin, insecure, hostname }: Props) {
+  useDocumentTitle("Login", hostname);
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
   const [keep, setKeep] = useState(false);
@@ -75,6 +78,7 @@ export function Login({ onLogin, insecure }: Props) {
 
   return (
     <div className="asl-login">
+      <img className="asl-login-logo" src={logo} alt="AllStarLink" />
       <div className="asl-login-card">
         <Brand subtitle="ASL Web UI" />
         {insecure ? (
