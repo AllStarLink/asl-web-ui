@@ -15,6 +15,10 @@ certbot.timer runs the renewals.
 
 Every change to Apache is checked with "apache2ctl configtest" before the
 reload, and undone if the check fails.
+
+If Cockpit is installed, it gets the same certificate (issue #25): a copy in
+/etc/cockpit/ws-certs.d (Cockpit uses the last *.cert there, with the *.key
+beside it), and a certbot deploy hook that copies each renewal there too.
 """
 
 import json
@@ -33,6 +37,9 @@ PACKAGES = ["python3-certbot-apache"]  # pulls in certbot
 STAGING = "https://acme-staging-v02.api.letsencrypt.org/directory"
 RELOAD_HOOK = "systemctl reload apache2"
 MARK = "# asl-web-ui: "
+COCKPIT_CERTS = "/etc/cockpit/ws-certs.d"
+COCKPIT_NAME = "90-asl-web-ui"  # after Cockpit's own 0-self-signed.cert
+COCKPIT_HOOK = f"{LETSENCRYPT}/renewal-hooks/deploy/asl-web-ui-cockpit"
 MAX_NAMES = 10
 _LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _EMAIL = re.compile(r"^[^@\s,;'\"\\]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
@@ -247,6 +254,108 @@ class ApacheChange:
             run("a2dissite", "-q", SITE)
 
 
+# ---- Cockpit -------------------------------------------------------------------------------
+
+
+def _rooted(root: str, path: str) -> str:
+    return os.path.join(root, path.lstrip("/"))
+
+
+def cockpit_installed() -> bool:
+    return _installed("cockpit-ws")
+
+
+def render_cockpit_hook(cert: str) -> str:
+    live = f"{LETSENCRYPT}/live/{cert}"
+    dest = f"{COCKPIT_CERTS}/{COCKPIT_NAME}"
+    return "\n".join([
+        "#!/bin/sh",
+        "# Gives Cockpit the renewed Let's Encrypt certificate that Apache uses. Written by",
+        "# asl-web-ui (its HTTPS page); changes made here are replaced.",
+        f'[ "$RENEWED_LINEAGE" = "{live}" ] || exit 0',
+        "[ -d /etc/cockpit ] || exit 0",
+        f"mkdir -p {COCKPIT_CERTS}",
+        f'install -m 644 "$RENEWED_LINEAGE/fullchain.pem" {dest}.cert.tmp',
+        f'install -m 600 "$RENEWED_LINEAGE/privkey.pem" {dest}.key.tmp',
+        f"mv -f {dest}.key.tmp {dest}.key",
+        f"mv -f {dest}.cert.tmp {dest}.cert",
+        "systemctl try-restart cockpit.service",
+    ]) + "\n"
+
+
+def _copy(src: str, dest: str, mode: int) -> None:
+    tmp = dest + ".tmp"
+    with open(src, "rb") as f:
+        data = f.read()
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    os.chmod(tmp, mode)
+    os.replace(tmp, dest)
+
+
+def use_for_cockpit(root: str, cert: str, output: Output) -> dict:
+    """Give Cockpit the certificate CERT (a name in /etc/letsencrypt/live), now and after renewals."""
+    if not cockpit_installed():
+        raise HttpsError("Cockpit is not installed.", "unavailable")
+    live = _rooted(root, f"{LETSENCRYPT}/live/{cert}")
+    if not os.path.exists(os.path.join(live, "fullchain.pem")):
+        raise HttpsError("There is no Let's Encrypt certificate yet.", "not_found")
+    hook = _rooted(root, COCKPIT_HOOK)
+    os.makedirs(os.path.dirname(hook), exist_ok=True)
+    with open(hook + ".tmp", "w") as f:
+        f.write(render_cockpit_hook(cert))
+    os.chmod(hook + ".tmp", 0o755)
+    os.replace(hook + ".tmp", hook)
+    certs = _rooted(root, COCKPIT_CERTS)
+    os.makedirs(certs, exist_ok=True)
+    _copy(os.path.join(live, "privkey.pem"), os.path.join(certs, f"{COCKPIT_NAME}.key"), 0o600)
+    _copy(os.path.join(live, "fullchain.pem"), os.path.join(certs, f"{COCKPIT_NAME}.cert"), 0o644)
+    output(f"Cockpit now uses the certificate too ({COCKPIT_CERTS}/{COCKPIT_NAME}.cert).")
+    run("systemctl", "try-restart", "cockpit.service")
+    output("Cockpit restarted; anyone logged in to it logs in again.")
+    return {"cockpit": True}
+
+
+def stop_cockpit(root: str, output: Output) -> bool:
+    """Take asl-web-ui's certificate and renewal hook away from Cockpit, if there."""
+    removed = False
+    for path in (COCKPIT_HOOK, f"{COCKPIT_CERTS}/{COCKPIT_NAME}.cert", f"{COCKPIT_CERTS}/{COCKPIT_NAME}.key"):
+        try:
+            os.unlink(_rooted(root, path))
+            removed = True
+        except FileNotFoundError:
+            pass
+    if removed:
+        run("systemctl", "try-restart", "cockpit.service")
+        output("Cockpit uses its own certificate again.")
+    return removed
+
+
+def cockpit_status(root: str, cert: str | None) -> dict:
+    out: dict = {"installed": cockpit_installed()}
+    if not out["installed"]:
+        return out
+    certs = _rooted(root, COCKPIT_CERTS)
+    try:
+        files = sorted(f for f in os.listdir(certs) if f.endswith(".cert"))
+    except OSError:
+        files = []
+    out["uses"] = files[-1] if files else None  # None: Cockpit makes a self-signed one
+    ours = os.path.join(certs, f"{COCKPIT_NAME}.cert")
+    current = False
+    if cert and os.path.exists(ours):
+        try:
+            with open(ours, "rb") as a, open(_rooted(root, f"{LETSENCRYPT}/live/{cert}/fullchain.pem"), "rb") as b:
+                current = a.read() == b.read()
+        except OSError:
+            pass
+    # Cockpit presents the Let's Encrypt certificate: ours, up to date, and the one it picks.
+    out["letsencrypt"] = current and out["uses"] == f"{COCKPIT_NAME}.cert"
+    out["hook"] = os.path.exists(_rooted(root, COCKPIT_HOOK))
+    return out
+
+
 # ---- status -------------------------------------------------------------------------------
 
 
@@ -342,6 +451,7 @@ def status(root: str = "/") -> dict:
         live = os.path.join(root, LETSENCRYPT.lstrip("/"), "live", site["cert"], "cert.pem")
         out["certificate"] = cert_info(pem_path=live) if os.path.exists(live) else None
         out["renewal"] = renewal(root, site["cert"])
+    out["cockpit"] = cockpit_status(root, site.get("cert") if site else None)
     return out
 
 
@@ -439,7 +549,15 @@ def obtain(root: str, args: dict, output: Output) -> dict:
     except HttpsError:
         final.undo()
         raise
-    return {"domains": names, "cert": cert, "staging": staging, "certificate": cert_info(
+
+    # 4. Cockpit, if installed, with the same certificate.
+    cockpit = False
+    if cockpit_installed():
+        try:
+            cockpit = use_for_cockpit(root, cert, output)["cockpit"]
+        except (HttpsError, OSError) as exc:
+            output(f"Apache uses the certificate, but Cockpit could not be given it: {getattr(exc, 'message', exc)}")
+    return {"domains": names, "cert": cert, "staging": staging, "cockpit": cockpit, "certificate": cert_info(
         pem_path=os.path.join(root, LETSENCRYPT.lstrip("/"), "live", cert, "cert.pem"))}
 
 
@@ -457,6 +575,16 @@ def set_redirect(root: str, redirect: bool, output: Output) -> dict:
         change.undo()
         raise
     return {"redirect": redirect}
+
+
+def cockpit(root: str, output: Output) -> dict:
+    site = read_site(root)
+    if not site or not site.get("cert"):
+        raise HttpsError("There is no Let's Encrypt certificate yet.", "not_found")
+    try:
+        return use_for_cockpit(root, site["cert"], output)
+    except OSError as exc:
+        raise HttpsError(f"Could not give Cockpit the certificate: {exc}")
 
 
 def renew_test(root: str, output: Output) -> dict:
@@ -479,6 +607,7 @@ def remove(root: str, delete_certificate: bool, output: Output) -> dict:
         change.undo()
         raise
     output("Removed asl-web-ui's HTTPS site; the other Apache sites are unchanged.")
+    stop_cockpit(root, output)
     if delete_certificate and site and site.get("cert"):
         run("certbot", "delete", "--non-interactive", "--cert-name", site["cert"], output=output)
     return {"removed": True}

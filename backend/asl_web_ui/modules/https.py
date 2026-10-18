@@ -5,6 +5,7 @@
     POST   /api/v1/https/listener                 enable HTTPS on port 443, self-signed (job)
     POST   /api/v1/https/certificate  {"domains", "email", "agree_tos", "staging", "redirect"}  (job)
     PUT    /api/v1/https/redirect     {"redirect"}
+    POST   /api/v1/https/cockpit                  Cockpit uses the certificate too
     POST   /api/v1/https/renew-test               certbot renew --dry-run (job)
     DELETE /api/v1/https?delete_certificate=1     stop using it (password re-entry)
 
@@ -106,6 +107,16 @@ async def redirect(request: web.Request) -> web.Response:
     except PrivError as exc:
         return _priv_error(exc)
     _audit(request, f"HTTP to HTTPS redirect {'on' if body['redirect'] else 'off'}", "done")
+    return web.json_response(res)
+
+
+@routes.post("/api/v1/https/cockpit")
+async def cockpit(request: web.Request) -> web.Response:
+    try:
+        res = await _priv(request, "https.cockpit")
+    except PrivError as exc:
+        return _priv_error(exc)
+    _audit(request, "Cockpit uses the Let's Encrypt certificate", "done")
     return web.json_response(res)
 
 

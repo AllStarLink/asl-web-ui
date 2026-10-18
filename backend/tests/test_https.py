@@ -27,7 +27,7 @@ esac""",
     "a2dissite": 'for s; do [ "$s" = -q ] || rm -f $ROOT/etc/apache2/sites-enabled/$s.conf; done',
     "systemctl": '[ "$1" = is-active ] && echo active; exit 0',
     "apt-get": 'echo "Setting up python3-certbot-apache (4.0.0-2) ..."',
-    "dpkg-query": 'echo "install ok installed"',
+    "dpkg-query": 'case "$*" in *cockpit-ws*) [ -d $ROOT/etc/cockpit ] || exit 1 ;; esac; echo "install ok installed"',
     "make-ssl-cert": 'touch $ROOT/etc/ssl/certs/ssl-cert-snakeoil.pem',
     "certbot": """
 [ -e $ROOT/certbot-fails ] && { echo "Challenge failed for domain"; exit 1; }
@@ -168,3 +168,62 @@ async def test_validation(web):
         assert status_ == 400 and body["field"] == field, (change, body)
     assert not web.site.exists()
     assert https.check_names(["Node.Example.org.", "node.example.org"]) == ["node.example.org"]
+
+
+async def test_cockpit_not_installed(web):
+    a = await web.make()
+    job = await a.job("POST", "https/certificate", ORDER)
+    assert job["ok"] and job["result"]["cockpit"] is False
+    assert not (web.root / "etc/cockpit").exists()
+    assert not (web.root / "etc/letsencrypt/renewal-hooks").exists()
+    _, body = await a.call("GET", "https")
+    assert body["cockpit"] == {"installed": False}
+
+
+async def test_cockpit_gets_the_certificate(web):
+    certs = web.root / "etc/cockpit/ws-certs.d"
+    certs.mkdir(parents=True)
+    (certs / "0-self-signed.cert").write_text("self-signed\n")
+    a = await web.make()
+    job = await a.job("POST", "https/certificate", ORDER)
+    assert job["ok"] and job["result"]["cockpit"] is True, job
+    live = web.root / "etc/letsencrypt/live/node.example.org"
+    assert (certs / "90-asl-web-ui.cert").read_bytes() == (live / "fullchain.pem").read_bytes()
+    assert (certs / "90-asl-web-ui.key").read_bytes() == (live / "privkey.pem").read_bytes()
+    assert (certs / "90-asl-web-ui.key").stat().st_mode & 0o777 == 0o600
+    assert "systemctl try-restart cockpit.service" in web.calls.read_text()
+    hook = web.root / "etc/letsencrypt/renewal-hooks/deploy/asl-web-ui-cockpit"
+    assert hook.stat().st_mode & 0o111
+    assert '[ "$RENEWED_LINEAGE" = "/etc/letsencrypt/live/node.example.org" ] || exit 0' in hook.read_text()
+    _, body = await a.call("GET", "https")
+    assert body["cockpit"] == {"installed": True, "uses": "90-asl-web-ui.cert", "letsencrypt": True, "hook": True}
+
+    # An administrator's own certificate later in the order wins; the status says so.
+    (certs / "99-mine.cert").write_text("mine\n")
+    _, body = await a.call("GET", "https")
+    assert body["cockpit"]["uses"] == "99-mine.cert" and body["cockpit"]["letsencrypt"] is False
+    (certs / "99-mine.cert").unlink()
+
+    status_, _ = await a.call("DELETE", "https")
+    assert status_ == 200
+    assert not (certs / "90-asl-web-ui.cert").exists() and not (certs / "90-asl-web-ui.key").exists()
+    assert not hook.exists() and (certs / "0-self-signed.cert").exists()
+
+
+async def test_cockpit_installed_later(web):
+    a = await web.make()
+    await a.job("POST", "https/certificate", ORDER)
+    (web.root / "etc/cockpit").mkdir()
+    _, body = await a.call("GET", "https")
+    assert body["cockpit"] == {"installed": True, "uses": None, "letsencrypt": False, "hook": False}
+    status_, body = await a.call("POST", "https/cockpit")
+    assert status_ == 200 and body == {"cockpit": True}
+    _, body = await a.call("GET", "https")
+    assert body["cockpit"]["letsencrypt"] is True
+
+
+async def test_cockpit_without_certificate(web):
+    (web.root / "etc/cockpit").mkdir()
+    a = await web.make()
+    status_, body = await a.call("POST", "https/cockpit")
+    assert status_ == 404 and body["error"] == "not_found"

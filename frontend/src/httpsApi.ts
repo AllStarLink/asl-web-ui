@@ -20,6 +20,9 @@ export type HttpsStatus = {
   served?: CertInfo | null;
   certificate?: CertInfo | null;
   renewal?: { server: string | null; staging: boolean; authenticator: string | null; renew_hook: string | null } | null;
+  // Cockpit (port 9090): "uses" is the certificate file it picks in /etc/cockpit/ws-certs.d
+  // (null: its own self-signed one); "letsencrypt" when that is the Let's Encrypt certificate.
+  cockpit?: { installed: boolean; uses?: string | null; letsencrypt?: boolean; hook?: boolean };
 };
 
 export type CertificateOrder = {
@@ -35,6 +38,7 @@ export const installCertbot = () => post<Started>("https/install");
 export const enableListener = () => post<Started>("https/listener");
 export const obtainCertificate = (order: CertificateOrder) => post<Started>("https/certificate", order);
 export const setRedirect = (redirect: boolean) => request<{ redirect: boolean }>("PUT", "https/redirect", { redirect });
+export const cockpitCertificate = () => post<{ cockpit: boolean }>("https/cockpit");
 export const renewTest = () => post<Started>("https/renew-test");
 export const removeHttps = (deleteCertificate: boolean) =>
   del<{ removed: boolean }>(`https${deleteCertificate ? "?delete_certificate=1" : ""}`);

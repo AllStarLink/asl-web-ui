@@ -216,6 +216,15 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.allstarlink.asl-web-ui.https-cockpit">
+    <description>Use the Let's Encrypt certificate in Cockpit</description>
+    <message>Authentication is required to: use the Let's Encrypt certificate in Cockpit</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
   <action id="org.allstarlink.asl-web-ui.https-renew-test">
     <description>Test the renewal of the Let's Encrypt certificate</description>
     <message>Authentication is required to: test the renewal of the Let's Encrypt certificate</message>

@@ -31,7 +31,7 @@ import {
 import { ApiError, message } from "./api";
 import {
   CertInfo, enableListener, httpsStatus, HttpsStatus, installCertbot, obtainCertificate, removeHttps, renewTest,
-  setRedirect,
+  setRedirect, cockpitCertificate,
 } from "./httpsApi";
 import { useJob } from "./Job";
 import { PlainTextInput } from "./PlainInput";
@@ -125,6 +125,17 @@ export function HttpsPage() {
     }
   };
 
+  const cockpit = async () => {
+    setNotice(null);
+    try {
+      await cockpitCertificate();
+      setNotice({ variant: "success", text: "Cockpit uses the certificate too; anyone logged in to it logs in again." });
+      await load();
+    } catch (err) {
+      setNotice({ variant: "danger", text: message(err) });
+    }
+  };
+
   const remove = async () => {
     setRemoving(false);
     setNotice(null);
@@ -198,6 +209,25 @@ export function HttpsPage() {
                   <DescriptionListGroup>
                     <DescriptionListTerm>Certificate</DescriptionListTerm>
                     <DescriptionListDescription><Cert cert={status.served} /></DescriptionListDescription>
+                  </DescriptionListGroup>
+                )}
+                {site?.cert && status.cockpit?.installed && (
+                  <DescriptionListGroup>
+                    <DescriptionListTerm>Cockpit (port 9090)</DescriptionListTerm>
+                    <DescriptionListDescription>
+                      {status.cockpit.letsencrypt ? (
+                        <Label color="green">Uses the Let's Encrypt certificate</Label>
+                      ) : (
+                        <>
+                          <Label color="orange">
+                            {status.cockpit.uses ? `Uses ${status.cockpit.uses}` : "Uses its self-signed certificate"}
+                          </Label>
+                          <Button variant="link" isInline onClick={() => void cockpit()}>
+                            {" "}Use the Let's Encrypt certificate
+                          </Button>
+                        </>
+                      )}
+                    </DescriptionListDescription>
                   </DescriptionListGroup>
                 )}
                 <DescriptionListGroup>
@@ -288,7 +318,8 @@ export function HttpsPage() {
                   </div>
                   <Content component="p" className="asl-sub">
                     asl-web-ui keeps these settings in <code>/etc/apache2/sites-available/asl-web-ui-https.conf</code>;
-                    Apache's other sites are not changed.
+                    Apache's other sites are not changed. If Cockpit is installed, it gets a copy of the certificate in{" "}
+                    <code>/etc/cockpit/ws-certs.d</code>, renewed with it.
                   </Content>
                 </div>
               </CardBody>
@@ -302,7 +333,7 @@ export function HttpsPage() {
           <div className="asl-stack">
             <Content component="p">
               asl-web-ui's Apache site is removed. Visitors get Apache's other sites again (often a self-signed
-              certificate).
+              certificate), and Cockpit its own certificate.
             </Content>
             <Checkbox id="https-delete-cert" label="Also delete the certificate and stop renewing it"
                       isChecked={deleteCert} onChange={(_e, v) => setDeleteCert(v)} />

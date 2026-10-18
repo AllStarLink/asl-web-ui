@@ -776,6 +776,10 @@ def https_redirect(args: dict, output: Output) -> dict:
     return _https(https.set_redirect, ROOT, args.get("redirect") is True, output)
 
 
+def https_cockpit(args: dict, output: Output) -> dict:
+    return _https(https.cockpit, ROOT, output)
+
+
 def https_renew_test(args: dict, output: Output) -> dict:
     return _https(https.renew_test, ROOT, output)
 
@@ -900,6 +904,7 @@ COMMANDS = {
     "https.enable_listener": https_enable_listener,
     "https.obtain": https_obtain,
     "https.redirect": https_redirect,
+    "https.cockpit": https_cockpit,
     "https.renew_test": https_renew_test,
     "https.remove": https_remove,
     "network.status": network_status,
