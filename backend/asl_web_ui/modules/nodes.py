@@ -266,7 +266,7 @@ async def _live_registrations(request: web.Request, number: str) -> set[str]:
     """How Asterisk shows the node registered ("http", "iax"). A registration
     password is only known to be right while AllStarLink accepts it, with the
     settings Asterisk started with."""
-    snap = await request.app[HUB_KEY].snapshot()
+    snap = await request.app[HUB_KEY].snapshot(registrations=True)
     if not snap["asterisk"]["reachable"]:
         raise PlanError("Asterisk is not running, so the node's registration cannot be checked.", "node",
                         code="requirement")

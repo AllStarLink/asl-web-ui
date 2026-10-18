@@ -19,20 +19,20 @@ import { Overview } from "./Overview";
 import { Allmon3Editor, SA818FileEditor } from "./SystemFileEditor";
 import { Shell } from "./Shell";
 import { useRoute } from "./useRoute";
-import { useStatus } from "./useStatus";
+import { StatusTopic, useStatus } from "./useStatus";
 
 type Auth = { kind: "loading" } | { kind: "insecure" } | { kind: "anonymous" } | { kind: "user"; session: Session };
 
 function Authenticated({ session, onLogout, onEnded }: { session: Session; onLogout: () => void; onEnded: () => void }) {
   const [route, leaving, answer] = useRoute();
-  const { status } = useStatus(onEnded);
+  const [base, sub, third] = route.split("/");
+  const { status } = useStatus(onEnded, topicsFor(base, sub));
   const [system, setSystem] = useState<SystemInfo | null>(null);
 
   useEffect(() => {
     get<SystemInfo>("system").then(setSystem, () => setSystem(null));
   }, []);
 
-  const [base, sub, third] = route.split("/");
   let page;
   if (base === "nodes" && sub) page = <NodePage key={sub} number={sub} tab={third ?? "general"} status={status} />;
   else if (base === "nodes") page = <Nodes status={status} />;
@@ -65,6 +65,16 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
       </Modal>
     </Shell>
   );
+}
+
+// Pages that show node registrations: the overview, the node list and pages,
+// and Asterisk's status tab. Others leave the server's poll to the basics.
+const REGISTRATIONS: StatusTopic[] = ["registrations"];
+const NONE: StatusTopic[] = [];
+
+function topicsFor(base: string, sub: string | undefined): StatusTopic[] {
+  const shows = base === "overview" || base === "nodes" || (base === "asterisk" && (sub ?? "status") === "status");
+  return shows ? REGISTRATIONS : NONE;
 }
 
 export function App() {

@@ -45,11 +45,14 @@ class FakeCLI:
 
     def __init__(self, down=False):
         self.down = down
+        self.output = dict(self.OUTPUT)
+        self.calls = []
 
     async def run(self, command):
         if self.down:
             raise cli.AsteriskUnavailable("Unable to connect to remote asterisk")
-        return self.OUTPUT[command]
+        self.calls.append(command)
+        return self.output[command]
 
 
 def unit(state):
@@ -59,13 +62,50 @@ def unit(state):
 
 
 async def test_status_collects_nodes_and_registrations():
-    data = await status.StatusHub(FakeCLI(), unit_state=unit("active")).collect()
+    data = await status.StatusHub(FakeCLI(), unit_state=unit("active")).collect(registrations=True)
     assert data["asterisk"]["reachable"] and data["asterisk"]["uptime"] == 10052
     assert data["versions"] == {"asterisk": "22.10.1+asl3-3.10.5-1.deb13", "app_rpt": "3.10.5"}
     assert data["nodes"] == [
         {"node": "1999", "private": True, "registration": None},
         {"node": "63001", "private": False, "registration": "Registered"},
     ]
+
+
+async def test_status_asks_only_for_uptime_once_nodes_are_known():
+    fake = FakeCLI()
+    hub = status.StatusHub(fake, unit_state=unit("active"))
+    await hub.collect(registrations=True)
+    fake.calls.clear()
+    data = await hub.collect()
+    assert fake.calls == ["core show uptime seconds"]
+    # Registrations not asked for this round are the last ones collected.
+    assert data["nodes"][1]["registration"] == "Registered" and len(data["registrations"]) == 2
+
+
+async def test_status_fetches_nodes_again_after_restart_or_reload():
+    fake = FakeCLI()
+    hub = status.StatusHub(fake, unit_state=unit("active"))
+    await hub.collect()
+    fake.calls.clear()
+    fake.output["core show uptime seconds"] = "System uptime: 10052\nLast reload: 5\n"
+    await hub.collect()
+    assert "rpt localnodes" in fake.calls
+    fake.calls.clear()
+    fake.output["core show uptime seconds"] = "System uptime: 30\nLast reload: 30\n"
+    fake.output["rpt localnodes"] = "Node\n----\n63001\n"
+    data = await hub.collect()
+    assert "rpt localnodes" in fake.calls and [n["node"] for n in data["nodes"]] == ["63001"]
+
+
+async def test_snapshot_collects_registrations_when_first_wanted():
+    fake = FakeCLI()
+    hub = status.StatusHub(fake, unit_state=unit("active"))
+    await hub.snapshot()
+    assert "rpt show registrations" not in fake.calls
+    await hub.snapshot()  # still fresh: no new round
+    assert fake.calls.count("core show uptime seconds") == 1
+    data = await hub.snapshot(registrations=True)
+    assert "rpt show registrations" in fake.calls and len(data["registrations"]) == 2
 
 
 async def test_status_when_asterisk_stopped():
@@ -105,6 +145,28 @@ async def test_events_socket_sends_status(logged_in):
     async with client.ws_connect("/api/v1/ws/events", headers=headers) as ws:
         msg = await asyncio.wait_for(ws.receive_json(), 5)
     assert msg["type"] == "status" and msg["data"]["nodes"][1]["node"] == "63001"
+
+
+async def test_events_socket_registrations_only_when_subscribed(logged_in):
+    client, headers = logged_in
+    fake = client.app[status.CLI_KEY]
+    async with client.ws_connect("/api/v1/ws/events", headers=headers) as ws:
+        msg = await asyncio.wait_for(ws.receive_json(), 5)
+        assert msg["data"]["registrations"] == [] and "rpt show registrations" not in fake.calls
+        await ws.send_json({"type": "subscribe", "topics": ["registrations"]})
+        # The poller's first push may come before the reply to the subscribe.
+        for _ in range(3):
+            msg = await asyncio.wait_for(ws.receive_json(), 5)
+            if msg["data"]["registrations"]:
+                break
+    assert msg["data"]["nodes"][1]["registration"] == "Registered"
+
+
+async def test_events_socket_topics_in_url(logged_in):
+    client, headers = logged_in
+    async with client.ws_connect("/api/v1/ws/events?topics=registrations", headers=headers) as ws:
+        msg = await asyncio.wait_for(ws.receive_json(), 5)
+    assert len(msg["data"]["registrations"]) == 2
 
 
 async def test_events_socket_requires_login(logged_in):
