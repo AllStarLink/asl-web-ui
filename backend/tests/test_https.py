@@ -30,7 +30,7 @@ esac""",
     "dpkg-query": 'case "$*" in *cockpit-ws*) [ -d $ROOT/etc/cockpit ] || exit 1 ;; esac; echo "install ok installed"',
     "make-ssl-cert": 'touch $ROOT/etc/ssl/certs/ssl-cert-snakeoil.pem',
     "certbot": """
-[ -e $ROOT/certbot-fails ] && { echo "Challenge failed for domain"; exit 1; }
+[ -e $ROOT/certbot-fails ] && { echo "Challenge failed for domain"; cat $ROOT/certbot-fails; exit 1; }
 [ "$1" = certonly ] || exit 0
 name=""; server=https://acme-v02.api.letsencrypt.org/directory; names=""
 while [ $# -gt 0 ]; do case "$1" in
@@ -144,8 +144,36 @@ async def test_certbot_failure_puts_apache_back(web):
     a = await web.make()
     job = await a.job("POST", "https/certificate", ORDER)
     assert not job["ok"] and "Apache is as it was" in job["error"]
+    assert "port 80 is reachable" in job["error"]
     assert not web.site.exists() and not web.enabled.exists()
     assert not (web.root / "etc/apache2/mods-enabled/rewrite.load").exists()
+
+
+async def test_certbot_failure_shows_what_lets_encrypt_reported(web):
+    (web.root / "certbot-fails").write_text(
+        "Certbot failed to authenticate some domains (authenticator: apache). The Certificate Authority "
+        "reported these problems:\n"
+        "  Domain: node.example.org\n"
+        "  Type:   dns\n"
+        "  Detail: no valid A records found for node.example.org\n"
+        "\n"
+        "Hint: The Certificate Authority failed to verify the temporary Apache configuration changes made "
+        "by Certbot.\n")
+    a = await web.make()
+    job = await a.job("POST", "https/certificate", ORDER)
+    assert not job["ok"]
+    assert "Let's Encrypt reported: node.example.org: no valid A records found for node.example.org" in job["error"]
+    assert "port 80" not in job["error"]
+
+
+def test_ca_problems():
+    from asl_web_ui_priv.https import ca_problems
+    assert ca_problems("  Domain: a.example\n  Type:   dns\n  Detail: no A\n"
+                       "  Domain: b.example\n  Type:   connection\n  Detail: timeout\n") == [
+        "a.example: no A", "b.example: timeout"]
+    assert ca_problems("An unexpected error occurred:\nError creating new order :: too many certificates\n") == [
+        "Error creating new order :: too many certificates"]
+    assert ca_problems("Some other failure\n") == []
 
 
 async def test_configtest_failure_puts_apache_back(web):

@@ -1,10 +1,15 @@
 import { ReactNode, useCallback, useState } from "react";
 import { Alert, Button, Modal, ModalBody, ModalFooter, ModalHeader, Spinner } from "@patternfly/react-core";
 
-import { message } from "./api";
+import { ApiError, message } from "./api";
 import { JobState, jobState, Started } from "./backupsApi";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Some jobs reload the web server the UI is reached through (the HTTPS
+// certificate job does, several times), which can drop a request. The job
+// keeps running, so polls that do not reach the server are retried this long.
+const UNREACHABLE_FOR = 30000;
 
 // Runs a server-side job and shows its progress until it finishes.
 // run() resolves to the final state (or null if it could not start).
@@ -30,10 +35,19 @@ export function useJob(): [ReactNode, (title: string, start: () => Promise<Start
     let from = 0;
     let lines: string[] = [];
     let last: JobState | null = null;
+    let unreachable: number | null = null;
     for (;;) {
       try {
         last = await jobState(started.job, from);
+        unreachable = null;
       } catch (err) {
+        if (!(err instanceof ApiError)) {
+          unreachable ??= Date.now();
+          if (Date.now() - unreachable < UNREACHABLE_FOR) {
+            await wait(700);
+            continue;
+          }
+        }
         setState({ title, lines, done: true, error: message(err) });
         break;
       }

@@ -503,6 +503,25 @@ def _certbot_args(names: list[str], email: str | None, staging: bool, force: boo
     return args
 
 
+def ca_problems(text: str) -> list[str]:
+    """What Let's Encrypt said was wrong, from certbot's output: each failed
+    name's "Domain:" and "Detail:" lines, or the line after "An unexpected
+    error occurred:" (rate limits and other refused orders)."""
+    problems = []
+    domain = None
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if line.startswith("Domain:"):
+            domain = line[len("Domain:"):].strip()
+        elif line.startswith("Detail:") and domain:
+            problems.append(f"{domain}: {line[len('Detail:'):].strip()}")
+            domain = None
+        elif line == "An unexpected error occurred:" and i + 1 < len(lines) and lines[i + 1].strip():
+            problems.append(lines[i + 1].strip())
+    return problems
+
+
 def obtain(root: str, args: dict, output: Output) -> dict:
     names = check_names(args.get("domains"))
     email = check_email(args.get("email"))
@@ -537,8 +556,10 @@ def obtain(root: str, args: dict, output: Output) -> dict:
     if code != 0:
         change.undo()
         change.apply()
-        raise HttpsError("certbot could not get the certificate; Apache is as it was. Check that each name "
-                         "points to this server in DNS and that port 80 is reachable from the internet.")
+        problems = ca_problems(text)
+        raise HttpsError("certbot could not get the certificate; Apache is as it was. " + (
+            "Let's Encrypt reported: " + "; ".join(problems) if problems else
+            "Check that each name points to this server in DNS and that port 80 is reachable from the internet."))
 
     # 3. The HTTPS site with it.
     final = ApacheChange(root, output)
