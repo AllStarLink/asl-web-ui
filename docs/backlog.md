@@ -49,9 +49,6 @@ Questions to answer:
 
 *Carried over from the 2026-10-15 sessions.*
 
-- USBRadio with a radio on flat discriminator audio: DSP squelch, CTCSS
-  decoding, and successful calibrations (40608's radio decodes CTCSS itself,
-  so it cannot show these).
 - AllStarLink cloud backups (list, upload, restore) against the real server;
   so far only a stand-in server was used.
 - Allmon3 kept in step on a system where Allmon3's password equals the AMI
