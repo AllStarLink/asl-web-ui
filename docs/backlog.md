@@ -68,5 +68,5 @@ Questions to answer:
 ## Upstream
 
 - The changes requested in [upstream-changes.md](upstream-changes.md):
-  `asl-node-auth-check --json`, numeric one-shot tuning displays in
-  app_rpt, and app_rpt's tune save rewriting every included file.
+  numeric one-shot tuning displays in app_rpt, and app_rpt's tune save
+  rewriting every included file.

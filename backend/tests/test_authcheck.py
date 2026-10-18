@@ -114,3 +114,61 @@ async def test_run_prefers_json_mode(tmp_path):
     tool.chmod(0o755)
     r = await authcheck.run(str(tool))
     assert r["result"] == "ok" and "raw" not in r
+
+
+def test_text_data_matches_json_fields():
+    # The ids and data the --json mode gives (docs/upstream-changes.md, section 1).
+    text = """
+Checking configuration:
+      Info: Config file not found: /etc/asterisk/rpt_extra.conf
+      Info: Permission denied reading: /etc/asterisk/secret.conf
+      Info: /etc/asterisk/iax.conf contains no registration lines.
+      Info: /etc/asterisk/rpt_http_registrations.conf contains 2 registration line(s)
+   Warning: IP test to https://conntest-west2.allstarlink.org/ip failed
+
+Testing node 2701:
+     Error: There is no apparent IAX registration attempt for node 2701
+
+Testing node 2702:
+     Error: No stats available... cannot continue this check set
+   Warning: Nodeping is not responding - rate-limited or it's down
+
+Testing node 2703:
+     Error: Incoming connections to IAX from other nodes failed; client IP or firewall issue
+"""
+    r = authcheck.parse_text(text)
+    config = r["sections"][0]["findings"]
+    assert [f["data"] for f in config] == [
+        {"file": "/etc/asterisk/rpt_extra.conf", "reason": "not_found"},
+        {"file": "/etc/asterisk/secret.conf", "reason": "permission_denied"},
+        {"file": "/etc/asterisk/iax.conf", "count": 0},
+        {"file": "/etc/asterisk/rpt_http_registrations.conf", "count": 2},
+    ]
+    assert {f["id"] for f in config[:2]} == {"config.file_unreadable"}
+    assert r["sections"][1]["findings"][0]["data"] == {"url": "https://conntest-west2.allstarlink.org/ip", "ip": None}
+    n1, n2, n3 = (s["findings"] for s in r["sections"][2:])
+    assert n1[0]["data"] == {"type": "IAX", "state": None}
+    assert n2[0]["data"] == {"reason": "no_stats"}
+    assert n2[1]["data"] == {"status": "nodeping_unavailable"}
+    assert n3[0]["data"] == {"status": "unreachable"}
+
+
+def test_permission_denied_is_a_run_section():
+    r = authcheck.parse_text("     Error: Access denied: script must run as root or asterisk (current user: www)\n")
+    assert r["result"] == "aborted"
+    assert [s["id"] for s in r["sections"] if s["findings"]] == ["run"]
+
+
+def test_no_nodes_aborts():
+    r = authcheck.parse_text("Checking configuration:\n     Error: NO NODE ARE CONFIGURED IN rpt.conf\n"
+                             "     Error: RUN asl-menu OR INSPECT THE CONFIG FILES\n")
+    assert r["result"] == "aborted"
+
+
+def test_http_iax_mismatch():
+    r = authcheck.parse_text("   Warning: HTTP and IAX probes perceive different IPs (203.0.113.5 != 100.64.1.2); "
+                             "likely behind Carrier-Grade NAT (CGNAT)\n")
+    f = r["sections"][-1]["findings"][0]
+    assert r["sections"][-1]["id"] == "public_ip"
+    assert (f["id"], f["level"], f["data"]) == ("public_ip.http_iax_match", "warning",
+                                                {"http_ip": "203.0.113.5", "iax_ip": "100.64.1.2"})

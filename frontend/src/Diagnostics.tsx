@@ -75,6 +75,11 @@ function hint(f: AuthFinding): string | null {
     case "public_ip.iax_consensus":
       return "Different services see different addresses for this server. Your internet provider may use carrier-grade "
         + "NAT (CGNAT), which keeps other nodes from connecting. Ask the provider for a public IPv4 address.";
+    case "public_ip.http_iax_match":
+      return `Web traffic leaves from ${d.http_ip ?? "one address"} but AllStarLink (IAX) traffic from `
+        + `${d.iax_ip ?? "another"}. This usually means your internet provider uses carrier-grade NAT (CGNAT), which `
+        + "keeps other nodes from connecting in. Ask the provider for a public IPv4 address, or use a VPN or tunnel "
+        + "service that gives the node one.";
     case "node.registration_state":
       return "Check the node password on the node's General tab against the AllStarLink portal.";
     case "node.regserver_reachable":
@@ -83,8 +88,16 @@ function hint(f: AuthFinding): string | null {
       return `AllStarLink sees port ${d.registered_port ?? "?"}, but Asterisk listens on ${d.bindport ?? "?"}. That is `
         + "fine if your router forwards one to the other; the inbound connection test below tells.";
     case "node.inbound_reachability":
+      if (d.status === "nodeping_unavailable")
+        return "The inbound test service did not answer; it may be busy. Run the check again in a few minutes.";
+      if (d.status === "not_registered")
+        return "AllStarLink does not see the node as registered yet, so the inbound test was skipped.";
+      if (f.level !== "error") return null;
       return "Other nodes cannot connect: forward the IAX UDP port (Asterisk › Settings) on your router to this server, "
         + "and allow it in any firewall.";
+    case "run.internal_error":
+      return "The check stopped with an unexpected error. Run it again; if it keeps happening, report the message "
+        + "above to AllStarLink.";
     case "node.registered_recently":
       return "The node has not registered in the last 10 minutes: check the password and the internet connection.";
     case "public_ip.http_probe":
@@ -109,7 +122,7 @@ export function ResultLabel({ result }: { result: Connectivity["result"] }) {
   return <Label color="red" icon={<TimesCircleIcon />}>Problems found</Label>;
 }
 
-const SECTION_TITLES: Record<string, string> = { config: "Configuration", public_ip: "Public address" };
+const SECTION_TITLES: Record<string, string> = { run: "Check", config: "Configuration", public_ip: "Public address" };
 
 function ConnectivityResult({ c }: { c: Connectivity }) {
   return (

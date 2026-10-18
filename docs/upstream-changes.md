@@ -5,7 +5,8 @@ them in enough detail to implement later. asl-web-ui is designed on the
 assumption that they will be accepted. Until they ship, asl-web-ui uses the
 fallbacks described under each change.
 
-Status: none of these changes have been started.
+Status: change 1 is implemented and awaiting review and an asl3 beta
+package (2026-10-18). Changes 2 and 3 have not been started.
 
 ---
 
@@ -13,6 +14,13 @@ Status: none of these changes have been started.
 
 Repository: `AllStarLink/ASL3`, file `bin/asl-node-auth-check` (and its man page
 `bin/asl-node-auth-check.1.md`).
+
+**Status:** implemented on branch `anac-json` of `AllStarLink/ASL3` (commit
+`977927b`, 2026-10-18) together with the fix for ASL3 issue #207, which
+stopped indented `bindport` lines in iax.conf from being found. Not yet
+released in an asl3 package. What follows is the implemented design;
+where the implementation adds to or settles something the request left open,
+this section says so.
 
 ### Why
 
@@ -62,7 +70,11 @@ With `--json`, the script prints one JSON document on stdout and nothing else
 - `complete` is `false` when a section stopped early, for example after a
   registration failure.
 - `result` is the worst level found, or `"aborted"` if the run could not
-  continue.
+  continue. `info` ranks below `ok`, so a run with only `ok` and `info`
+  findings reports `"ok"`.
+- `data` is always present; it is `{}` when a finding has no values.
+- Sections are `run` (only when the run stops before the configuration
+  checks), `config`, `public_ip` and one `node` section per checked node.
 
 ### Finding ids
 
@@ -72,6 +84,7 @@ With `--json`, the script prints one JSON document on stdout and nothing else
 | `config.no_nodes` | NO NODE ARE CONFIGURED IN rpt.conf | — |
 | `config.private_node_skipped` | Skipping evaluation of private node N | `node` |
 | `config.include_missing` | Include target not found | `target`, `from` |
+| `config.file_unreadable` | Config file not found / Permission denied reading / Error reading | `file`, `reason` |
 | `config.registration_lines` | FILE contains N registration line(s) | `file`, `count` |
 | `config.registration_invalid` | Invalid registration >> … << in FILE | `file`, `value` |
 | `config.no_registrations` | NO VALID REGISTRATIONS EXIST … | — |
@@ -79,22 +92,39 @@ With `--json`, the script prints one JSON document on stdout and nothing else
 | `config.duplicate_registrations` | Duplicated HTTP and IAX registrations for: … | `nodes` |
 | `config.missing_registration` | No registration present for configured node(s): … | `nodes` |
 | `config.missing_configuration` | No configuration present for registrations for node(s): … | `nodes` |
+| `config.node_not_found` | Node N is not configured on this system (`--node` only) | `node` |
 | `public_ip.http_probe` | IP from URL reports: … / IP test to URL failed | `url`, `ip` (null on failure) |
 | `public_ip.iax_probe` | IP from HOST reports: … / IP test to HOST failed | `host`, `ip` (null on failure) |
 | `public_ip.http_consensus` | HTTP IP probes have / DO NOT have consensus | `ips` |
 | `public_ip.iax_consensus` | IAX IP probes have / DO NOT have consensus | `ips` |
+| `public_ip.http_iax_match` | HTTP and IAX probes perceive the same IP / different IPs, likely CGNAT (warning) / not compared, not both IPv4 (info). Only when both have consensus; ASL3 #198 | `http_ip`, `iax_ip` |
 | `node.well_formed` | Node registration config is well-formed / range or host errors | `node`, `reghost` |
 | `node.registration_type` | Node registration type is HTTP/IAX | `type` |
 | `node.regserver_reachable` | register.allstarlink.org is (un)reachable | — |
 | `node.registration_state` | HTTP/IAX registration state is … / no apparent attempt | `type`, `state` |
 | `node.perceived_address` | Perceived IAX IP:PORT for this node is … | `address` |
 | `node.registrar` | Registered to NAME - IP | `name`, `ip` |
+| `node.bindport_missing` | bindport does not appear to be set in iax.conf (info; 4569 is assumed) | `file` |
 | `node.udp_port` | Server-set UDP port matches / does not match bindport | `registered_port`, `bindport` |
 | `node.stats_unavailable` | No stats available / stats missing fields | `reason` |
 | `node.registered_recently` | Node registration within 10 minutes / not registered in last 10 minutes | `registered_at` |
 | `node.ip_last_changed` | Last time IP changed was … | `changed_at` |
 | `node.inbound_reachability` | Incoming connections to IAX … successful / failed / nodeping not responding / not tested | `status`, `rtt_ms` |
 | `node.checks_stopped` | Stopping node checks due to registration failure | — |
+| `run.permission_denied` | Access denied: script must run as root or asterisk | `user` |
+| `run.internal_error` | Unexpected error (`--json` only; the run is aborted) | `type` |
+
+Fixed values:
+
+- `config.file_unreadable` `reason`: `not_found`, `permission_denied`, `error`.
+- `node.stats_unavailable` `reason`: `no_stats`, `no_node`, `no_server`,
+  `no_udpport`, `no_registration_info`, `no_regseconds`. `no_stats` prints
+  as an error but counts as a warning in the text mode's per-node total.
+- `node.inbound_reachability` `status`: `ok`, `unreachable`,
+  `nodeping_unavailable`, `not_registered`, `unknown`. `rtt_ms` is null
+  unless `status` is `ok`.
+- `node.registration_state` `state` is null when there was no registration
+  attempt.
 
 ### Behavior changes (both modes)
 
@@ -129,7 +159,8 @@ With `--json`, the script prints one JSON document on stdout and nothing else
 ### Fallback until released
 
 asl-web-ui parses the text output into the same structure, keyed by message
-patterns. It detects support with `asl-node-auth-check --help`, looking for
+patterns, with the same ids and, where the text carries them, the same `data`
+fields (`reason` and `status` included). It detects support with `asl-node-auth-check --help`, looking for
 `--json`.
 
 ---
