@@ -18,3 +18,13 @@ def test_settings_from_file(tmp_path):
     ini = tmp_path / "asl-web-ui.ini"
     ini.write_text("[web]\nallow_insecure_http = yes\n[logging]\nlevel = DEBUG\n")
     assert config.load(ini) == config.Settings(allow_insecure_http=True, log_level="debug")
+
+
+def test_settings_from_conf_d(tmp_path):
+    ini = tmp_path / "asl-web-ui.ini"
+    ini.write_text("[logging]\nlevel = info\n")
+    (tmp_path / "conf.d").mkdir()
+    (tmp_path / "conf.d/10-a.ini").write_text("[logging]\nlevel = warning\n")
+    (tmp_path / "conf.d/20-b.ini").write_text("[logging]\nlevel = error\n")
+    (tmp_path / "conf.d/30-c.conf").write_text("[logging]\nlevel = debug\n")  # not *.ini
+    assert config.load(ini).log_level == "error"

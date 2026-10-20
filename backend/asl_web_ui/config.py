@@ -1,4 +1,6 @@
-"""Settings for asl-web-ui itself, read from /etc/asl-web-ui/asl-web-ui.ini."""
+"""Settings for asl-web-ui itself, read from /etc/asl-web-ui/asl-web-ui.ini
+and then /etc/asl-web-ui/conf.d/*.ini (in name order; later files win), where
+other packages put their settings."""
 
 import configparser
 from dataclasses import dataclass
@@ -41,9 +43,9 @@ class Settings:
 
 
 def load(path: Path = DEFAULT_PATH) -> Settings:
-    """Read settings; a missing file or missing keys fall back to defaults."""
+    """Read settings; missing files or missing keys fall back to defaults."""
     parser = configparser.ConfigParser(interpolation=None)
-    parser.read(path)  # silently ignores a missing file
+    parser.read([path, *sorted(path.parent.joinpath("conf.d").glob("*.ini"))])  # ignores missing files
     return Settings(
         allow_insecure_http=parser.getboolean("web", "allow_insecure_http", fallback=False),
         log_level=parser.get("logging", "level", fallback="info").lower(),

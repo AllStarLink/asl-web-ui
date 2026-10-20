@@ -1,0 +1,16 @@
+#!/usr/bin/python3 -I
+"""Move asl-web-ui's Let's Encrypt certificate between its own Apache site
+and the TLS snippet another package's site includes, to match the
+apache_vhosts setting (installed in /usr/libexec/asl-web-ui).
+
+Run as root by the asl-web-ui and asl3-appliance maintainer scripts.
+"--mode" prints the setting ("own" or "external").
+"""
+
+import sys
+
+sys.path.insert(0, "/usr/share/asl-web-ui/python")
+
+from asl_web_ui_priv.https import main  # noqa: E402
+
+main()
