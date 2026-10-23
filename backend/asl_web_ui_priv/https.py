@@ -1,12 +1,29 @@
 """HTTPS for Apache: a port 443 listener and Let's Encrypt certificates (issue #2).
 
-asl-web-ui owns one Apache site, sites-available/asl-web-ui-https.conf,
-for the names the certificate is for: a port 80 site (optionally
-redirecting to HTTPS, except Let's Encrypt's checks) and, once there is a
-certificate, a port 443 site using it. Both serve the same document root as
-Debian's default sites, so asl-web-ui, Allmon3 and anything else enabled
-globally work the same. Other sites (000-default, default-ssl, an
-appliance's own) are left alone; requests for other names still reach them.
+Who owns Apache's sites depends on "apache_vhosts" in the [https] section
+of asl-web-ui's settings (asl-web-ui.ini, then conf.d/*.ini):
+
+own (the default): asl-web-ui owns one Apache site,
+sites-available/asl-web-ui-https.conf, for the names the certificate is
+for: a port 80 site (optionally redirecting to HTTPS, except Let's
+Encrypt's checks) and, once there is a certificate, a port 443 site using
+it. Both serve the same document root as Debian's default sites, so
+asl-web-ui, Allmon3 and anything else enabled globally work the same.
+Other sites (000-default, default-ssl) are left alone; requests for other
+names still reach them.
+
+external: another package (the ASL3 appliance) owns the sites, and its
+port 443 site includes /etc/asl-web-ui/apache-tls.conf when it exists.
+asl-web-ui writes only that file, with the certificate; the redirect is
+the other package's business. Its port 80 site must be the default one
+(no ServerName), so that certbot finds it for the names.
+
+Either way the certificate's lines are guarded with <IfFile>: if the
+certificate disappears behind asl-web-ui's back (certbot delete), Apache
+falls back to the self-signed certificate instead of refusing to start.
+The lines include certbot's options-ssl-apache.conf, its recommended TLS
+settings. sync() moves the certificate between the two places when the
+setting changes (asl-web-ui-https-sync, run by the packages).
 
 certbot (python3-certbot-apache, from Debian) only obtains and renews the
 certificate ("certonly --apache"); it does not edit Apache's sites. Its
@@ -21,16 +38,23 @@ If Cockpit is installed, it gets the same certificate (issue #25): a copy in
 beside it), and a certbot deploy hook that copies each renewal there too.
 """
 
+import configparser
+import glob
 import json
 import os
 import re
 import subprocess
+import sys
 from collections.abc import Callable
 
 Output = Callable[[str], None]
 
 SITE = "asl-web-ui-https"
 APACHE = "/etc/apache2"
+SETTINGS = "/etc/asl-web-ui/asl-web-ui.ini"
+SETTINGS_D = "/etc/asl-web-ui/conf.d"
+TLS_SNIPPET = "/etc/asl-web-ui/apache-tls.conf"
+SNAKEOIL = ("/etc/ssl/certs/ssl-cert-snakeoil.pem", "/etc/ssl/private/ssl-cert-snakeoil.key")
 LETSENCRYPT = "/etc/letsencrypt"
 DOCUMENT_ROOT = "/var/www/html"
 PACKAGES = ["python3-certbot-apache"]  # pulls in certbot
@@ -125,24 +149,70 @@ def check_email(email) -> str | None:
 # ---- the managed site --------------------------------------------------------------------
 
 
+def vhosts_mode(root: str) -> str:
+    """"external" if another package owns Apache's sites, else "own"."""
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read([_rooted(root, SETTINGS), *sorted(glob.glob(os.path.join(_rooted(root, SETTINGS_D), "*.ini")))])
+    except configparser.Error:
+        return "own"
+    return "external" if parser.get("https", "apache_vhosts", fallback="own").strip().lower() == "external" else "own"
+
+
 def site_path(root: str) -> str:
     return os.path.join(root, APACHE.lstrip("/"), "sites-available", f"{SITE}.conf")
+
+
+def snippet_path(root: str) -> str:
+    return _rooted(root, TLS_SNIPPET)
 
 
 def site_enabled(root: str) -> bool:
     return os.path.lexists(os.path.join(root, APACHE.lstrip("/"), "sites-enabled", f"{SITE}.conf"))
 
 
-def read_site(root: str) -> dict | None:
-    """The settings asl-web-ui wrote into its site, or None."""
+def _read_mark(path: str) -> dict | None:
     try:
-        with open(site_path(root)) as f:
+        with open(path) as f:
             for line in f:
                 if line.startswith(MARK):
                     return json.loads(line[len(MARK):])
     except (OSError, ValueError):
         pass
     return None
+
+
+def read_site(root: str) -> dict | None:
+    """The settings asl-web-ui wrote into its site (own) or TLS snippet (external), or None."""
+    return _read_mark(snippet_path(root) if vhosts_mode(root) == "external" else site_path(root))
+
+
+def render_tls(cert: str) -> list[str]:
+    """The certificate lines for a port 443 site: Let's Encrypt's certificate
+    while it exists, else the self-signed one, so Apache still starts."""
+    live = f"{LETSENCRYPT}/live/{cert}"
+    return [
+        f"<IfFile {live}/fullchain.pem>",
+        f"    SSLCertificateFile {live}/fullchain.pem",
+        f"    SSLCertificateKeyFile {live}/privkey.pem",
+        f"    Include {LETSENCRYPT}/options-ssl-apache.conf",
+        "</IfFile>",
+        f"<IfFile !{live}/fullchain.pem>",
+        f"    SSLCertificateFile {SNAKEOIL[0]}",
+        f"    SSLCertificateKeyFile {SNAKEOIL[1]}",
+        "</IfFile>",
+    ]
+
+
+def render_snippet(names: list[str], cert: str) -> str:
+    settings = {"domains": names, "redirect": False, "cert": cert}
+    return "\n".join([
+        "# The Let's Encrypt certificate for this system's port 443 site, which includes this",
+        "# file. Written by asl-web-ui (its HTTPS page); changes made here are replaced.",
+        MARK + json.dumps(settings),
+        "",
+        *render_tls(cert),
+    ]) + "\n"
 
 
 def render_site(names: list[str], redirect: bool, cert: str | None) -> str:
@@ -169,16 +239,13 @@ def render_site(names: list[str], redirect: bool, cert: str | None) -> str:
         ]
     lines.append("</VirtualHost>")
     if cert:
-        live = f"{LETSENCRYPT}/live/{cert}"
         lines += [
             "",
             "<IfModule ssl_module>",
             "<VirtualHost *:443>",
             *head,
             "    SSLEngine on",
-            f"    SSLCertificateFile {live}/fullchain.pem",
-            f"    SSLCertificateKeyFile {live}/privkey.pem",
-            f"    Include {LETSENCRYPT}/options-ssl-apache.conf",
+            *("    " + line for line in render_tls(cert)),
             "</VirtualHost>",
             "</IfModule>",
         ]
@@ -188,30 +255,42 @@ def render_site(names: list[str], redirect: bool, cert: str | None) -> str:
 class ApacheChange:
     """Change Apache's configuration and reload it, or put everything back.
 
-    Records the site file's old content and which modules and sites were
-    enabled here, so a failed configtest (or a failure afterwards) restores
-    the previous state exactly."""
+    Records the old content of each file written or removed here, and which
+    modules and sites were enabled here, so a failed configtest (or a
+    failure afterwards) restores the previous state exactly."""
 
     def __init__(self, root: str, output: Output):
         self.root = root
         self.output = output
-        self.path = site_path(root)
-        try:
-            with open(self.path, "rb") as f:
-                self.old_site: bytes | None = f.read()
-        except FileNotFoundError:
-            self.old_site = None
+        self.old_files: dict[str, bytes | None] = {}
         self.was_enabled = site_enabled(root)
         self.enabled_mods: list[str] = []
         self.enabled_sites: list[str] = []
 
-    def write_site(self, text: str) -> None:
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        tmp = self.path + ".tmp"
+    def _remember(self, path: str) -> None:
+        if path not in self.old_files:
+            try:
+                with open(path, "rb") as f:
+                    self.old_files[path] = f.read()
+            except FileNotFoundError:
+                self.old_files[path] = None
+
+    def write_file(self, path: str, text: str) -> None:
+        self._remember(path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
         with open(tmp, "w") as f:
             f.write(text)
         os.chmod(tmp, 0o644)
-        os.replace(tmp, self.path)
+        os.replace(tmp, path)
+
+    def remove_file(self, path: str) -> None:
+        self._remember(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+    def write_site(self, text: str) -> None:
+        self.write_file(site_path(self.root), text)
 
     def enable_mod(self, mod: str) -> None:
         if not os.path.exists(os.path.join(self.root, APACHE.lstrip("/"), "mods-enabled", f"{mod}.load")):
@@ -234,7 +313,9 @@ class ApacheChange:
         if code != 0:
             self.undo()
             raise HttpsError(f"Apache rejected the new configuration, so it was put back: {text[-500:]}")
-        run("systemctl", "reload", "apache2", check=True)
+        # Not running (e.g. during a package installation that restarted it
+        # too often): nothing to reload, it starts with the new configuration.
+        run("systemctl", "try-reload-or-restart", "apache2", check=True)
         self.output("Apache reloaded.")
 
     def undo(self) -> None:
@@ -242,12 +323,13 @@ class ApacheChange:
             run("a2dissite", "-q", site)
         for mod in self.enabled_mods:
             run("a2dismod", "-q", "-f", mod)
-        if self.old_site is None:
-            if os.path.exists(self.path):
-                os.unlink(self.path)
-        else:
-            with open(self.path, "wb") as f:
-                f.write(self.old_site)
+        for path, old in self.old_files.items():
+            if old is None:
+                if os.path.exists(path):
+                    os.unlink(path)
+            else:
+                with open(path, "wb") as f:
+                    f.write(old)
         if self.was_enabled and not site_enabled(self.root):
             run("a2ensite", "-q", SITE)
         elif not self.was_enabled and site_enabled(self.root):
@@ -435,7 +517,7 @@ def renewal(root: str, cert: str) -> dict | None:
 
 def status(root: str = "/") -> dict:
     apache = os.path.exists(os.path.join(root, APACHE.lstrip("/"), "apache2.conf"))
-    out: dict = {"apache": apache, "packages": _installed(PACKAGES[0])}
+    out: dict = {"apache": apache, "packages": _installed(PACKAGES[0]), "vhosts": vhosts_mode(root)}
     if not apache:
         return out
     code, text = run("apache2ctl", "-S")
@@ -444,7 +526,7 @@ def status(root: str = "/") -> dict:
     out["timer"] = active.strip()
     site = read_site(root)
     out["site"] = site
-    out["site_enabled"] = site_enabled(root)
+    out["site_enabled"] = os.path.exists(snippet_path(root)) if out["vhosts"] == "external" else site_enabled(root)
     name = site["domains"][0] if site else None
     out["served"] = served_certificate(name) if out["listening_443"] else None
     if site and site.get("cert"):
@@ -469,6 +551,9 @@ def install_packages(output: Output) -> dict:
 def enable_listener(root: str, output: Output) -> dict:
     """Make Apache listen for HTTPS on port 443 with the self-signed certificate
     (Debian's default-ssl site), if nothing serves port 443 yet."""
+    if vhosts_mode(root) == "external":
+        output("This system's web server configuration provides the HTTPS site; asl-web-ui leaves it alone.")
+        return {"changed": False}
     code, text = run("apache2ctl", "-S")
     if re.search(r"^\*?[^\s]*:443\s", text, re.M):
         output("Apache already serves HTTPS on port 443.")
@@ -528,7 +613,8 @@ def obtain(root: str, args: dict, output: Output) -> dict:
     if args.get("agree_tos") is not True:
         raise HttpsError("Agree to the Let's Encrypt subscriber agreement first.", "invalid", "agree_tos")
     staging = bool(args.get("staging"))
-    redirect = bool(args.get("redirect"))
+    external = vhosts_mode(root) == "external"
+    redirect = bool(args.get("redirect")) and not external
     if not os.path.exists(BIN["certbot"]):
         raise HttpsError("certbot is not installed. Install it first.", "unavailable")
     old = read_site(root)
@@ -538,24 +624,28 @@ def obtain(root: str, args: dict, output: Output) -> dict:
     # even though the current one is not due for renewal yet.
     force = existing is not None and existing["staging"] != staging
 
-    # 1. A port 80 site for the names, so that certbot finds them.
+    # 1. A port 80 site for the names, so that certbot finds them. With
+    # external sites, certbot uses their default port 80 site.
     change = ApacheChange(root, output)
-    try:
-        if redirect:
-            change.enable_mod("rewrite")
-        change.write_site(render_site(names, redirect, old.get("cert") if old and old.get("domains") == names else None))
-        change.enable_site(SITE)
-        change.apply()
-    except HttpsError:
-        change.undo()
-        raise
+    if not external:
+        try:
+            if redirect:
+                change.enable_mod("rewrite")
+            change.write_site(render_site(names, redirect,
+                                          old.get("cert") if old and old.get("domains") == names else None))
+            change.enable_site(SITE)
+            change.apply()
+        except HttpsError:
+            change.undo()
+            raise
 
     # 2. The certificate.
     output("# certbot " + " ".join(_certbot_args(names, email, staging, force)))
     code, text = run("certbot", *_certbot_args(names, email, staging, force), output=output, timeout=600)
     if code != 0:
-        change.undo()
-        change.apply()
+        if not external:
+            change.undo()
+            change.apply()
         problems = ca_problems(text)
         raise HttpsError("certbot could not get the certificate; Apache is as it was. " + (
             "Let's Encrypt reported: " + "; ".join(problems) if problems else
@@ -565,7 +655,10 @@ def obtain(root: str, args: dict, output: Output) -> dict:
     final = ApacheChange(root, output)
     try:
         final.enable_mod("ssl")
-        final.write_site(render_site(names, redirect, cert))
+        if external:
+            final.write_file(snippet_path(root), render_snippet(names, cert))
+        else:
+            final.write_site(render_site(names, redirect, cert))
         final.apply()
     except HttpsError:
         final.undo()
@@ -583,6 +676,8 @@ def obtain(root: str, args: dict, output: Output) -> dict:
 
 
 def set_redirect(root: str, redirect: bool, output: Output) -> dict:
+    if vhosts_mode(root) == "external":
+        raise HttpsError("The HTTP to HTTPS redirect is part of this system's web server configuration.", "invalid")
     site = read_site(root)
     if not site:
         raise HttpsError("There is no Let's Encrypt site yet.", "not_found")
@@ -618,17 +713,74 @@ def renew_test(root: str, output: Output) -> dict:
 
 def remove(root: str, delete_certificate: bool, output: Output) -> dict:
     site = read_site(root)
+    external = vhosts_mode(root) == "external"
     change = ApacheChange(root, output)
     try:
-        change.disable_site(SITE)
-        if os.path.exists(change.path):
-            os.unlink(change.path)
+        if external:
+            change.remove_file(snippet_path(root))
+        else:
+            change.disable_site(SITE)
+            change.remove_file(site_path(root))
         change.apply()
     except HttpsError:
         change.undo()
         raise
-    output("Removed asl-web-ui's HTTPS site; the other Apache sites are unchanged.")
+    output("Apache uses the self-signed certificate again." if external else
+           "Removed asl-web-ui's HTTPS site; the other Apache sites are unchanged.")
     stop_cockpit(root, output)
     if delete_certificate and site and site.get("cert"):
         run("certbot", "delete", "--non-interactive", "--cert-name", site["cert"], output=output)
     return {"removed": True}
+
+
+# ---- switching between own and external sites ---------------------------------------------
+
+
+def sync(root: str, output: Output) -> dict:
+    """Put the certificate where the current setting wants it: from
+    asl-web-ui's own site into the TLS snippet (external), or back (own).
+    Run by the packages when the setting may have changed."""
+    if not os.path.exists(os.path.join(root, APACHE.lstrip("/"), "apache2.conf")):
+        return {"changed": False}
+    external = vhosts_mode(root) == "external"
+    site, snippet = site_path(root), snippet_path(root)
+    change = ApacheChange(root, output)
+    try:
+        if external and os.path.exists(site):
+            settings = _read_mark(site)
+            if settings and settings.get("cert"):
+                change.enable_mod("ssl")
+                change.write_file(snippet, render_snippet(settings["domains"], settings["cert"]))
+            change.disable_site(SITE)
+            change.remove_file(site)
+            change.apply()
+            output(f"Moved the Let's Encrypt certificate from {site_path('/')} to {TLS_SNIPPET}."
+                   if settings and settings.get("cert") else f"Removed {site_path('/')}.")
+        elif not external and os.path.exists(snippet):
+            settings = _read_mark(snippet)
+            if settings and settings.get("cert"):
+                change.enable_mod("ssl")
+                change.write_site(render_site(settings["domains"], False, settings["cert"]))
+                change.enable_site(SITE)
+            change.remove_file(snippet)
+            change.apply()
+            output(f"Moved the Let's Encrypt certificate from {TLS_SNIPPET} to {site_path('/')}."
+                   if settings and settings.get("cert") else f"Removed {TLS_SNIPPET}.")
+        else:
+            return {"changed": False}
+    except HttpsError:
+        change.undo()
+        raise
+    return {"changed": True}
+
+
+def main() -> None:
+    """asl-web-ui-https-sync [--mode]: sync(), or print the current setting."""
+    if sys.argv[1:] == ["--mode"]:
+        print(vhosts_mode("/"))
+        return
+    try:
+        sync("/", print)
+    except HttpsError as exc:
+        print(f"asl-web-ui-https-sync: {exc.message}", file=sys.stderr)
+        sys.exit(1)

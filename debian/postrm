@@ -15,6 +15,7 @@ case "$1" in
 		;;
 	purge)
 		rm -rf /var/lib/asl-web-ui
+		rm -f /etc/asl-web-ui/apache-tls.conf
 		;;
 	upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
 		;;

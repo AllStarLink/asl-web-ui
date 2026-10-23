@@ -141,7 +141,8 @@ export function HttpsPage() {
     setNotice(null);
     try {
       if (await withReauth(() => removeHttps(deleteCert))) {
-        setNotice({ variant: "success", text: "The Let's Encrypt site is removed; Apache uses its other sites again." });
+        setNotice({ variant: "success", text: status?.vhosts === "external" ? "Apache uses its self-signed certificate again."
+          : "The Let's Encrypt site is removed; Apache uses its other sites again." });
         setNames("");
         await load();
       }
@@ -181,6 +182,7 @@ export function HttpsPage() {
   }
 
   const site = status.site;
+  const external = status.vhosts === "external";
   const fieldProblem = (f: string) => (fieldError?.field === f ? fieldError.text : null);
   return (
     <>
@@ -197,7 +199,7 @@ export function HttpsPage() {
                   <DescriptionListTerm>HTTPS (port 443)</DescriptionListTerm>
                   <DescriptionListDescription>
                     {status.listening_443 ? <Label color="green">On</Label> : <Label color="orange">Off</Label>}
-                    {!status.listening_443 && (
+                    {!status.listening_443 && !external && (
                       <Button variant="link" isInline onClick={() => job("Enable HTTPS on port 443", enableListener,
                         "Apache now serves HTTPS with its self-signed certificate.")}>
                         {" "}Turn on with a self-signed certificate
@@ -285,8 +287,10 @@ export function HttpsPage() {
                 <Checkbox id="https-staging" label="Test certificate first" isChecked={staging}
                           onChange={(_e, v) => setStaging(v)}
                           description="Not trusted by browsers, but without Let's Encrypt's limits on repeated requests. Recommended until it works." />
-                <Checkbox id="https-redirect" label="Send HTTP visitors to HTTPS" isChecked={redirect}
-                          onChange={(_e, v) => setRedirectWanted(v)} />
+                {!external && (
+                  <Checkbox id="https-redirect" label="Send HTTP visitors to HTTPS" isChecked={redirect}
+                            onChange={(_e, v) => setRedirectWanted(v)} />
+                )}
                 <Checkbox id="https-agree" isChecked={agree} onChange={(_e, v) => setAgree(v)}
                           label={<>I agree to the <a href={AGREEMENT} target="_blank" rel="noopener">Let's Encrypt subscriber agreement</a></>} />
                 {fieldProblem("agree_tos") && <Alert variant="danger" isInline isPlain title={fieldProblem("agree_tos")} />}
@@ -305,8 +309,10 @@ export function HttpsPage() {
               <CardTitle>Settings</CardTitle>
               <CardBody>
                 <div className="asl-stack">
-                  <Switch id="https-redirect-now" label={`Send HTTP visitors of ${site.domains.join(", ")} to HTTPS`}
-                          isChecked={site.redirect} onChange={(_e, v) => void toggleRedirect(v)} isDisabled={!site.cert} />
+                  {!external && (
+                    <Switch id="https-redirect-now" label={`Send HTTP visitors of ${site.domains.join(", ")} to HTTPS`}
+                            isChecked={site.redirect} onChange={(_e, v) => void toggleRedirect(v)} isDisabled={!site.cert} />
+                  )}
                   <div className="asl-buttons">
                     <Button variant="secondary" isDisabled={!site.cert}
                             onClick={() => job("Test the certificate renewal", renewTest, "The renewal test succeeded.")}>
@@ -317,9 +323,21 @@ export function HttpsPage() {
                     </Button>
                   </div>
                   <Content component="p" className="asl-sub">
-                    asl-web-ui keeps these settings in <code>/etc/apache2/sites-available/asl-web-ui-https.conf</code>;
-                    Apache's other sites are not changed. If Cockpit is installed, it gets a copy of the certificate in{" "}
-                    <code>/etc/cockpit/ws-certs.d</code>, renewed with it.
+                    {external ? (
+                      <>
+                        This system's web server configuration provides Apache's sites and sends HTTP visitors to
+                        HTTPS; asl-web-ui gives its HTTPS site the certificate in{" "}
+                        <code>/etc/asl-web-ui/apache-tls.conf</code>.
+                      </>
+                    ) : (
+                      <>
+                        asl-web-ui keeps these settings in{" "}
+                        <code>/etc/apache2/sites-available/asl-web-ui-https.conf</code>; Apache's other sites are not
+                        changed.
+                      </>
+                    )}{" "}
+                    If Cockpit is installed, it gets a copy of the certificate in <code>/etc/cockpit/ws-certs.d</code>,
+                    renewed with it.
                   </Content>
                 </div>
               </CardBody>
@@ -332,8 +350,8 @@ export function HttpsPage() {
         <ModalBody>
           <div className="asl-stack">
             <Content component="p">
-              asl-web-ui's Apache site is removed. Visitors get Apache's other sites again (often a self-signed
-              certificate), and Cockpit its own certificate.
+              {external ? "Apache's HTTPS site goes back to its self-signed certificate, and Cockpit to its own."
+                : "asl-web-ui's Apache site is removed. Visitors get Apache's other sites again (often a self-signed certificate), and Cockpit its own certificate."}
             </Content>
             <Checkbox id="https-delete-cert" label="Also delete the certificate and stop renewing it"
                       isChecked={deleteCert} onChange={(_e, v) => setDeleteCert(v)} />

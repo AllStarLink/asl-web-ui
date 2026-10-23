@@ -70,8 +70,10 @@ allowed for the **asterisk** user by the polkit rule below.
   */etc/polkit-1/rules.d/* that returns **polkit.Result.NO**.
 
 # FILES
-*/etc/asl-web-ui/asl-web-ui.ini*
-: Settings for asl-web-ui. Restart the service after changing it.
+*/etc/asl-web-ui/asl-web-ui.ini*, */etc/asl-web-ui/conf.d/\*.ini*
+: Settings for asl-web-ui: the main file, then each file in *conf.d* in name
+  order (later files win). Other packages put their settings in *conf.d*.
+  Restart the service after changing them.
 
 */etc/apache2/conf-available/asl-web-ui.conf*
 : Apache configuration, enabled with **a2enconf asl-web-ui**.
@@ -88,7 +90,19 @@ allowed for the **asterisk** user by the polkit rule below.
 : Written by the HTTPS page for the names of the Let's Encrypt certificate
   (port 80 site with the optional redirect, port 443 site with the
   certificate). The certificate itself is managed by **certbot**(1) in
-  */etc/letsencrypt*.
+  */etc/letsencrypt*. Not used when **apache_vhosts** is **external**.
+
+*/etc/asl-web-ui/apache-tls.conf*
+: With **apache_vhosts = external** in the **[https]** section of the
+  settings, another package (the ASL3 appliance) owns Apache's sites, and
+  its port 443 site includes this file. The HTTPS page writes only this
+  file: the Let's Encrypt certificate and certbot's
+  */etc/letsencrypt/options-ssl-apache.conf*, or the self-signed certificate
+  if the Let's Encrypt one is gone. The other package's port 80 site must
+  be the default one and provides the redirect to HTTPS.
+  **/usr/libexec/asl-web-ui/asl-web-ui-https-sync**, run by the packages,
+  moves the certificate between this file and *asl-web-ui-https.conf* when
+  the setting changes.
 
 */etc/sa818.conf*
 : The SA818 radio module's settings, shared with **sa818-menu**(1) (same

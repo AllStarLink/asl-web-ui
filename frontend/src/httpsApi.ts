@@ -13,6 +13,9 @@ export type CertInfo = {
 export type HttpsStatus = {
   apache: boolean;
   packages: boolean;
+  // "external": another package (the ASL3 appliance) owns Apache's sites and the HTTP redirect;
+  // asl-web-ui only supplies the certificate, in /etc/asl-web-ui/apache-tls.conf.
+  vhosts?: "own" | "external";
   listening_443?: boolean;
   timer?: string;
   site?: { domains: string[]; redirect: boolean; cert: string | null } | null;

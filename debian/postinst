@@ -10,8 +10,10 @@ fi
 # The web UI refuses logins over plain HTTP, so without HTTPS it cannot be
 # used at all (not even to set HTTPS up). If nothing serves port 443, enable
 # Debian's default-ssl site with the self-signed certificate. apache2_invoke
-# leaves alone a module or site the admin disabled.
+# leaves alone a module or site the admin disabled. Not when another package
+# (the ASL3 appliance) owns Apache's sites: it provides port 443 itself.
 enable_https() {
+	[ "$(/usr/libexec/asl-web-ui/asl-web-ui-https-sync --mode)" = own ] || return 0
 	command -v ss >/dev/null || return 0
 	[ -z "$(ss -Hltn 'sport = :443' 2>/dev/null)" ] || return 0
 	! apache2ctl -S 2>/dev/null | grep -Eq '^\*?[^[:space:]]*:443[[:space:]]' || return 0
@@ -43,6 +45,11 @@ do_configure() {
 		apache2_invoke enmod proxy_http || exit $?
 		apache2_invoke enmod headers || exit $?
 		apache2_invoke enconf asl-web-ui || exit $?
+		# Put a Let's Encrypt certificate where the apache_vhosts setting
+		# wants it (asl-web-ui's own site, or the snippet another package's
+		# site includes).
+		/usr/libexec/asl-web-ui/asl-web-ui-https-sync ||
+			echo "asl-web-ui: could not update the HTTPS configuration; see the HTTPS page." >&2
 		enable_https
 	fi
 

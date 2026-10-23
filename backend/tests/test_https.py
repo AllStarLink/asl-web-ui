@@ -92,7 +92,7 @@ async def test_enable_listener(web):
     assert job["ok"] and job["result"]["changed"], job
     assert (web.root / "etc/apache2/sites-enabled/default-ssl.conf").exists()
     assert (web.root / "etc/apache2/mods-enabled/ssl.load").is_symlink()
-    assert "systemctl reload apache2" in web.calls.read_text()
+    assert "systemctl try-reload-or-restart apache2" in web.calls.read_text()
     job = await a.job("POST", "https/listener")
     assert job["result"]["changed"] is False  # already listening
 
@@ -105,6 +105,11 @@ async def test_obtain_certificate_and_site(web):
     assert "ServerName node.example.org\n    ServerAlias hub.example.org" in site
     assert "RewriteCond %{REQUEST_URI} !^/\\.well-known/acme-challenge/" in site
     assert "SSLCertificateFile /etc/letsencrypt/live/node.example.org/fullchain.pem" in site
+    assert "Include /etc/letsencrypt/options-ssl-apache.conf" in site
+    # Guarded: a certificate deleted behind asl-web-ui's back must not stop Apache.
+    assert "<IfFile !/etc/letsencrypt/live/node.example.org/fullchain.pem>" in site
+    assert "SSLCertificateFile /etc/ssl/certs/ssl-cert-snakeoil.pem" in site
+    assert not (web.root / "etc/asl-web-ui/apache-tls.conf").exists()
     assert web.enabled.exists() and (web.root / "etc/apache2/mods-enabled/rewrite.load").exists()
     certbot = next(line for line in web.calls.read_text().splitlines() if line.startswith("certbot certonly"))
     assert certbot == ("certbot certonly --apache --non-interactive --agree-tos --cert-name node.example.org "
@@ -255,3 +260,124 @@ async def test_cockpit_without_certificate(web):
     a = await web.make()
     status_, body = await a.call("POST", "https/cockpit")
     assert status_ == 404 and body["error"] == "not_found"
+
+
+# ---- external sites (the ASL3 appliance owns Apache's sites) ------------------------------
+
+
+def external(web, on=True):
+    dropin = web.root / "etc/asl-web-ui/conf.d/asl3-appliance.ini"
+    if on:
+        dropin.parent.mkdir(parents=True, exist_ok=True)
+        dropin.write_text("[https]\napache_vhosts = external\n")
+    else:
+        dropin.unlink()
+
+
+def test_vhosts_mode(web):
+    assert https.vhosts_mode(str(web.root)) == "own"
+    external(web)
+    assert https.vhosts_mode(str(web.root)) == "external"
+    (web.root / "etc/asl-web-ui/conf.d/zz-admin.ini").write_text("[https]\napache_vhosts = own\n")
+    assert https.vhosts_mode(str(web.root)) == "own"  # later files win
+    (web.root / "etc/asl-web-ui/conf.d/zz-admin.ini").write_text("[https]\napache_vhosts = nonsense\n")
+    assert https.vhosts_mode(str(web.root)) == "own"
+    (web.root / "etc/asl-web-ui/conf.d/zz-admin.ini").write_text("not an ini file\n")
+    assert https.vhosts_mode(str(web.root)) == "own"
+
+
+async def test_external_obtain_writes_only_the_snippet(web):
+    external(web)
+    a = await web.make()
+    job = await a.job("POST", "https/certificate", ORDER)
+    assert job["ok"], job
+    assert not web.site.exists() and not web.enabled.exists()
+    assert not (web.root / "etc/apache2/mods-enabled/rewrite.load").exists()  # no redirect of ours
+    assert (web.root / "etc/apache2/mods-enabled/ssl.load").exists()
+    snippet = (web.root / "etc/asl-web-ui/apache-tls.conf").read_text()
+    assert "<VirtualHost" not in snippet
+    assert ("<IfFile /etc/letsencrypt/live/node.example.org/fullchain.pem>\n"
+            "    SSLCertificateFile /etc/letsencrypt/live/node.example.org/fullchain.pem\n"
+            "    SSLCertificateKeyFile /etc/letsencrypt/live/node.example.org/privkey.pem\n"
+            "    Include /etc/letsencrypt/options-ssl-apache.conf\n"
+            "</IfFile>\n"
+            "<IfFile !/etc/letsencrypt/live/node.example.org/fullchain.pem>\n"
+            "    SSLCertificateFile /etc/ssl/certs/ssl-cert-snakeoil.pem\n"
+            "    SSLCertificateKeyFile /etc/ssl/private/ssl-cert-snakeoil.key\n"
+            "</IfFile>\n") in snippet
+    certbot = next(line for line in web.calls.read_text().splitlines() if line.startswith("certbot certonly"))
+    assert certbot.startswith("certbot certonly --apache ")
+    _, body = await a.call("GET", "https")
+    assert body["vhosts"] == "external" and body["site_enabled"] is True
+    assert body["site"] == {"domains": ["node.example.org", "hub.example.org"], "redirect": False,
+                            "cert": "node.example.org"}
+
+
+async def test_external_certbot_failure_leaves_apache_alone(web):
+    external(web)
+    (web.root / "certbot-fails").touch()
+    a = await web.make()
+    job = await a.job("POST", "https/certificate", ORDER)
+    assert not job["ok"] and "Apache is as it was" in job["error"]
+    assert not (web.root / "etc/asl-web-ui/apache-tls.conf").exists() and not web.site.exists()
+    assert "systemctl try-reload-or-restart apache2" not in web.calls.read_text()
+
+
+async def test_external_no_redirect_or_listener(web):
+    external(web)
+    a = await web.make()
+    await a.job("POST", "https/certificate", ORDER)
+    status_, body = await a.call("PUT", "https/redirect", {"redirect": True})
+    assert status_ == 400 and "web server configuration" in body["message"]
+    job = await a.job("POST", "https/listener")
+    assert job["ok"] and job["result"]["changed"] is False
+    assert not (web.root / "etc/apache2/sites-enabled/default-ssl.conf").exists()
+
+
+async def test_external_remove(web):
+    external(web)
+    a = await web.make()
+    await a.job("POST", "https/certificate", ORDER)
+    status_, _ = await a.call("DELETE", "https")
+    assert status_ == 200 and not (web.root / "etc/asl-web-ui/apache-tls.conf").exists()
+    _, body = await a.call("GET", "https")
+    assert body["site"] is None and body["site_enabled"] is False
+
+
+async def test_sync_moves_the_certificate_both_ways(web):
+    a = await web.make()
+    await a.job("POST", "https/certificate", ORDER)
+    root = str(web.root)
+    snippet = web.root / "etc/asl-web-ui/apache-tls.conf"
+    assert https.sync(root, print) == {"changed": False}  # own, already in the site
+
+    external(web)  # the appliance is installed
+    assert https.sync(root, print) == {"changed": True}
+    assert not web.site.exists() and not web.enabled.exists()
+    assert "SSLCertificateFile /etc/letsencrypt/live/node.example.org/fullchain.pem" in snippet.read_text()
+    assert https.read_site(root) == {"domains": ["node.example.org", "hub.example.org"], "redirect": False,
+                                     "cert": "node.example.org"}
+    assert https.sync(root, print) == {"changed": False}
+
+    external(web, on=False)  # the appliance is purged
+    assert https.sync(root, print) == {"changed": True}
+    assert not snippet.exists() and web.enabled.exists()
+    site = web.site.read_text()
+    assert "<VirtualHost *:443>" in site and "RewriteRule" not in site
+    assert https.read_site(root)["cert"] == "node.example.org"
+
+
+async def test_sync_configtest_failure_puts_apache_back(web):
+    a = await web.make()
+    await a.job("POST", "https/certificate", ORDER)
+    before = web.site.read_text()
+    external(web)
+    (web.root / "configtest-fails").touch()
+    with pytest.raises(https.HttpsError, match="put back"):
+        https.sync(str(web.root), print)
+    assert web.site.read_text() == before and web.enabled.exists()
+    assert not (web.root / "etc/asl-web-ui/apache-tls.conf").exists()
+
+
+def test_sync_without_apache(tmp_path):
+    assert https.sync(str(tmp_path), print) == {"changed": False}
