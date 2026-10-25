@@ -140,8 +140,80 @@ function Help({ problem, hint }: { problem?: string; hint?: ReactNode }) {
   );
 }
 
-function General({ node, list, status, draft, set, problems }: {
+const REGISTRATION_NAMES = { http: "HTTP (default)", iax: "IAX", both: "HTTP and IAX" };
+
+// Switching between HTTP and IAX registration, which applies to every node on
+// the server (https://allstarlink.github.io/adv-topics/iaxreg/).
+function RegistrationMethod({ node, list, dirty, change }: {
+  node: NodeDetail; list: NodeList; dirty: boolean; change: (method: "http" | "iax") => Promise<unknown>;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const to = node.registration === "http" ? "iax" : "http";
+  const others = list.nodes.filter((n) => !n.private && n.number !== node.number).map((n) => n.number);
+
+  const confirm = async () => {
+    setError(null);
+    try {
+      if (await change(to)) setAsking(false);
+    } catch (err) {
+      setError(message(err));
+    }
+  };
+
+  return (
+    <FormGroup label="Registration method" fieldId="node-registration-method">
+      <div id="node-registration-method" className="asl-stack">
+        <div>
+          {node.registration ? <b>{REGISTRATION_NAMES[node.registration]}</b> : "None"}{" "}
+          {!asking && node.registration && (
+            <Button variant="link" isInline isDisabled={dirty} onClick={() => setAsking(true)}>
+              {to === "iax" ? "Switch to IAX registration" : "Switch to HTTP registration"}
+            </Button>
+          )}
+        </div>
+        {node.registration === "both" && !asking && (
+          <Alert variant="warning" isInline isPlain title="This node registers twice, with HTTP and with IAX">
+            Switch to HTTP registration to remove the duplicate.
+          </Alert>
+        )}
+        {dirty && !asking && node.registration && <Help hint="Save or discard your other changes first." />}
+        {asking && (
+          <Alert variant={to === "iax" ? "warning" : "info"} isInline
+                 title={to === "iax" ? "Only switch to IAX registration if HTTP registration does not work"
+                   : "Switch back to HTTP registration"}>
+            {to === "iax" ? (
+              <Content component="p">
+                Almost every node should use HTTP registration. IAX registration puts much more load on the
+                AllStarLink servers and is only for nodes where HTTP registration fails: outbound HTTP is blocked
+                but UDP works, or a mobile hotspot makes AllStarLink see the wrong address. If you are not sure,
+                do not change it. See <a href="https://allstarlink.github.io/adv-topics/iaxreg/" target="_blank"
+                rel="noreferrer">IAX Registration</a>.
+              </Content>
+            ) : (
+              <Content component="p">HTTP registration is the default and recommended method.</Content>
+            )}
+            <Content component="p">
+              This applies to every node on this server{others.length > 0 && <> (also {others.join(", ")})</>} and
+              restarts Asterisk, which disconnects all links.
+            </Content>
+            {error && <Alert variant="danger" isInline isPlain title={error} />}
+            <ActionGroup>
+              <Button variant={to === "iax" ? "warning" : "primary"} onClick={confirm}>
+                {to === "iax" ? "Switch to IAX registration" : "Switch to HTTP registration"}
+              </Button>
+              <Button variant="link" onClick={() => { setAsking(false); setError(null); }}>Cancel</Button>
+            </ActionGroup>
+          </Alert>
+        )}
+      </div>
+    </FormGroup>
+  );
+}
+
+function General({ node, list, status, draft, set, problems, dirty, changeRegistration }: {
   node: NodeDetail; list: NodeList; status: Status | null; draft: Draft; set: SetDraft; problems: Problems;
+  dirty: boolean; changeRegistration: (method: "http" | "iax") => Promise<unknown>;
 }) {
   const running = status?.nodes.find((n) => n.node === node.number);
   const st = node.startup;
@@ -172,6 +244,7 @@ function General({ node, list, status, draft, set, problems }: {
               <Help problem={problems.password} hint="From allstarlink.org: Portal, Node Settings." />
             </FormGroup>
           )}
+          {!node.private && <RegistrationMethod node={node} list={list} dirty={dirty} change={changeRegistration} />}
           <FormGroup label="Call sign" fieldId="node-callsign">
             <PlainTextInput id="node-callsign" value={draft.callsign} onChange={(_e, v) => set({ callsign: v.toUpperCase() })}
                             validated={problems.callsign ? "error" : "default"} autoComplete="off" />
@@ -625,7 +698,8 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
         {node && list && draft && (
           <>
             {active === "general" && (
-              <General node={node} list={list} status={status} draft={draft} set={set} problems={pending.problems} />
+              <General node={node} list={list} status={status} draft={draft} set={set} problems={pending.problems}
+                       dirty={dirty} changeRegistration={(method) => now("registration", { method })} />
             )}
             {active === "interface" && <Interface node={node} list={list} draft={draft} set={set} />}
             {active === "tuning" && <Tuning node={node} status={status} />}

@@ -21,6 +21,8 @@ export type NodeInfo = {
   interface: string | null;
   password_set: boolean;
   registered: boolean;
+  // How the node registers with AllStarLink ("both" is a duplicate to fix).
+  registration: "http" | "iax" | "both" | null;
   nodes_entry: string | null;
   channel_templates: string[] | null;
   references: Record<string, Reference>;
