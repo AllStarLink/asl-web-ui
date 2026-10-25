@@ -49,7 +49,8 @@ rxchannel = SimpleUSB/1999      ; SimpleUSB
 """,
     "rpt_http_registrations.conf": "[general]\n\n[registrations]\nregister => 1234:abcdef@register.allstarlink.org\n",
     "iax.conf": "[general]\n;register => 1999:12345@register.allstarlink.org\nbindport = 4569\n",
-    "modules.conf": "[modules]\nautoload = no\nload = chan_simpleusb.so\nnoload = chan_usbradio.so\n",
+    "modules.conf": "[modules]\nautoload = no\nload = chan_simpleusb.so\nnoload = chan_usbradio.so\n"
+                    "require = res_rpt_http_registrations.so  ; RPT HTTP Periodic Registrations\n",
     "manager.conf": "[general]\nenabled = yes\n\n[admin]\nsecret = make4An1ce-secret\n",
     "simpleusb.conf": "[general]\n\n[node-main](!)\nrxmixerset = 500\n\n[1999](node-main)\n",
     "savenode.conf": "NODE=1999\nPASSWORD=12345\nENABLE=0\n",
@@ -365,3 +366,48 @@ async def test_several_operations_as_one_change(api):
     assert status_ == 400 and body["op"] == "duplex" and body["field"] == "duplex"
     status_, _ = await a.post("nodes/plan", {"ops": []})
     assert status_ == 400
+
+
+async def test_switch_registration_to_iax_and_back(api):
+    a = await api.make()
+    await a.change({"op": "first_run", "number": "2701", "password": "secret1"})
+    _, node = await a.get("nodes/2701")
+    assert node["registration"] == "http"
+    plan, status_, res = await a.change({"op": "registration", "method": "iax"})
+    assert status_ == 200 and res["restart"]
+    assert any(n["severity"] == "warning" for n in plan["notes"])
+    modules = (api.etc / "modules.conf").read_text()
+    assert "noload  = res_rpt_http_registrations.so  ; RPT HTTP Periodic Registrations" in modules
+    iax = (api.etc / "iax.conf").read_text()
+    assert "\nregister => 2701:secret1@register.allstarlink.org" in iax
+    # The HTTP line stays, for switching back.
+    assert "register => 2701:secret1@" in (api.etc / "rpt_http_registrations.conf").read_text()
+    _, node = await a.get("nodes/2701")
+    assert node["registration"] == "iax" and node["password_set"]
+
+    # A node added while IAX registration is in use registers with IAX too.
+    await a.change({"op": "add", "number": "2702", "password": "secret2"})
+    assert "\nregister => 2702:secret2@register.allstarlink.org" in (api.etc / "iax.conf").read_text()
+    # Changing the password changes it in both places.
+    await a.change({"op": "password", "node": "2701", "password": "secret3"})
+    assert "\nregister => 2701:secret3@" in (api.etc / "iax.conf").read_text()
+    assert "register => 2701:secret3@" in (api.etc / "rpt_http_registrations.conf").read_text()
+
+    _, status_, _ = await a.change({"op": "registration", "method": "http"})
+    assert status_ == 200
+    assert "require = res_rpt_http_registrations.so" in (api.etc / "modules.conf").read_text()
+    iax = (api.etc / "iax.conf").read_text()
+    assert ";register => 2701:secret3@" in iax and ";register => 2702:secret2@" in iax
+    assert "\nregister =>" not in iax
+    _, node = await a.get("nodes/2702")
+    assert node["registration"] == "http"
+    status_, body = await a.post("nodes/plan", {"op": "registration", "method": "http"})
+    assert status_ == 200 and body["unchanged"] is True
+
+
+async def test_switch_registration_needs_a_password(api):
+    a = await api.make()
+    status_, body = await a.post("nodes/plan", {"op": "registration", "method": "iax"})
+    assert status_ == 409 and body["error"] == "requirement"
+    status_, body = await a.post("nodes/plan", {"op": "registration", "method": "sip"})
+    assert status_ == 400 and body["field"] == "method"

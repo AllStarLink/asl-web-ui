@@ -9,12 +9,13 @@ understands them.
 import re
 from dataclasses import asdict, dataclass, field
 
-from ..configengine.edit import Workspace
+from ..configengine.edit import Workspace, module_state
 from ..configengine.model import Category, Config
 from . import savenode
 
 PRIVATE_LIMIT = 2000
 REGISTRATION_HOST = "register.allstarlink.org"
+HTTP_REGISTRATION_MODULE = "res_rpt_http_registrations"
 STATPOST_URL = "http://stats.allstarlink.org/uhandler"
 DEFAULT_IAX_PORT = 4569
 
@@ -147,6 +148,20 @@ def iax_registrations(ws: Workspace) -> list[dict]:
     return out
 
 
+def http_registration_loaded(ws: Workspace) -> bool:
+    """Whether Asterisk loads res_rpt_http_registrations (HTTP registration).
+    Without modules.conf Asterisk autoloads everything."""
+    return not ws.exists("modules.conf") or bool(module_state(ws, HTTP_REGISTRATION_MODULE))
+
+
+def registration_method(ws: Workspace, number: str) -> str | None:
+    """How the node registers: "http", "iax", "both" (the duplicate
+    asl-node-auth-check warns about) or None."""
+    http = http_registration_loaded(ws) and any(r["node"] == number for r in registrations(ws))
+    iax = any(r["node"] == number for r in iax_registrations(ws))
+    return "both" if http and iax else "http" if http else "iax" if iax else None
+
+
 def registration_passwords(ws: Workspace, number: str) -> dict[str, set[str]]:
     """The node's configured registration passwords: {"http": {...}, "iax": {...}}."""
     return {kind: {r["password"] for r in regs if r["node"] == number and r["password"]}
@@ -186,6 +201,7 @@ class NodeInfo:
     interface: str | None
     password: str | None
     registered: bool
+    registration: str | None  # registration_method()
     nodes_entry: str | None  # this node's [nodes] line
     channel_templates: list[str] | None  # the node's section in simpleusb.conf/usbradio.conf
     references: dict[str, Reference]
@@ -221,7 +237,9 @@ def node_info(ws: Workspace, number: str, rpt: Config | None = None) -> NodeInfo
     statpost = cat.effective("statpost_url")
     rxchannel = cat.value("rxchannel")
     interface = interface_of(rxchannel)
-    regs = [r for r in registrations(ws) if r["node"] == number]
+    # The HTTP registration, else an active IAX one (set up by hand without it).
+    regs = [r for r in registrations(ws) if r["node"] == number] \
+        or [r for r in iax_registrations(ws) if r["node"] == number]
     nodes = rpt.get("nodes")
     channel_templates = None
     if interface in ("SimpleUSB", "USBRadio") and ws.exists(CHANNEL_FILES[interface]):
@@ -245,6 +263,7 @@ def node_info(ws: Workspace, number: str, rpt: Config | None = None) -> NodeInfo
         interface=interface,
         password=regs[0]["password"] if regs else None,
         registered=bool(regs),
+        registration=registration_method(ws, number) if int(number) >= PRIVATE_LIMIT else None,
         nodes_entry=nodes.value(number) if nodes else None,
         channel_templates=channel_templates,
         references=references(rpt, cat),

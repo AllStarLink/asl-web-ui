@@ -5,7 +5,8 @@
     POST   /api/v1/nodes/plan          {"op", ...}    plan a change -> diffs, notes, plan id
     POST   /api/v1/nodes/plan          {"ops": [...]} several of them as one change
                                        (op "voter": the node's RTCM/voter clients and settings;
-                                       op "savenode": backups use the node's registration password)
+                                       op "savenode": backups use the node's registration password;
+                                       op "registration": every node registers over "http" or "iax")
     GET    /api/v1/nodes/{node}/access                allow/deny lists (AstDB)
     POST   /api/v1/nodes/{node}/access {"list", "entry", "reason"}
     DELETE /api/v1/nodes/{node}/access/{list}/{entry}
@@ -165,6 +166,7 @@ def _describe(op: str, body: dict) -> str:
         "voter": f"node {node}: voter clients and settings",
         "enable_customizations": "enable customizations",
         "iax_port": "IAX port",
+        "registration": f"register nodes over {str(body.get('method', '')).upper()}",
         "ami_secret": "AMI secret",
     }.get(op, op)
 
@@ -190,8 +192,8 @@ def _describe_all(ops: list[dict]) -> str:
 
 
 def _run(planner: Planner, op: str, body: dict) -> None:
-    node = _str(body, "node") if op not in ("add", "first_run", "iax_port", "ami_secret", "enable_customizations") \
-        else None
+    node = _str(body, "node") if op not in ("add", "first_run", "iax_port", "ami_secret", "enable_customizations",
+                                            "registration") else None
     if op in ("add", "first_run"):
         kwargs = dict(password=_str(body, "password", False) or None, interface=_str(body, "interface", False),
                       duplex=_duplex(body), linktolink=_str(body, "linktolink", False),
@@ -253,6 +255,8 @@ def _run(planner: Planner, op: str, body: dict) -> None:
         planner.set_voter(node, wanted, settings, general, host_password)
     elif op == "iax_port":
         planner.set_iax_port(body.get("port"))
+    elif op == "registration":
+        planner.set_registration(_str(body, "method"))
     elif op == "ami_secret":
         planner.set_ami_secret(_str(body, "secret"))
     else:

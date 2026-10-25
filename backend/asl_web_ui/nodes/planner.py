@@ -15,14 +15,14 @@ from dataclasses import dataclass, field
 from ..configengine.edit import (
     EditError, Section, Workspace, append_section, delete, find_headers, header_line, insert, last_var,
     remove_section,
-    replace_value, section_end, section_vars, set_module, set_raw, var_line,
+    module_state, replace_value, section_end, section_vars, set_module, set_raw, var_line,
 )
 from ..configengine.text import ConfigText
 from . import savenode, voter
 from .info import (
-    ALL_CHANNEL_MODULES, CHANNEL_FILES, CHANNEL_MODULES, DEFAULT_IAX_PORT, INTERFACES, PRIVATE_LIMIT,
-    REFERENCE_KEYS, REGISTRATION_HOST, STATPOST_URL, NodeInfo, iax_port, node_info, node_numbers,
-    registration_passwords, registrations,
+    ALL_CHANNEL_MODULES, CHANNEL_FILES, CHANNEL_MODULES, DEFAULT_IAX_PORT, HTTP_REGISTRATION_MODULE, INTERFACES,
+    PRIVATE_LIMIT, REFERENCE_KEYS, REGISTRATION_HOST, STATPOST_URL, NodeInfo, http_registration_loaded,
+    iax_port, iax_registrations, node_info, node_numbers, registration_passwords, registrations,
 )
 
 RPT = "rpt.conf"
@@ -159,6 +159,16 @@ def _replace_in_line(text: ConfigText, index: int, old: str, new: str) -> None:
 
 def _swap_number(value: str, old: str, new: str) -> str:
     return re.sub(rf"(?<!\d){re.escape(old)}(?!\d)", new, value)
+
+
+def _uncomment(text: ConfigText, index: int) -> None:
+    line = text.lines[index]
+    set_raw(text, index, re.sub(r"^;+\s*", "", line.text) + (line.ending or text.newline))
+
+
+def _comment(text: ConfigText, index: int) -> None:
+    line = text.lines[index]
+    set_raw(text, index, ";" + line.text + (line.ending or text.newline))
 
 
 def _rewrite_key(text: ConfigText, index: int, key: str) -> None:
@@ -397,15 +407,20 @@ class Planner:
                 new = re.sub(rf"({re.escape(number)}:)[^@]*@", rf"\g<1>{password}@", line.text, count=1)
                 set_raw(text, i, new + (line.ending or text.newline))
             return
+        # With IAX registration in use (set_registration), a new node's line is active.
+        active = self.ws.exists("modules.conf") and module_state(self.ws, HTTP_REGISTRATION_MODULE) is False
         placeholder = _lines_matching(text, _register_re(IAX_PLACEHOLDER))
         if placeholder:
             _replace_in_line(text, placeholder[0], IAX_PLACEHOLDER, f"{number}:{password}@")
+            if active:
+                _uncomment(text, placeholder[0])
             return
         headers = find_headers(text, "general")
         if headers:
             regs = _lines_matching(text, _register_re(""), "general")
             after = regs[-1] if regs else last_var(text, headers[0])
-            insert(text, after + 1, [f";register => {number}:{password}@{REGISTRATION_HOST}{text.newline}"])
+            lead = "" if active else ";"
+            insert(text, after + 1, [f"{lead}register => {number}:{password}@{REGISTRATION_HOST}{text.newline}"])
 
     def set_password(self, number: str, password: str) -> None:
         info = self.info(number)
@@ -427,6 +442,75 @@ class Planner:
             savenode.set_value(self.ws, "PASSWORD", password)
             savenode.set_value(self.ws, "ENABLE", "1")
         self.effects.restart = True
+
+    def set_registration(self, method: str) -> None:
+        """Register all the server's nodes over HTTP (the default) or IAX, as in
+        https://allstarlink.github.io/adv-topics/iaxreg/. HTTP registration is
+        one Asterisk module for every node, so this is not per node. The other
+        method's lines are kept (commented out), with the same passwords."""
+        if method not in ("http", "iax"):
+            raise PlanError("The registration method must be http or iax.", "method")
+        if not self.ws.exists("modules.conf"):
+            raise PlanError("modules.conf was not found, so the registration method cannot be changed.",
+                            "method", code="requirement")
+        if not self.ws.exists(IAX):
+            raise PlanError(f"{IAX} was not found, so the registration method cannot be changed.", "method",
+                            code="requirement")
+        public = [n for n in self.nodes() if int(n) >= PRIVATE_LIMIT]
+        if method == "iax":
+            http = {r["node"]: r["password"] for r in registrations(self.ws) if r["password"]}
+            todo = [n for n in public if n in http]
+            if not todo:
+                raise PlanError("No node has a registration password to register with.", "method",
+                                code="requirement")
+            for number in todo:
+                self._iax_registration(number, http[number])
+                text = self.ws.text(IAX)
+                lines = _lines_matching(text, _register_re(f"{number}:"), "general")
+                if lines and not _lines_matching(text, _register_re(f"{number}:", commented=False), "general"):
+                    _uncomment(text, lines[0])
+            self._http_module(False)
+            self.effects.note("All nodes on this server register with IAX instead of HTTP. Use IAX registration "
+                              "only if HTTP registration does not work for you: it puts more load on the "
+                              "AllStarLink servers.", "warning")
+        else:
+            iax = [r for r in iax_registrations(self.ws) if r["node"] in public]
+            for reg in iax:
+                if not registration_passwords(self.ws, reg["node"])["http"]:
+                    self._http_registration(reg["node"], reg["password"])
+            for reg in iax:
+                _comment(self.ws.text(reg["file"]), reg["line"])
+            self._http_module(True)
+            self.effects.note("All nodes on this server register with HTTP (the default).")
+        self.effects.restart = True
+
+    def _http_module(self, load_it: bool) -> None:
+        """res_rpt_http_registrations: noload, or require as in the stock
+        modules.conf. (set_module leaves require lines alone.)"""
+        text = self.ws.text("modules.conf")
+        headers = find_headers(text, "modules")
+        if not headers:
+            raise PlanError("modules.conf has no [modules] section.", "method", code="requirement")
+        header = headers[0]
+        wanted = "require" if load_it else "noload"
+        found = False
+        for i in range(header + 1, section_end(text, header)):
+            line = text.lines[i]
+            if line.kind != "variable" or line.value.removesuffix(".so") != HTTP_REGISTRATION_MODULE:
+                continue
+            key = line.key.lower()
+            if key not in ("load", "noload", "preload", "require", "preload-require"):
+                continue
+            found = True
+            if (key == "noload") != load_it:
+                continue  # already as wanted
+            # Keep the "=" in the same column, as set_module does.
+            m = re.match(rf"^(\s*){re.escape(line.key)}(\s*)", line.raw)
+            pad = " " * max(len(line.key) + len(m.group(2)) - len(wanted), 1) if m.group(2) else ""
+            set_raw(text, i, m.group(1) + wanted + pad + line.raw[m.end():])
+        if not found and load_it != http_registration_loaded(self.ws):
+            after = last_var(text, header)
+            insert(text, after + 1, [var_line(text, wanted, f"{HTTP_REGISTRATION_MODULE}.so", near=after)])
 
     def sync_savenode(self, number: str, live: set[str]) -> None:
         """Point savenode.conf (AllStarLink backups) at the node and its
