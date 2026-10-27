@@ -28,10 +28,9 @@ export type Hardware = {
   scan: (again?: boolean) => Promise<void>;
 };
 
-// Looks for an SA818 on the serial ports once per visit (the server keeps
-// the answer); App shares it with the navigation, which shows Hardware only
-// when a module answered or its settings are saved (issue #47).
-export function useHardware(): Hardware {
+// Looks for an SA818 on the serial ports when the page opens (the server
+// keeps the answer until asked to look again).
+function useHardware(): Hardware {
   const [detect, setDetect] = useState<SA818Detect | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -52,13 +51,11 @@ export function useHardware(): Hardware {
   return { detect, error, scanning, scan };
 }
 
-// Whether the navigation offers Hardware. If looking failed, it does: better
-// a page to explain the failure than settings that cannot be reached.
-export const showsHardware = (h: Hardware) => h.error !== null || (!!h.detect && (h.detect.found.length > 0 || h.detect.saved));
-
 // Radio hardware attached to the server, one tab for each kind (issue #33).
-// SA818 is the only one so far, so #/hardware shows it.
-export function HardwarePage({ hardware }: { hardware: Hardware }) {
+// SA818 is the only one so far, so #/hardware shows it, once a module answered
+// or its settings are saved; otherwise it says none was found (issue #47).
+export function HardwarePage() {
+  const hardware = useHardware();
   const { detect, error, scanning, scan } = hardware;
   const [anyway, setAnyway] = useState(false);
   const head = (tabs: boolean) => (

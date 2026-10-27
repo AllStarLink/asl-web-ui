@@ -1085,9 +1085,10 @@ settings in /etc/sa818.conf and program the module from them.
   (/dev/serial0 and /dev/ttyAMA0 are the same one). It assumes the web UI
   has the serial ports to itself and that opening one keys nothing. A port
   without a module costs the 1-second reply timeout, so the server keeps the
-  answer until "Look again" or a change to the settings. Hardware is in the
-  navigation only when a module answered or /etc/sa818.conf exists; the page
-  otherwise says nothing answered and offers to set one up anyway. When the
+  answer until "Look again" or a change to the settings. Hardware stays in
+  the navigation (so the page can be found); it shows the SA818 tab once a
+  module answered or /etc/sa818.conf exists, and otherwise says nothing
+  answered and offers to look again or set one up anyway. When the
   saved port and speed (or sa818's automatic choice) do not lead to the
   module found, the page says so and offers to use where it answered.
   Verified on node40608 (2026-10-27): found on /dev/ttyUSB0 at 9600 in 2.5 s

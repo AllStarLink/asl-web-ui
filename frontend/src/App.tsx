@@ -8,7 +8,7 @@ import { Backups } from "./Backups";
 import { Diagnostics } from "./Diagnostics";
 import { ConfigEditor } from "./ConfigEditor";
 import { ConfigFiles } from "./ConfigFiles";
-import { HardwarePage, showsHardware, useHardware } from "./HardwarePage";
+import { HardwarePage } from "./HardwarePage";
 import { HttpsPage } from "./HttpsPage";
 import { Login } from "./Login";
 import { Net44Page } from "./Net44Page";
@@ -28,7 +28,6 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   const [base, sub, third] = route.split("/");
   const { status } = useStatus(onEnded, topicsFor(base, sub));
   const [system, setSystem] = useState<SystemInfo | null>(null);
-  const hardware = useHardware();
 
   useEffect(() => {
     get<SystemInfo>("system").then(setSystem, () => setSystem(null));
@@ -43,7 +42,7 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   else if (base === "allmon3" && sub === "files" && third) page = <Allmon3Editor key={third} name={decodeURIComponent(third)} />;
   else if (base === "https") page = <HttpsPage />;
   // #/sa818 was the SA818 page before it moved to Hardware.
-  else if (base === "hardware" || base === "sa818") page = <HardwarePage hardware={hardware} />;
+  else if (base === "hardware" || base === "sa818") page = <HardwarePage />;
   else if (base === "network") page = <NetworkPage />;
   else if (base === "44net") page = <Net44Page />;
   else if (base === "allmon3") page = <Allmon3Page tab={sub ?? "status"} />;
@@ -54,8 +53,7 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   else if (base === "config") page = <ConfigFiles />;
   else page = <Overview status={status} system={system} />;
   return (
-    <Shell user={session.user ?? ""} hostname={system?.hostname ?? ""} route={route} status={status}
-           hidden={showsHardware(hardware) ? [] : ["hardware"]} onLogout={onLogout}>
+    <Shell user={session.user ?? ""} hostname={system?.hostname ?? ""} route={route} status={status} onLogout={onLogout}>
       {page}
       <Modal isOpen={leaving !== null} onClose={() => answer(false)} variant="small" aria-labelledby="leave-title">
         <ModalHeader title="Leave without saving?" labelId="leave-title" titleIconVariant="warning" />
