@@ -13,11 +13,14 @@ const UNREACHABLE_FOR = 30000;
 
 // Runs a server-side job and shows its progress until it finishes.
 // run() resolves to the final state (or null if it could not start).
-export function useJob(): [ReactNode, (title: string, start: () => Promise<Started | undefined>) => Promise<JobState | null>] {
+// lostContact, if given, is shown instead of the error when polls stop
+// reaching the server for good.
+export function useJob(): [ReactNode, (title: string, start: () => Promise<Started | undefined>,
+                                       lostContact?: string) => Promise<JobState | null>] {
   const [state, setState] = useState<{ title: string; lines: string[]; done: boolean; error: string | null } | null>(null);
   const [closer, setCloser] = useState<(() => void) | null>(null);
 
-  const run = useCallback(async (title: string, start: () => Promise<Started | undefined>) => {
+  const run = useCallback(async (title: string, start: () => Promise<Started | undefined>, lostContact?: string) => {
     setState({ title, lines: [], done: false, error: null });
     let started: Started | undefined;
     try {
@@ -48,7 +51,7 @@ export function useJob(): [ReactNode, (title: string, start: () => Promise<Start
             continue;
           }
         }
-        setState({ title, lines, done: true, error: message(err) });
+        setState({ title, lines, done: true, error: !(err instanceof ApiError) && lostContact ? lostContact : message(err) });
         break;
       }
       lines = [...lines, ...last.lines];

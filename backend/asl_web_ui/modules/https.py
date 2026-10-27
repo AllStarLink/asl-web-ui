@@ -3,7 +3,7 @@
     GET    /api/v1/https                          listener, certificates, asl-web-ui's site
     POST   /api/v1/https/install                  install certbot (job)
     POST   /api/v1/https/listener                 enable HTTPS on port 443, self-signed (job)
-    POST   /api/v1/https/certificate  {"domains", "email", "agree_tos", "staging", "redirect"}  (job)
+    POST   /api/v1/https/certificate  {"domains", "email", "agree_tos", "redirect"}  (job)
     PUT    /api/v1/https/redirect     {"redirect"}
     POST   /api/v1/https/cockpit                  Cockpit uses the certificate too
     POST   /api/v1/https/renew-test               certbot renew --dry-run (job)
@@ -84,7 +84,7 @@ async def listener(request: web.Request) -> web.Response:
 @routes.post("/api/v1/https/certificate")
 async def certificate(request: web.Request) -> web.Response:
     body = await read_json(request)
-    args = {k: body.get(k) for k in ("domains", "email", "agree_tos", "staging", "redirect")}
+    args = {k: body.get(k) for k in ("domains", "email", "agree_tos", "redirect")}
     try:  # the helper checks again
         args["domains"] = https.check_names(args["domains"])
         args["email"] = https.check_email(args["email"])
@@ -92,8 +92,7 @@ async def certificate(request: web.Request) -> web.Response:
         return error(400, "invalid", exc.message, field=exc.field)
     if args["agree_tos"] is not True:
         return error(400, "invalid", "Agree to the Let's Encrypt subscriber agreement first.", field="agree_tos")
-    kind = "test certificate" if args["staging"] else "certificate"
-    return await _job(request, f"Let's Encrypt {kind} for {', '.join(map(str, args['domains']))}",
+    return await _job(request, f"Let's Encrypt certificate for {', '.join(map(str, args['domains']))}",
                       "https.obtain", args)
 
 

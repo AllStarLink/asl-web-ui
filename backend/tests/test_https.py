@@ -32,6 +32,7 @@ esac""",
     "certbot": """
 [ -e $ROOT/certbot-fails ] && { echo "Challenge failed for domain"; cat $ROOT/certbot-fails; exit 1; }
 [ "$1" = certonly ] || exit 0
+case " $* " in *" --dry-run "*) echo "The dry run was successful."; exit 0 ;; esac
 name=""; server=https://acme-v02.api.letsencrypt.org/directory; names=""
 while [ $# -gt 0 ]; do case "$1" in
   --cert-name) name=$2; shift ;; -d) names="$names,DNS:$2"; shift ;;
@@ -76,7 +77,7 @@ def web(env, monkeypatch):  # noqa: F811
 
 
 ORDER = {"domains": ["Node.Example.org", "hub.example.org"], "email": "op@example.org", "agree_tos": True,
-         "staging": True, "redirect": True}
+         "redirect": True}
 
 
 async def test_status_without_https(web):
@@ -111,23 +112,42 @@ async def test_obtain_certificate_and_site(web):
     assert "SSLCertificateFile /etc/ssl/certs/ssl-cert-snakeoil.pem" in site
     assert not (web.root / "etc/asl-web-ui/apache-tls.conf").exists()
     assert web.enabled.exists() and (web.root / "etc/apache2/mods-enabled/rewrite.load").exists()
-    certbot = next(line for line in web.calls.read_text().splitlines() if line.startswith("certbot certonly"))
-    assert certbot == ("certbot certonly --apache --non-interactive --agree-tos --cert-name node.example.org "
-                       "--deploy-hook systemctl reload apache2 --email op@example.org --no-eff-email --staging "
-                       "-d node.example.org -d hub.example.org")
+    certbot = [line for line in web.calls.read_text().splitlines() if line.startswith("certbot certonly")]
+    assert certbot == [
+        "certbot certonly --apache --non-interactive --agree-tos --cert-name node.example.org "
+        "--email op@example.org --no-eff-email --dry-run -d node.example.org -d hub.example.org",
+        "certbot certonly --apache --non-interactive --agree-tos --cert-name node.example.org "
+        "--email op@example.org --no-eff-email --deploy-hook systemctl reload apache2 "
+        "-d node.example.org -d hub.example.org"]
     _, body = await a.call("GET", "https")
     assert body["site"] == {"domains": ["node.example.org", "hub.example.org"], "redirect": True,
                             "cert": "node.example.org"}
     assert body["certificate"]["names"] == ["node.example.org", "hub.example.org"]
     assert body["certificate"]["expires"].endswith("Z") and body["certificate"]["expires"][4] == "-"
-    assert body["renewal"]["staging"] is True and body["renewal"]["renew_hook"] == "systemctl reload apache2"
+    assert body["renewal"]["staging"] is False and body["renewal"]["renew_hook"] == "systemctl reload apache2"
 
-    # A real certificate replaces the test one at once.
-    job = await a.job("POST", "https/certificate", {**ORDER, "staging": False})
+
+async def test_test_certificate_is_replaced_at_once(web):
+    # A test certificate from an earlier version, not due for renewal yet.
+    renewal = web.root / "etc/letsencrypt/renewal"
+    renewal.mkdir(parents=True)
+    (renewal / "node.example.org.conf").write_text(
+        "[renewalparams]\nserver = https://acme-staging-v02.api.letsencrypt.org/directory\n")
+    a = await web.make()
+    job = await a.job("POST", "https/certificate", ORDER)
     certbot = [line for line in web.calls.read_text().splitlines() if line.startswith("certbot certonly")]
-    assert job["ok"] and "--force-renewal" in certbot[-1] and "--staging" not in certbot[-1]
+    assert job["ok"] and "--force-renewal" not in certbot[0] and "--force-renewal" in certbot[1]
     _, body = await a.call("GET", "https")
     assert body["renewal"]["staging"] is False
+
+
+async def test_failed_dry_run_requests_no_certificate(web):
+    (web.root / "certbot-fails").touch()
+    a = await web.make()
+    job = await a.job("POST", "https/certificate", ORDER)
+    assert not job["ok"] and "test run failed" in job["error"], job
+    certbot = [line for line in web.calls.read_text().splitlines() if line.startswith("certbot certonly")]
+    assert len(certbot) == 1 and "--dry-run" in certbot[0]
 
 
 async def test_redirect_toggle_and_remove(web):

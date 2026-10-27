@@ -1101,9 +1101,15 @@ nginx the page says to use certbot --nginx.
   (name mismatch either way).
 - **certbot only obtains certificates:** `certbot certonly --apache
   --cert-name FIRST -d ... --deploy-hook "systemctl reload apache2"`
-  (stored as renew_hook); Debian's certbot.timer renews. Test (staging)
-  certificates first is the default; switching between staging and real
-  adds --force-renewal. If certbot fails, Apache is put back as it was.
+  (stored as renew_hook); Debian's certbot.timer renews. Each request
+  first runs the same command with --dry-run (staging server, nothing
+  kept), so a wrong name or closed port does not count against the real
+  server's limits; only if it passes is the real certificate requested.
+  (Until 2026-10-27 the page instead offered installing a staging
+  certificate first: browsers do not trust it, so the page lost contact
+  mid-job when Apache switched to it, and the real certificate was a
+  second step people missed.) A leftover staging certificate is replaced
+  with --force-renewal. If certbot fails, Apache is put back as it was.
 - **Every Apache change** is followed by `apache2ctl configtest`; on
   failure the site file, enabled sites and enabled modules are restored
   before anything reloads. Reloads are graceful.

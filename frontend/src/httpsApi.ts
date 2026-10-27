@@ -32,7 +32,6 @@ export type CertificateOrder = {
   domains: string[];
   email: string;
   agree_tos: boolean;
-  staging: boolean;
   redirect: boolean;
 };
 
