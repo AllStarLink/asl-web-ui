@@ -7,16 +7,28 @@ strict pattern, so the file stays safe to source. The module is programmed
 by running the sa818 command three times (radio, volume, filters) with the
 arguments sa818-menu builds; sa818 exits 0 even when the module rejects a
 command, so its log lines are checked for errors too.
+
+A module is found by asking each serial port what sa818 asks first
+(AT+DMOCONNECT) and then AT+VERSION; the web UI assumes it has the serial
+ports to itself and that opening one keys nothing.
 """
 
 import glob
 import os
 import re
+import select
 import subprocess
+import termios
+import time
+import tty
 
 CONF = "/etc/sa818.conf"
 TOOL = "/usr/bin/sa818"
+# Where sa818 looks when no port is given, in order.
+AUTO_PORTS = ["/dev/serial0", "/dev/ttyUSB0"]
 PORT_PATTERNS = ["/dev/serial[0-9]", "/dev/ttyAMA[0-9]*", "/dev/ttyUSB[0-9]*", "/dev/ttyACM[0-9]*", "/dev/ttyS0"]
+PROBE_SPEED = "9600"  # the module's and sa818's default
+PROBE_TIMEOUT = 1.0  # a module answers within about 50 ms
 SPEEDS = ["300", "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200"]
 
 CTCSS = ["None", "67.0", "71.9", "74.4", "77.0", "79.7", "82.5", "85.4", "88.5", "91.5", "94.8", "97.4", "100.0",
@@ -226,3 +238,67 @@ def run(tool: str, args: list[str], timeout: float = 30) -> tuple[bool, list[str
     lines = [line for line in (proc.stdout + proc.stderr).splitlines() if line.strip()]
     ok = proc.returncode == 0 and not any(": ERROR:" in line or "Traceback" in line for line in lines)
     return ok, lines
+
+
+def _ask(fd: int, command: str, timeout: float) -> str:
+    """Send an AT command; the first line of the reply ("" if none in time)."""
+    os.write(fd, (command + "\r\n").encode())
+    reply, deadline = b"", time.monotonic() + timeout
+    while b"\n" not in reply and len(reply) < 256:
+        left = deadline - time.monotonic()
+        if left <= 0 or not select.select([fd], [], [], left)[0]:
+            break
+        reply += os.read(fd, 256)
+    return reply.split(b"\n")[0].decode("ascii", "replace").strip()
+
+
+def probe(path: str, speed: str, timeout: float = PROBE_TIMEOUT) -> str | None:
+    """The firmware of the SA818 answering at a serial port and speed (such as
+    SA818S_V1.1), or None: silence, another reply, or a port that cannot be
+    opened or set up all mean there is no SA818 there."""
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+    except OSError:
+        return None
+    try:
+        attrs = termios.tcgetattr(fd)
+        tty.cfmakeraw(attrs)
+        attrs[2] |= termios.CLOCAL | termios.CREAD
+        attrs[4] = attrs[5] = getattr(termios, f"B{speed}")
+        termios.tcsetattr(fd, termios.TCSANOW, attrs)
+        termios.tcflush(fd, termios.TCIOFLUSH)
+        if _ask(fd, "AT+DMOCONNECT", timeout) != "+DMOCONNECT:0":
+            return None
+        version = _ask(fd, "AT+VERSION", timeout)
+        return version.removeprefix("+VERSION:") if version.startswith("+VERSION:") else None
+    except (OSError, termios.error):
+        return None
+    finally:
+        os.close(fd)
+
+
+def detect(settings: dict[str, str], root: str = "/") -> dict:
+    """Look for SA818 modules on every serial port, at the default speed and
+    the saved one. Each device is asked once, under the first name ports()
+    gives it (/dev/serial0 before /dev/ttyAMA0). "reachable": whether the
+    saved port and speed (or sa818's automatic choice) lead to one of them."""
+    speeds = [PROBE_SPEED] + [s for s in [settings["CURRENT_SPEED"]] if s and s != PROBE_SPEED]
+    def real(port: str) -> str:
+        return os.path.realpath(os.path.join(root, port.lstrip("/")))
+
+    found, probed, seen = [], [], set()
+    for port in ports(root):
+        device = real(port)
+        if device in seen:
+            continue
+        seen.add(device)
+        probed.append(port)
+        for speed in speeds:
+            firmware = probe(device, speed)
+            if firmware:
+                found.append({"port": port, "speed": speed, "firmware": firmware})
+                break
+    wanted = {real(p) for p in ([settings["CURRENT_PORT"]] if settings["CURRENT_PORT"] else AUTO_PORTS)}
+    speed = settings["CURRENT_SPEED"] or PROBE_SPEED
+    reachable = any(real(f["port"]) in wanted and f["speed"] == speed for f in found)
+    return {"found": found, "probed": probed, "reachable": reachable}

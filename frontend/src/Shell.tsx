@@ -85,6 +85,8 @@ type Props = {
   hostname: string;
   route: string;
   status: Status | null;
+  // Navigation entries to leave out (Hardware, when there is none: issue #47).
+  hidden: string[];
   onLogout: () => void;
   children: ReactNode;
 };
@@ -156,7 +158,7 @@ function RestartPending({ status }: { status: Status | null }) {
   );
 }
 
-export function Shell({ user, hostname, route, status, onLogout, children }: Props) {
+export function Shell({ user, hostname, route, status, hidden, onLogout, children }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const base = route.split("/")[0] === "sa818" ? "hardware" : route.split("/")[0];
   useDocumentTitle(pageName(route), hostname);
@@ -206,7 +208,7 @@ export function Shell({ user, hostname, route, status, onLogout, children }: Pro
     <PageSidebar className="asl-sidebar">
       <PageSidebarBody>
         <nav aria-label="Main">
-          <NavLinks base={base} entries={NAV} />
+          <NavLinks base={base} entries={NAV.filter((n) => !hidden.includes(n.route))} />
           <div className="asl-nav-section">Networking</div>
           <NavLinks base={base} entries={NETWORKING} />
           <div className="asl-nav-section">Advanced</div>

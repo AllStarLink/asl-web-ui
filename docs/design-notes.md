@@ -1064,8 +1064,8 @@ settings in /etc/sa818.conf and program the module from them.
   "ERROR", so the log lines are checked as well as the exit status; the
   first failing command stops the rest. As in the menu, the settings are
   saved before programming. "Test the connection" runs sa818 version.
-- **Root:** the helper (`sa818.read`, `sa818.apply`, `sa818.version`; polkit
-  actions of the same names) owns the file and the serial port; the web
+- **Root:** the helper (`sa818.read`, `sa818.apply`, `sa818.version`,
+  `sa818.detect`; polkit actions of the same names) owns the file and the serial port; the web
   service runs with PrivateDevices and never sees /dev/tty*. Serial ports
   offered: /dev/serial[0-9], ttyAMA*, ttyUSB*, ttyACM*, ttyS0, or sa818's
   automatic choice (/dev/serial0, then /dev/ttyUSB0).
@@ -1078,6 +1078,23 @@ settings in /etc/sa818.conf and program the module from them.
   through the installed helper (UHF, wide, DCS 051N both ways, filters on,
   volume 4 -> 5 -> 4); the module accepted every command. Effects on the air
   were not tested (the module's cable is moved between programming and use).
+- **Detection** (issue #47): the helper opens each serial port at 9600 (and
+  the saved speed), sends AT+DMOCONNECT (a module answers +DMOCONNECT:0) and
+  then AT+VERSION (+VERSION:SA818S_V1.1); silence, any other reply or a port
+  that cannot be opened means no module. Each device is asked once
+  (/dev/serial0 and /dev/ttyAMA0 are the same one). It assumes the web UI
+  has the serial ports to itself and that opening one keys nothing. A port
+  without a module costs the 1-second reply timeout, so the server keeps the
+  answer until "Look again" or a change to the settings. Hardware is in the
+  navigation only when a module answered or /etc/sa818.conf exists; the page
+  otherwise says nothing answered and offers to set one up anyway. When the
+  saved port and speed (or sa818's automatic choice) do not lead to the
+  module found, the page says so and offers to use where it answered.
+  Verified on node40608 (2026-10-27): found on /dev/ttyUSB0 at 9600 in 2.5 s
+  through the installed helper, with /etc/sa818.conf naming /dev/ttyAMA0 at
+  115200, which sa818 cannot reach either. Through the page, "Use
+  /dev/ttyUSB0 at 9600" and "Save and program" then fixed the settings and
+  the module accepted them.
 
 ## 29. HTTPS and Let's Encrypt in Apache (2026-10-15, issue #2)
 

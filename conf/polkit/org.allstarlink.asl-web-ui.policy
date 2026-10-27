@@ -171,6 +171,15 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.allstarlink.asl-web-ui.sa818-detect">
+    <description>Look for SA818 radio modules on the serial ports</description>
+    <message>Authentication is required to: look for SA818 radio modules on the serial ports</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
   <action id="org.allstarlink.asl-web-ui.https-status">
     <description>Read the web server's HTTPS settings</description>
     <message>Authentication is required to: read the web server's HTTPS settings</message>

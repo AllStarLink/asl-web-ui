@@ -4,6 +4,8 @@
     PUT  /api/v1/sa818    {"settings"}  save to /etc/sa818.conf and program the module
     POST /api/v1/sa818/program          program the module again with the saved settings
     POST /api/v1/sa818/version          ask the module for its firmware version
+    GET  /api/v1/sa818/detect           SA818 modules found on the serial ports (looked for once)
+    POST /api/v1/sa818/detect           look for them again
     GET  /api/v1/sa818/file             /etc/sa818.conf as text (Manual Config Edit)
     POST /api/v1/sa818/file/check       {"content"}          findings
     POST /api/v1/sa818/file/plan        {"content", "hash"}  diff -> plan id
@@ -13,8 +15,13 @@ The settings file and the serial port need root, so everything goes
 through the privileged helper (asl_web_ui_priv.sa818 has the details).
 sa818-menu sources the file as root, so the helper refuses text that is
 not plain settings (sa818.lint_text errors); "Save anyway" cannot override it.
+
+Looking for modules asks every serial port and takes a second for each one
+that does not answer, so the result is kept until it is asked for again or
+the settings change (which may change whether the saved port reaches one).
 """
 
+import asyncio
 import difflib
 import logging
 import secrets
@@ -31,6 +38,7 @@ from .changes import STORE_KEY, error, read_json
 log = logging.getLogger("asl-web-ui.sa818")
 routes = web.RouteTableDef()
 PLANS_KEY = web.AppKey("sa818_plans", dict)
+DETECT_KEY = web.AppKey("sa818_detect", dict)
 PLAN_LIFETIME = 900
 
 CHOICES = {
@@ -53,7 +61,12 @@ async def _priv(request: web.Request, command: str, args: dict | None = None) ->
     return await request.app[PRIV_KEY].call(command, args or {}, request[USER_KEY], timeout=180)
 
 
+def _forget_detect(request: web.Request) -> None:
+    request.app[DETECT_KEY].pop("result", None)
+
+
 def _audit(request: web.Request, action: str, res: dict) -> None:
+    _forget_detect(request)
     result = "applied" if res["programmed"] else "failed"
     request.app[STORE_KEY].record(request[USER_KEY], action, result, res["log"][-3:], files=[sa818.CONF])
     log.info("%s: %s (%s)", request[USER_KEY], action, result)
@@ -100,6 +113,28 @@ async def version(request: web.Request) -> web.Response:
         return web.json_response(await _priv(request, "sa818.version"))
     except PrivError as exc:
         return _priv_error(exc)
+
+
+async def _detect(request: web.Request, again: bool) -> web.Response:
+    cache = request.app[DETECT_KEY]
+    # One look at a time: two at once would talk over each other on the ports.
+    async with cache["lock"]:
+        if again or "result" not in cache:
+            try:
+                cache["result"] = await _priv(request, "sa818.detect")
+            except PrivError as exc:
+                return _priv_error(exc)
+        return web.json_response(cache["result"])
+
+
+@routes.get("/api/v1/sa818/detect")
+async def detect(request: web.Request) -> web.Response:
+    return await _detect(request, again=False)
+
+
+@routes.post("/api/v1/sa818/detect")
+async def detect_again(request: web.Request) -> web.Response:
+    return await _detect(request, again=True)
 
 
 # ---- the settings file as text ---------------------------------------------------------
@@ -171,10 +206,12 @@ async def apply_file(request: web.Request) -> web.Response:
                                       files=[sa818.CONF])
         return _priv_error(exc)
     request.app[STORE_KEY].record(request[USER_KEY], "SA818: edit sa818.conf", "applied", [], files=[sa818.CONF])
+    _forget_detect(request)
     log.info("%s: edited %s", request[USER_KEY], sa818.CONF)
     return web.json_response({"hash": res["hash"], "warnings": []})
 
 
 def setup(app: web.Application) -> None:
     app[PLANS_KEY] = {}
+    app[DETECT_KEY] = {"lock": asyncio.Lock()}
     app.add_routes(routes)
