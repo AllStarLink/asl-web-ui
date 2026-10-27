@@ -137,7 +137,7 @@ export const systemAction = (action: "reboot" | "poweroff") => post<{ done: bool
 export const INTERFACE_NAMES: Record<string, string> = {
   SimpleUSB: "SimpleUSB",
   USBRadio: "USBRadio",
-  Voter: "RTCM / voter",
+  Voter: "RTCM / VOTER",
   Pseudo: "None (hub)",
   USRP: "USRP",
 };

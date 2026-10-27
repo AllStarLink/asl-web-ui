@@ -48,7 +48,7 @@ FILES = [
     ("echolink.conf", "EchoLink"),
     ("usbradio.conf", "USBRadio interfaces"),
     ("simpleusb.conf", "SimpleUSB interfaces"),
-    ("voter.conf", "RTCM / voter clients"),
+    ("voter.conf", "RTCM / VOTER clients"),
     ("savenode.conf", "Credentials for AllStarLink cloud backups"),
 ]
 NAMES = {name for name, _ in FILES}

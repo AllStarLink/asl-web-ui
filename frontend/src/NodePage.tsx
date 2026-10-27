@@ -566,11 +566,11 @@ function Customizations({ node, draft, set, enable }: {
 const TABS = ["general", "interface", "tuning", "voter", "access", "customizations"] as const;
 type TabKey = (typeof TABS)[number];
 const TAB_NAMES: Record<TabKey, string> = {
-  general: "General", interface: "Radio interface", tuning: "Tuning", voter: "Voter", access: "Access control",
+  general: "General", interface: "Radio interface", tuning: "Tuning", voter: "VOTER", access: "Access control",
   customizations: "Customizations",
 };
 const DRAFT_TABS = ["general", "interface", "voter", "customizations"];
-// An RTCM/voter node has a Voter tab instead of Tuning.
+// An RTCM/VOTER node has a VOTER tab instead of Tuning.
 const tabsFor = (node: NodeDetail | null): TabKey[] =>
   TABS.filter((t) => (node?.interface === "Voter" ? t !== "tuning" : t !== "voter"));
 

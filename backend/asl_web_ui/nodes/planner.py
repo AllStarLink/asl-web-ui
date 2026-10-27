@@ -873,7 +873,7 @@ class Planner:
         """
         info = self.info(number)
         if info.interface != "Voter":
-            raise PlanError(f"Node {number} does not use the RTCM/voter interface.", "interface", "requirement")
+            raise PlanError(f"Node {number} does not use the RTCM/VOTER interface.", "interface", "requirement")
         text = self.ws.text(voter.FILE, create=True)
         before = text.to_bytes()
         if self.ws.model(voter.FILE).get(number) is None:
@@ -911,7 +911,7 @@ class Planner:
             raise PlanError(exc.message, exc.field)
         unknown = [k for k in [*settings, *general] if k not in voter.INSTANCE_KEYS + voter.GENERAL_KEYS]
         if unknown:
-            raise PlanError(f"Unknown voter setting: {', '.join(unknown)}.", "settings")
+            raise PlanError(f"Unknown VOTER setting: {', '.join(unknown)}.", "settings")
 
         sec = Section(self.ws, voter.FILE, number)
         kept = {orig.name for orig, _ in pairs if orig}

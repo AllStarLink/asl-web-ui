@@ -30,7 +30,7 @@ INTERFACES = {
 INTERFACE_LABELS = {
     "SimpleUSB": "SimpleUSB: CM1xx USB sound card without DSP (URIx, RA-40 ...)",
     "USBRadio": "USBRadio: CM1xx USB sound card with DSP (URIx, RA-40 ...)",
-    "Voter": "RTCM: Radio Thin Client or voter boards",
+    "Voter": "RTCM: Radio Thin Client Module or VOTER boards",
     "Pseudo": "No radio interface (hub node)",
     "USRP": "USRP",
 }
