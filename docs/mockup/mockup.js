@@ -179,7 +179,7 @@ const S = {
 const IFACES = {
   SimpleUSB: { name: 'SimpleUSB', desc: 'USB sound interface (CM1xx) without DSP — URIx, RA-40, most hotspot boards', ch: (n) => `SimpleUSB/${n}`, mod: 'chan_simpleusb', file: 'simpleusb.conf' },
   USBRadio: { name: 'USBRadio', desc: 'USB sound interface (CM1xx) with DSP for tone decoding — URIx, RA-40, AIOC', ch: (n) => `Radio/${n}`, mod: 'chan_usbradio', file: 'usbradio.conf' },
-  Voter: { name: 'RTCM / Voter', desc: 'Radio Thin Client or voter boards', ch: (n) => `Voter/${n}`, mod: 'chan_voter', file: 'voter.conf' },
+  Voter: { name: 'RTCM / VOTER', desc: 'Radio Thin Client Module or VOTER boards', ch: (n) => `Voter/${n}`, mod: 'chan_voter', file: 'voter.conf' },
   Pseudo: { name: 'No radio (hub)', desc: 'No radio interface — a hub or link-only node (Local/pseudo)', ch: () => 'Local/pseudo', mod: null, file: null },
   USRP: { name: 'USRP', desc: 'USRP protocol to an external program such as DVSwitch', ch: () => 'USRP/127.0.0.1:34001:32001', mod: 'chan_usrp', file: null },
 };

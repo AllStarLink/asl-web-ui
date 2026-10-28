@@ -273,7 +273,7 @@ export function VoterTab({ node, draft, set }: {
       </Card>
 
       <Card>
-        <CardTitle>For every voter node on this server</CardTitle>
+        <CardTitle>For every VOTER node on this server</CardTitle>
         <CardBody>
           <Form className="asl-node-form" onSubmit={(e) => e.preventDefault()}>
             <FormGroup label="Host password" fieldId="voter-host-password">
@@ -301,7 +301,7 @@ export function VoterTab({ node, draft, set }: {
                               onChange={(_e, value) => setGeneral("bindaddr", value)} />
             </FormGroup>
             <FormGroup fieldId="voter-g-utos">
-              <Switch id="voter-g-utos" label="Mark voter traffic for priority (IP ToS)" isChecked={on(draft.general.utos)}
+              <Switch id="voter-g-utos" label="Mark VOTER traffic for priority (IP ToS)" isChecked={on(draft.general.utos)}
                       onChange={(_e, value) => setGeneral("utos", value ? "y" : "")} />
             </FormGroup>
             <Content component="p" className="asl-sub">
