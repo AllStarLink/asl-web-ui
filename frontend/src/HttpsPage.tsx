@@ -64,7 +64,6 @@ export function HttpsPage() {
   const [names, setNames] = useState("");
   const [email, setEmail] = useState("");
   const [agree, setAgree] = useState(false);
-  const [staging, setStaging] = useState(true);
   const [redirect, setRedirectWanted] = useState(true);
   const [fieldError, setFieldError] = useState<{ field: string; text: string } | null>(null);
   const [removing, setRemoving] = useState(false);
@@ -79,8 +78,6 @@ export function HttpsPage() {
         setNames((n) => n || s.site!.domains.join(" "));
         setRedirectWanted(s.site.redirect);
       }
-      // Once a real certificate works, getting it again needs no test run first.
-      setStaging(!(s.site?.cert && s.renewal && !s.renewal.staging));
     } catch (err) {
       setLoadError(message(err));
     }
@@ -89,9 +86,9 @@ export function HttpsPage() {
     void load();
   }, [load]);
 
-  const job = async (title: string, start: () => Promise<{ job: string }>, done: string) => {
+  const job = async (title: string, start: () => Promise<{ job: string }>, done: string, lostContact?: string) => {
     setNotice(null);
-    const res = await runJob(title, start);
+    const res = await runJob(title, start, lostContact);
     if (res?.ok) setNotice({ variant: "success", text: done });
     await load();
     return res;
@@ -100,17 +97,19 @@ export function HttpsPage() {
   const obtain = async () => {
     setFieldError(null);
     const domains = names.split(/[\s,]+/).filter(Boolean);
-    const res = await job(staging ? "Get a Let's Encrypt test certificate" : "Get a Let's Encrypt certificate",
+    const res = await job("Get a Let's Encrypt certificate",
       async () => {
         try {
-          return await obtainCertificate({ domains, email, agree_tos: agree, staging, redirect });
+          return await obtainCertificate({ domains, email, agree_tos: agree, redirect });
         } catch (err) {
           if (err instanceof ApiError && err.data.field) setFieldError({ field: err.data.field as string, text: err.message });
           throw err;
         }
       },
-      staging ? "The test certificate is installed. When everything works, get the real one."
-        : "The certificate is installed; Debian's certbot timer renews it.");
+      "The certificate is installed; Debian's certbot timer renews it.",
+      // The web server switches to the new certificate as the job ends; a
+      // browser that only accepted the old one for this address stops here.
+      "The web server may already use the new certificate, which this browser has not accepted for this address. Reload the page to see the result.");
     if (res?.ok) setAgree(false);
   };
 
@@ -257,7 +256,8 @@ export function HttpsPage() {
                 <Content component="p">
                   Let's Encrypt checks that each name reaches this server: the names must be in public DNS, pointing
                   here, and port 80 must be open to the internet (forwarded, if the server is behind a router).
-                  Certificates last 90 days and renew automatically.
+                  A test run checks the names first, without counting against Let's Encrypt's limits on failed
+                  requests. Certificates last 90 days and renew automatically.
                 </Content>
                 {site?.cert && status.certificate && (
                   <Alert variant={status.renewal?.staging ? "warning" : "success"} isInline isPlain
@@ -284,9 +284,6 @@ export function HttpsPage() {
                     </HelperTextItem>
                   </HelperText></FormHelperText>
                 </FormGroup>
-                <Checkbox id="https-staging" label="Test certificate first" isChecked={staging}
-                          onChange={(_e, v) => setStaging(v)}
-                          description="Not trusted by browsers, but without Let's Encrypt's limits on repeated requests. Recommended until it works." />
                 {!external && (
                   <Checkbox id="https-redirect" label="Send HTTP visitors to HTTPS" isChecked={redirect}
                             onChange={(_e, v) => setRedirectWanted(v)} />

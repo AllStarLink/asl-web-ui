@@ -28,7 +28,9 @@ setting changes (asl-web-ui-https-sync, run by the packages).
 certbot (python3-certbot-apache, from Debian) only obtains and renews the
 certificate ("certonly --apache"); it does not edit Apache's sites. Its
 renewal configuration reloads Apache after each renewal, and Debian's
-certbot.timer runs the renewals.
+certbot.timer runs the renewals. Each request starts with a dry run
+against Let's Encrypt's staging server, which checks the names without
+keeping a certificate; only if it passes is the real one requested.
 
 Every change to Apache is checked with "apache2ctl configtest" before the
 reload, and undone if the check fails.
@@ -575,12 +577,13 @@ def enable_listener(root: str, output: Output) -> dict:
     return {"changed": True}
 
 
-def _certbot_args(names: list[str], email: str | None, staging: bool, force: bool) -> list[str]:
-    args = ["certonly", "--apache", "--non-interactive", "--agree-tos", "--cert-name", names[0],
-            "--deploy-hook", RELOAD_HOOK]
+def _certbot_args(names: list[str], email: str | None, dry_run: bool, force: bool) -> list[str]:
+    args = ["certonly", "--apache", "--non-interactive", "--agree-tos", "--cert-name", names[0]]
     args += ["--email", email, "--no-eff-email"] if email else ["--register-unsafely-without-email"]
-    if staging:
-        args.append("--staging")
+    # A dry run asks Let's Encrypt's staging server to check every name and
+    # keeps nothing, so a mistake does not count against the real server's
+    # limits on failed checks.
+    args += ["--dry-run"] if dry_run else ["--deploy-hook", RELOAD_HOOK]
     if force:
         args.append("--force-renewal")
     for name in names:
@@ -612,7 +615,6 @@ def obtain(root: str, args: dict, output: Output) -> dict:
     email = check_email(args.get("email"))
     if args.get("agree_tos") is not True:
         raise HttpsError("Agree to the Let's Encrypt subscriber agreement first.", "invalid", "agree_tos")
-    staging = bool(args.get("staging"))
     external = vhosts_mode(root) == "external"
     redirect = bool(args.get("redirect")) and not external
     if not os.path.exists(BIN["certbot"]):
@@ -620,9 +622,9 @@ def obtain(root: str, args: dict, output: Output) -> dict:
     old = read_site(root)
     cert = names[0]
     existing = renewal(root, cert)
-    # Switching between test and real certificates replaces the certificate
-    # even though the current one is not due for renewal yet.
-    force = existing is not None and existing["staging"] != staging
+    # A test certificate from an earlier version is replaced even though it
+    # is not due for renewal yet.
+    force = existing is not None and existing["staging"]
 
     # 1. A port 80 site for the names, so that certbot finds them. With
     # external sites, certbot uses their default port 80 site.
@@ -639,17 +641,20 @@ def obtain(root: str, args: dict, output: Output) -> dict:
             change.undo()
             raise
 
-    # 2. The certificate.
-    output("# certbot " + " ".join(_certbot_args(names, email, staging, force)))
-    code, text = run("certbot", *_certbot_args(names, email, staging, force), output=output, timeout=600)
-    if code != 0:
-        if not external:
-            change.undo()
-            change.apply()
-        problems = ca_problems(text)
-        raise HttpsError("certbot could not get the certificate; Apache is as it was. " + (
-            "Let's Encrypt reported: " + "; ".join(problems) if problems else
-            "Check that each name points to this server in DNS and that port 80 is reachable from the internet."))
+    # 2. A dry run, then the certificate.
+    for dry_run in (True, False):
+        certbot_args = _certbot_args(names, email, dry_run, force and not dry_run)
+        output("# certbot " + " ".join(certbot_args))
+        code, text = run("certbot", *certbot_args, output=output, timeout=600)
+        if code != 0:
+            if not external:
+                change.undo()
+                change.apply()
+            problems = ca_problems(text)
+            raise HttpsError(("Let's Encrypt's test run failed, so no certificate was requested; "
+                              if dry_run else "certbot could not get the certificate; ") + "Apache is as it was. " + (
+                "Let's Encrypt reported: " + "; ".join(problems) if problems else
+                "Check that each name points to this server in DNS and that port 80 is reachable from the internet."))
 
     # 3. The HTTPS site with it.
     final = ApacheChange(root, output)
@@ -671,7 +676,7 @@ def obtain(root: str, args: dict, output: Output) -> dict:
             cockpit = use_for_cockpit(root, cert, output)["cockpit"]
         except (HttpsError, OSError) as exc:
             output(f"Apache uses the certificate, but Cockpit could not be given it: {getattr(exc, 'message', exc)}")
-    return {"domains": names, "cert": cert, "staging": staging, "cockpit": cockpit, "certificate": cert_info(
+    return {"domains": names, "cert": cert, "cockpit": cockpit, "certificate": cert_info(
         pem_path=os.path.join(root, LETSENCRYPT.lstrip("/"), "live", cert, "cert.pem"))}
 
 
