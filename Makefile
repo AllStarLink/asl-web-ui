@@ -4,7 +4,7 @@
 # The checkout directory (asl-web-ui in CI, whatever it is locally).
 SRCNAME = $(notdir $(CURDIR))
 PKGNAME = asl-web-ui
-RELVER = 0.8
+RELVER = 0.9
 DEBVER = 1
 RELPLAT ?= deb$(shell lsb_release -rs 2> /dev/null)
 

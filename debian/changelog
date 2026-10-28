@@ -1,3 +1,12 @@
+asl-web-ui (0.9-1) stable; urgency=medium
+
+  * Fixes timing issues with LetsEncrypt certificate issuance
+  * Upper-case VOTER, fix RTCM references
+  * Hide SA818 panel when not detected
+  * Accept multiple bindaddr= directives in iax.conf
+
+ -- Helium <jason@mfamily.org>  Tue, 27 Oct 2026 20:14:56 -0400
+
 asl-web-ui (0.8-1) stable; urgency=medium
 
   * IAX/HTTP Registration Toggle
