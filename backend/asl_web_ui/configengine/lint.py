@@ -29,6 +29,13 @@ REPEATABLE = {
     "ignorepat", "allow", "disallow", "permit", "deny", "eventfilter", "setvar", "member",
 }
 
+# Keys repeatable only in one file, because that module walks every line with
+# ast_variable_browse(). chan_iax2 binds each bindaddr in [general] (IPv4 and
+# IPv6 side by side); chan_voter reads its bindaddr once, so it stays flagged.
+REPEATABLE_IN = {
+    "iax.conf": {"bindaddr"},
+}
+
 # An app_rpt scheduler entry value: minute hour dom month dow, each a number or *.
 SCHEDULE_ENTRY = re.compile(r"\s*[\d*]+(\s+[\d*]+){4}\s*")
 
@@ -119,13 +126,14 @@ def lint(cfg: Config, config_dir: str = "/etc/asterisk") -> list[Finding]:
     }
 
     # The same key twice among a section's own lines: only the last counts.
+    repeatable = REPEATABLE | REPEATABLE_IN.get(os.path.basename(cfg.root), set())
     for cat in cfg.categories:
         if cat.name.lower() in schedulers:
             continue
         seen: dict[str, object] = {}
         for var in cat.own():
             key = var.key.lower()
-            if key in REPEATABLE or var.operator == "+=":
+            if key in repeatable or var.operator == "+=":
                 continue
             if key in seen:
                 first = seen[key]

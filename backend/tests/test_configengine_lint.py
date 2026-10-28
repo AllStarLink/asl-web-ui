@@ -39,6 +39,17 @@ def test_repeatable_keys_are_not_flagged():
     assert findings("[registrations]\nregister => 1:a@h\nregister => 2:b@h\n") == []
 
 
+def test_repeated_iax_bindaddr_is_not_flagged():
+    text = "[general]\nbindaddr = 0.0.0.0\nbindaddr = [::]\n"
+    assert lint(load("iax.conf", **fs({"iax.conf": text}))) == []
+
+
+def test_repeated_bindaddr_outside_iax_still_warns():
+    text = "[general]\nbindaddr = 0.0.0.0\nbindaddr = 127.0.0.1\n"
+    (f,) = lint(load("voter.conf", **fs({"voter.conf": text})))
+    assert f.code == "duplicate_key"
+
+
 def test_repeated_macros_in_a_scheduler_stanza_are_not_flagged():
     text = (
         "[node-main](!)\nscheduler = schedule_east\n[1999](node-main)\n"
