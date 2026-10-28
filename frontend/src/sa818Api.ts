@@ -32,11 +32,17 @@ export type SA818State = {
 
 export type SA818Result = { saved: boolean; programmed: boolean; log: string[]; settings: SA818Settings };
 export type SA818Version = { ok: boolean; firmware: string | null; log: string[] };
+// Modules that answered on the serial ports; reachable: the saved port and
+// speed (or sa818's automatic choice) lead to one of them.
+export type SA818Found = { port: string; speed: string; firmware: string };
+export type SA818Detect = { found: SA818Found[]; probed: string[]; reachable: boolean; saved: boolean };
 
 export const readSA818 = () => get<SA818State>("sa818");
 export const applySA818 = (settings: SA818Settings) => request<SA818Result>("PUT", "sa818", { settings });
 export const programSA818 = () => post<SA818Result>("sa818/program");
 export const sa818Version = () => post<SA818Version>("sa818/version");
+// The server looks once and keeps the answer; again: look again.
+export const detectSA818 = (again = false) => (again ? post<SA818Detect>("sa818/detect") : get<SA818Detect>("sa818/detect"));
 
 // /etc/sa818.conf as text (Manual Config Edit); same shapes as Allmon3's files.
 export const readSA818File = () => get<Allmon3File>("sa818/file");

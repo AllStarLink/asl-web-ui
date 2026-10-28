@@ -1,6 +1,10 @@
 """SA818 through the API: the helper's commands run in-process on a temporary
 root, with a stand-in sa818 that prints what the real one logs."""
 
+import os
+import pty
+import threading
+
 import pytest
 
 from asl_web_ui_priv import commands, sa818
@@ -137,3 +141,97 @@ async def test_text_that_the_shell_could_run_is_refused(module):
         status_, body = await a.call("POST", f"sa818/file/plans/{plan['id']}/apply", {"confirm_errors": True})
         assert status_ == 400 and "Nothing was written" in body["message"], bad
     assert module.conf.read_text() == f["content"]
+
+
+class FakeModule:
+    """An SA818 at the far end of a pseudo-terminal: answers what the one on
+    node40608 answered (SA818S firmware V1.1)."""
+
+    def __init__(self):
+        # The far end stays open: the master reads EIO once no one has the port open.
+        self.master, self.slave = pty.openpty()
+        self.path = os.ttyname(self.slave)
+        self.heard = []
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
+
+    def serve(self):
+        buf = b""
+        while True:
+            try:
+                buf += os.read(self.master, 256)
+            except OSError:
+                return
+            while b"\r\n" in buf:
+                line, buf = buf.split(b"\r\n", 1)
+                self.heard.append(line.decode())
+                reply = {b"AT+DMOCONNECT": b"+DMOCONNECT:0", b"AT+VERSION": b"+VERSION:SA818S_V1.1"}.get(line)
+                if reply:
+                    os.write(self.master, reply + b"\r\n")
+
+    def close(self):
+        os.close(self.master)
+        os.close(self.slave)
+
+
+@pytest.fixture
+def ports(module, monkeypatch):
+    """/dev/ttyUSB0 is the module, /dev/serial0 -> ttyAMA0 a quiet port."""
+    monkeypatch.setattr(sa818, "PROBE_TIMEOUT", 0.2)
+    dev = module.root / "dev"
+    dev.mkdir()
+    fake, (quiet, quiet_slave) = FakeModule(), pty.openpty()
+    (dev / "ttyUSB0").symlink_to(fake.path)
+    (dev / "ttyAMA0").symlink_to(os.ttyname(quiet_slave))
+    (dev / "serial0").symlink_to("ttyAMA0")
+    module.fake = fake
+    yield module
+    fake.close()
+    os.close(quiet)
+    os.close(quiet_slave)
+
+
+def test_probe_finds_the_module_and_nothing_else(tmp_path):
+    fake = FakeModule()
+    try:
+        assert sa818.probe(fake.path, "9600") == "SA818S_V1.1"
+        assert fake.heard == ["AT+DMOCONNECT", "AT+VERSION"]
+    finally:
+        fake.close()
+    master, slave = pty.openpty()
+    try:
+        assert sa818.probe(os.ttyname(slave), "9600", timeout=0.1) is None  # silence
+    finally:
+        os.close(master)
+        os.close(slave)
+    (tmp_path / "file").write_text("")
+    assert sa818.probe(str(tmp_path / "file"), "9600") is None  # not a terminal
+    assert sa818.probe(str(tmp_path / "missing"), "9600") is None
+
+
+async def test_detect(ports):
+    ports.install()
+    a = await ports.make()
+    status_, body = await a.call("GET", "sa818/detect")
+    assert status_ == 200, body
+    # serial0 and ttyAMA0 are the same device: asked once, under the first name.
+    assert body == {"found": [{"port": "/dev/ttyUSB0", "speed": "9600", "firmware": "SA818S_V1.1"}],
+                    "probed": ["/dev/serial0", "/dev/ttyUSB0"], "reachable": True, "saved": False}
+    assert ports.fake.heard == ["AT+DMOCONNECT", "AT+VERSION"]
+    _, again = await a.call("GET", "sa818/detect")
+    assert again == body and len(ports.fake.heard) == 2  # kept, not asked again
+    await a.call("POST", "sa818/detect")
+    assert len(ports.fake.heard) == 4
+
+
+async def test_detect_checks_the_saved_port_and_speed(ports):
+    ports.install()
+    a = await ports.make()
+    await a.call("GET", "sa818/detect")
+    # Saved on the wrong port and speed, as node40608 was: found, but not reachable.
+    await a.call("PUT", "sa818", {"settings": {**WANTED, "CURRENT_PORT": "/dev/ttyAMA0", "CURRENT_SPEED": "115200"}})
+    _, body = await a.call("GET", "sa818/detect")  # saving forgets what was found
+    assert body["saved"] and body["found"][0]["port"] == "/dev/ttyUSB0" and not body["reachable"]
+    await a.call("PUT", "sa818", {"settings": {**WANTED, "CURRENT_PORT": "/dev/ttyUSB0", "CURRENT_SPEED": "9600"}})
+    _, body = await a.call("GET", "sa818/detect")
+    assert body["reachable"]

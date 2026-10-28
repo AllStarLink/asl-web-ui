@@ -23,6 +23,7 @@ import {
 } from "@patternfly/react-core";
 
 import { ApiError, message } from "./api";
+import type { Hardware } from "./HardwarePage";
 import { PlainTextInput } from "./PlainInput";
 import { applySA818, programSA818, readSA818, SA818Result, SA818Settings, SA818State, sa818Version } from "./sa818Api";
 import { useLeaveGuard } from "./useRoute";
@@ -74,8 +75,44 @@ function Log({ lines }: { lines: string[] }) {
   return <pre className="asl-job-log">{lines.join("\n")}</pre>;
 }
 
+// What looking for a module on the serial ports found, against the saved connection.
+function Detected({ hardware, saved, draft, onUse }: {
+  hardware: Hardware; saved: boolean; draft: SA818Settings; onUse: (port: string, speed: string) => void;
+}) {
+  const { detect, scanning, scan } = hardware;
+  if (!detect) return null;
+  const again = (
+    <Button variant="link" isInline onClick={() => void scan(true)} isLoading={scanning} isDisabled={scanning}>Look again</Button>
+  );
+  const [first] = detect.found;
+  if (!first) {
+    return (
+      <Alert variant="warning" isInline title="No SA818 module answered" actionLinks={again}>
+        Nothing answered on {detect.probed.join(", ") || "this server's serial ports"}.{" "}
+        {saved ? "The settings below are saved, but the module may be disconnected or powered off." : ""}
+      </Alert>
+    );
+  }
+  const where = `${first.port} at ${first.speed}`;
+  if (detect.reachable) {
+    return <Alert variant="info" isInline isPlain title={`SA818 module found on ${where} (firmware ${first.firmware}).`} />;
+  }
+  const chosen = draft.CURRENT_PORT === first.port && draft.CURRENT_SPEED === first.speed;
+  return (
+    <Alert variant="warning" isInline title={`SA818 module found on ${where}, but the saved connection does not reach it`}
+           actionLinks={<>
+             <Button variant="link" isInline onClick={() => onUse(first.port, first.speed)} isDisabled={chosen}>
+               Use {where}
+             </Button>
+             {again}
+           </>}>
+      {chosen ? "Save to use it." : "Programming would fail: set the serial port and speed under Connection to where it answered."}
+    </Alert>
+  );
+}
+
 // The SA818 tab of the Hardware page.
-export function SA818Tab() {
+export function SA818Tab({ hardware }: { hardware: Hardware }) {
   const [state, setState] = useState<SA818State | null>(null);
   const [draft, setDraft] = useState<SA818Settings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -153,6 +190,7 @@ export function SA818Tab() {
       const res = await applySA818(settings);
       finish(res, true);
       await load();
+      void hardware.scan();
     } catch (err) {
       const field = err instanceof ApiError ? (err.data.field as string | undefined) : undefined;
       setResult({ variant: "danger", title: field ? `${field}: ${message(err)}` : message(err), log: [] });
@@ -199,7 +237,7 @@ export function SA818Tab() {
       <PageSection>
         <div className="asl-stack">
           <Content component="p" className="asl-sub">
-            The built-in transceiver of SHARI and similar node interfaces, as sa818-menu sets it up.
+            SA818 radios are commonly used in hotspot-type nodes.
           </Content>
           {!state.tool && (
             <Alert variant="warning" isInline title="The sa818 command is missing">
@@ -209,6 +247,8 @@ export function SA818Tab() {
           <Alert variant="info" isInline isPlain
                  title={state.saved ? "The module cannot be read back: these are the settings last saved by this page or sa818-menu."
                    : "No settings are saved yet; these are sa818-menu's defaults."} />
+          <Detected hardware={hardware} saved={state.saved} draft={draft}
+                    onUse={(port, speed) => set({ CURRENT_PORT: port, CURRENT_SPEED: speed })} />
           {result && (
             <div ref={resultRef} className="asl-scroll-target">
               <Alert variant={result.variant} isInline title={result.title}>
@@ -346,6 +386,10 @@ export function SA818Tab() {
                 <div>
                   <Button variant="secondary" onClick={test} isLoading={busy === "test"} isDisabled={busy !== null || dirty}>
                     Test the connection
+                  </Button>{" "}
+                  <Button variant="secondary" onClick={() => void hardware.scan(true)} isLoading={hardware.scanning}
+                          isDisabled={busy !== null || hardware.scanning}>
+                    Look for the module
                   </Button>
                   {dirty && <span className="asl-sub"> (save first to test the new port or speed)</span>}
                 </div>

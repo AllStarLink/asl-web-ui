@@ -745,6 +745,12 @@ def sa818_version(args: dict, output: Output) -> dict:
     return {"ok": ok and firmware is not None, "firmware": firmware, "log": lines}
 
 
+def sa818_detect(args: dict, output: Output) -> dict:
+    """Ask every serial port for an SA818 (sa818.detect has the details)."""
+    exists, saved = _sa818_saved()
+    return {**sa818.detect(saved, ROOT), "saved": exists}
+
+
 # ---- HTTPS and Let's Encrypt (Apache) ------------------------------------------------------
 
 
@@ -899,6 +905,7 @@ COMMANDS = {
     "sa818.read": sa818_read,
     "sa818.apply": sa818_apply,
     "sa818.version": sa818_version,
+    "sa818.detect": sa818_detect,
     "https.status": https_status,
     "https.install": https_install,
     "https.enable_listener": https_enable_listener,
