@@ -29,6 +29,17 @@ esac""",
     "apt-get": 'echo "Setting up python3-certbot-apache (4.0.0-2) ..."',
     "dpkg-query": 'case "$*" in *cockpit-ws*) [ -d $ROOT/etc/cockpit ] || exit 1 ;; esac; echo "install ok installed"',
     "make-ssl-cert": 'touch $ROOT/etc/ssl/certs/ssl-cert-snakeoil.pem',
+    # The appliance's script: a certificate Apple accepts, with the --name given.
+    "asl3-self-signed-cert": """
+[ -e $ROOT/self-signed-fails ] && { echo "$(cat $ROOT/self-signed-fails)"; exit $(cat $ROOT/self-signed-code); }
+san=DNS:node.local,DNS:node
+while [ $# -gt 0 ]; do case "$1" in --name) case "$2" in *[!0-9.]*) san="$san,DNS:$2" ;; *) san="$san,IP:$2" ;; esac
+  shift ;; esac; shift; done
+/usr/bin/openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 825 -subj /CN=node.local \\
+  -addext subjectAltName=$san -addext extendedKeyUsage=serverAuth \\
+  -keyout $ROOT/etc/ssl/snakeoil.key -out $ROOT/etc/ssl/certs/ssl-cert-snakeoil.pem 2>/dev/null
+echo "Made a new self-signed certificate"
+""",
     "certbot": """
 [ -e $ROOT/certbot-fails ] && { echo "Challenge failed for domain"; cat $ROOT/certbot-fails; exit 1; }
 [ "$1" = certonly ] || exit 0
@@ -401,3 +412,99 @@ async def test_sync_configtest_failure_puts_apache_back(web):
 
 def test_sync_without_apache(tmp_path):
     assert https.sync(str(tmp_path), print) == {"changed": False}
+
+
+# ---- self-signed certificates Apple can trust (#46) ----------------------------------------
+
+
+def make_cert(tmp_path, *extra: str, days: int = 825) -> str:
+    import subprocess
+    key, cert = tmp_path / "k.pem", tmp_path / "c.pem"
+    args = []
+    for e in extra:
+        args += ["-addext", e]
+    subprocess.run(["/usr/bin/openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
+                    "-nodes", "-days", str(days), "-subj", "/CN=node.local", *args, "-keyout", str(key),
+                    "-out", str(cert)], check=True, capture_output=True)
+    return cert.read_text()
+
+
+def test_first_boot_certificate_breaks_apples_rules(tmp_path):
+    # As asl3-firstboot makes it: the name only in the subject, ten years.
+    info = https.cert_info(pem=make_cert(tmp_path, days=3650))
+    assert info["self_signed"] and info["names"] == [] and info["lifetime_days"] == 3650
+    assert info["apple_problems"] == ["no_san", "no_server_auth", "too_long"]
+    assert info["starts"].endswith("Z") and len(info["fingerprint"].split(":")) == 32
+
+
+def test_certificate_apple_accepts(tmp_path):
+    info = https.cert_info(pem=make_cert(tmp_path, "subjectAltName=DNS:node.local,DNS:node,IP:192.0.2.7",
+                                         "extendedKeyUsage=serverAuth"))
+    assert info["names"] == ["node.local", "node"] and info["ips"] == ["192.0.2.7"]
+    assert info["server_auth"] and info["lifetime_days"] == 825 and info["apple_problems"] == []
+
+
+def test_browser_name():
+    assert https.browser_name("Node.Local:8443") == "node.local"
+    assert https.browser_name("192.0.2.7") == "192.0.2.7"
+    assert https.browser_name("[fd00::1]:443") == "fd00::1"
+    assert https.browser_name("bad name;x") is None
+    assert https.browser_name("") is None
+
+
+async def test_renew_self_signed(web):
+    a = await web.make()
+    _, body = await a.call("GET", "https")
+    assert body["self_signed_tool"] is True
+    job = await a.job("POST", "https/self-signed")
+    assert job["ok"], job
+    calls = web.calls.read_text()
+    # The name the browser used goes in too; the test client uses an address.
+    assert "asl3-self-signed-cert --renew --name 127.0.0.1" in calls
+    assert "systemctl try-reload-or-restart apache2" in calls
+    cert = job["result"]["certificate"]
+    assert cert["names"] == ["node.local", "node"] and cert["ips"] == ["127.0.0.1"] and cert["apple_problems"] == []
+
+
+async def test_renew_self_signed_refusals(web, monkeypatch):
+    a = await web.make()
+    (web.root / "self-signed-fails").write_text("/etc/ssl/certs/ssl-cert-snakeoil.pem is not self-signed")
+    (web.root / "self-signed-code").write_text("2")
+    job = await a.job("POST", "https/self-signed")
+    assert not job["ok"] and "not self-signed" in job["error"]
+    (web.root / "self-signed-code").write_text("3")
+    job = await a.job("POST", "https/self-signed")
+    assert not job["ok"] and "could not make the certificate" in job["error"]
+    assert "try-reload-or-restart" not in web.calls.read_text()
+    # Without the appliance.
+    monkeypatch.setitem(https.BIN, "asl3-self-signed-cert", str(web.root / "missing"))
+    _, body = await a.call("GET", "https")
+    assert body["self_signed_tool"] is False
+    job = await a.job("POST", "https/self-signed")
+    assert not job["ok"] and "ASL3 appliance" in job["error"]
+
+
+async def test_download_served_certificate(web, monkeypatch):
+    pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+    asked = []
+    monkeypatch.setattr(https, "served_pem", lambda name, port=443: asked.append(name) or pem)
+    a = await web.make()
+    resp = await a.client_.get("/api/v1/https/certificate.crt", headers={"X-Forwarded-Proto": "https"})
+    assert resp.status == 401  # not logged in
+    status_, body = await a.call("GET", "https/certificate.crt")
+    assert status_ == 200 and body.decode() == pem and asked[-1] == "127.0.0.1"
+    monkeypatch.setattr(https, "served_pem", lambda name, port=443: None)
+    status_, body = await a.call("GET", "https/certificate.crt")
+    assert status_ == 404
+
+
+async def test_system_reports_served_certificate(web, monkeypatch, tmp_path):
+    pem = make_cert(tmp_path, days=3650)
+    monkeypatch.setattr(https, "served_pem", lambda name, port=443: pem)
+    a = await web.make()
+    _, body = await a.call("GET", "system")
+    assert body["certificate"]["self_signed"] and body["certificate"]["apple_problems"] == [
+        "no_san", "no_server_auth", "too_long"]
+    monkeypatch.setattr(https, "served_pem", lambda name, port=443: None)
+    _, body = await a.call("GET", "system")
+    assert body["certificate"] is None

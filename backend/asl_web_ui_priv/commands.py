@@ -790,6 +790,14 @@ def https_renew_test(args: dict, output: Output) -> dict:
     return _https(https.renew_test, ROOT, output)
 
 
+def https_renew_self_signed(args: dict, output: Output) -> dict:
+    return _https(https.renew_self_signed, ROOT, args.get("name"), output)
+
+
+def https_served_pem(args: dict, output: Output) -> dict:
+    return {"pem": https.served_pem(https.browser_name(args.get("name")))}
+
+
 def https_remove(args: dict, output: Output) -> dict:
     return _https(https.remove, ROOT, args.get("delete_certificate") is True, output)
 
@@ -914,6 +922,8 @@ COMMANDS = {
     "https.cockpit": https_cockpit,
     "https.renew_test": https_renew_test,
     "https.remove": https_remove,
+    "https.renew_self_signed": https_renew_self_signed,
+    "https.served_pem": https_served_pem,
     "network.status": network_status,
     "network.fallback_ap": network_fallback_ap,
     "net44.status": net44_status,

@@ -53,7 +53,8 @@ function Authenticated({ session, onLogout, onEnded }: { session: Session; onLog
   else if (base === "config") page = <ConfigFiles />;
   else page = <Overview status={status} system={system} />;
   return (
-    <Shell user={session.user ?? ""} hostname={system?.hostname ?? ""} route={route} status={status} onLogout={onLogout}>
+    <Shell user={session.user ?? ""} hostname={system?.hostname ?? ""} route={route} status={status}
+           certificate={system?.certificate} onLogout={onLogout}>
       {page}
       <Modal isOpen={leaving !== null} onClose={() => answer(false)} variant="small" aria-labelledby="leave-title">
         <ModalHeader title="Leave without saving?" labelId="leave-title" titleIconVariant="warning" />
