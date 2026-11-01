@@ -103,6 +103,7 @@ html, body, #root { height: 100%; }
 
 /* ---- restart pending banner ---- */
 .asl-banner { padding-block-end: 0; }
+.asl-fingerprint { overflow-wrap: anywhere; }
 
 /* ---- shared bits ---- */
 .asl-stack { display: grid; gap: 1rem; }

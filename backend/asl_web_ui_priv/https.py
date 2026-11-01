@@ -38,8 +38,17 @@ reload, and undone if the check fails.
 If Cockpit is installed, it gets the same certificate (issue #25): a copy in
 /etc/cockpit/ws-certs.d (Cockpit uses the last *.cert there, with the *.key
 beside it), and a certbot deploy hook that copies each renewal there too.
+
+Self-signed certificates (issue #46): Safari refuses WebSockets to a server
+whose certificate the device does not trust, even after the page's warning
+was accepted, so the device has to trust it. Apple trusts a TLS server
+certificate only with the names in a subjectAltName, extendedKeyUsage
+serverAuth and at most 825 days of validity; cert_info() reports what
+breaks those rules. The ASL3 appliance's asl3-self-signed-cert makes a new
+self-signed certificate that keeps them; renew_self_signed() runs it.
 """
 
+import calendar
 import configparser
 import glob
 import json
@@ -47,6 +56,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 
 Output = Callable[[str], None]
@@ -67,6 +77,7 @@ COCKPIT_CERTS = "/etc/cockpit/ws-certs.d"
 COCKPIT_NAME = "90-asl-web-ui"  # after Cockpit's own 0-self-signed.cert
 COCKPIT_HOOK = f"{LETSENCRYPT}/renewal-hooks/deploy/asl-web-ui-cockpit"
 MAX_NAMES = 10
+APPLE_MAX_DAYS = 825  # https://support.apple.com/en-us/103769
 _LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _EMAIL = re.compile(r"^[^@\s,;'\"\\]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 
@@ -83,6 +94,7 @@ BIN = {
     "openssl": "/usr/bin/openssl",
     "make-ssl-cert": "/usr/sbin/make-ssl-cert",
     "dpkg-query": "/usr/bin/dpkg-query",
+    "asl3-self-signed-cert": "/usr/sbin/asl3-self-signed-cert",  # from asl3-appliance
 }
 ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"}
 
@@ -453,16 +465,24 @@ def _installed(package: str) -> bool:
 
 def _iso(openssl_date: str) -> str:
     """openssl's "Dec 19 01:04:16 2026 GMT" as ISO 8601 (UTC), which browsers parse."""
-    import time
     try:
         return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.strptime(openssl_date, "%b %d %H:%M:%S %Y %Z"))
     except ValueError:
         return openssl_date
 
 
+def _epoch(openssl_date: str) -> int | None:
+    try:
+        return calendar.timegm(time.strptime(openssl_date, "%b %d %H:%M:%S %Y %Z"))
+    except ValueError:
+        return None
+
+
 def cert_info(pem_path: str | None = None, pem: str | None = None) -> dict | None:
-    """Subject names, issuer and expiry of a certificate (file or PEM text)."""
-    args = ["x509", "-noout", "-subject", "-issuer", "-enddate", "-ext", "subjectAltName", "-nameopt", "oneline"]
+    """Subject names, issuer, validity and fingerprint of a certificate (file
+    or PEM text), and what stops Apple's devices from trusting it."""
+    args = ["x509", "-noout", "-subject", "-issuer", "-startdate", "-enddate", "-fingerprint", "-sha256",
+            "-ext", "subjectAltName,extendedKeyUsage", "-nameopt", "oneline"]
     try:
         if pem_path:
             code, text = run("openssl", *args, "-in", pem_path)
@@ -473,24 +493,53 @@ def cert_info(pem_path: str | None = None, pem: str | None = None) -> dict | Non
         return None
     if code != 0:
         return None
-    info = {"subject": None, "issuer": None, "expires": None, "names": []}
+    info: dict = {"subject": None, "issuer": None, "starts": None, "expires": None, "names": [], "ips": [],
+                  "server_auth": False, "fingerprint": None}
+    start = end = None
     for line in text.splitlines():
         if line.startswith("subject="):
             info["subject"] = line[8:].strip()
         elif line.startswith("issuer="):
             info["issuer"] = line[7:].strip()
+        elif line.startswith("notBefore="):
+            info["starts"] = _iso(line[10:].strip())
+            start = _epoch(line[10:].strip())
         elif line.startswith("notAfter="):
             info["expires"] = _iso(line[9:].strip())
-        elif "DNS:" in line:
-            info["names"] = [n.strip()[4:] for n in line.split(",") if n.strip().startswith("DNS:")]
+            end = _epoch(line[9:].strip())
+        elif "Fingerprint=" in line:
+            info["fingerprint"] = line.split("=", 1)[1].strip()
+        elif "TLS Web Server Authentication" in line:
+            info["server_auth"] = True
+        elif "DNS:" in line or "IP Address:" in line:
+            entries = [n.strip() for n in line.split(",")]
+            info["names"] = [n[4:] for n in entries if n.startswith("DNS:")]
+            info["ips"] = [n[11:] for n in entries if n.startswith("IP Address:")]
     issuer = info["issuer"] or ""
     info["staging"] = "STAGING" in issuer.upper()
     info["self_signed"] = info["issuer"] == info["subject"]
+    info["lifetime_days"] = (end - start) // 86400 if start is not None and end is not None else None
+    info["apple_problems"] = apple_problems(info)
     return info
 
 
-def served_certificate(name: str | None, port: int = 443) -> dict | None:
-    """The certificate Apache actually presents for NAME (SNI) on this machine."""
+def apple_problems(info: dict) -> list[str]:
+    """Why a Mac, iPhone or iPad cannot trust the certificate even when told
+    to: "no_san" (names only in the subject), "no_server_auth" (no
+    extendedKeyUsage serverAuth), "too_long" (valid for more than 825 days).
+    Whether it names the host the browser uses is up to the caller."""
+    problems = []
+    if not info["names"] and not info["ips"]:
+        problems.append("no_san")
+    if not info["server_auth"]:
+        problems.append("no_server_auth")
+    if info["lifetime_days"] is not None and info["lifetime_days"] > APPLE_MAX_DAYS:
+        problems.append("too_long")
+    return problems
+
+
+def served_pem(name: str | None, port: int = 443) -> str | None:
+    """The certificate Apache actually presents for NAME (SNI) on this machine, as PEM."""
     import socket
     import ssl
     ctx = ssl.create_default_context()
@@ -500,9 +549,34 @@ def served_certificate(name: str | None, port: int = 443) -> dict | None:
         with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
             with ctx.wrap_socket(sock, server_hostname=name or None) as tls:
                 der = tls.getpeercert(binary_form=True)
-    except OSError:
+    except (OSError, ValueError):
         return None
-    return cert_info(pem=ssl.DER_cert_to_PEM_cert(der)) if der else None
+    return ssl.DER_cert_to_PEM_cert(der) if der else None
+
+
+def served_certificate(name: str | None, port: int = 443) -> dict | None:
+    """What served_pem() returns, as cert_info()."""
+    pem = served_pem(name, port)
+    return cert_info(pem=pem) if pem else None
+
+
+def browser_name(host: str | None) -> str | None:
+    """The host name or address the browser used (its Host header, with any
+    port removed), or None if it is neither."""
+    if not host:
+        return None
+    host = host.strip().lower()
+    if host.startswith("["):  # [IPv6]:port
+        host = host[1:].split("]", 1)[0]
+    elif host.count(":") == 1:
+        host = host.split(":", 1)[0]
+    host = host.rstrip(".")
+    if re.fullmatch(r"[0-9a-f:]+", host) and ":" in host:
+        return host
+    labels = host.split(".")
+    if len(host) <= 253 and all(_LABEL.match(label) for label in labels):
+        return host
+    return None
 
 
 def renewal(root: str, cert: str) -> dict | None:
@@ -531,6 +605,7 @@ def status(root: str = "/") -> dict:
     out["site_enabled"] = os.path.exists(snippet_path(root)) if out["vhosts"] == "external" else site_enabled(root)
     name = site["domains"][0] if site else None
     out["served"] = served_certificate(name) if out["listening_443"] else None
+    out["self_signed_tool"] = os.path.exists(BIN["asl3-self-signed-cert"])
     if site and site.get("cert"):
         live = os.path.join(root, LETSENCRYPT.lstrip("/"), "live", site["cert"], "cert.pem")
         out["certificate"] = cert_info(pem_path=live) if os.path.exists(live) else None
@@ -714,6 +789,27 @@ def renew_test(root: str, output: Output) -> dict:
         raise HttpsError("There is no Let's Encrypt certificate yet.", "not_found")
     code, _ = run("certbot", "renew", "--dry-run", "--cert-name", site["cert"], output=output)
     return {"ok": code == 0}
+
+
+def renew_self_signed(root: str, name: str | None, output: Output) -> dict:
+    """A new self-signed certificate that Apple's devices can be told to
+    trust, from the appliance's asl3-self-signed-cert, for NAME (the name
+    the browser uses) as well as the host's own names; then Apache reloads."""
+    if not os.path.exists(BIN["asl3-self-signed-cert"]):
+        raise HttpsError("Making a new self-signed certificate needs the ASL3 appliance package "
+                         "(asl3-self-signed-cert).", "unavailable")
+    args = ["--renew"]
+    name = browser_name(name)
+    if name and name != "localhost":
+        args += ["--name", name]
+    code, text = run("asl3-self-signed-cert", *args, output=output)
+    if code == 2:
+        raise HttpsError("Apache's fallback certificate is not self-signed, so it was left alone.", "invalid")
+    if code != 0:
+        raise HttpsError("asl3-self-signed-cert could not make the certificate: " + (
+            text.strip().splitlines()[-1] if text.strip() else f"exit status {code}"))
+    run("systemctl", "try-reload-or-restart", "apache2", output=output, check=True)
+    return {"certificate": cert_info(pem_path=os.path.join(root, SNAKEOIL[0].lstrip("/")))}
 
 
 def remove(root: str, delete_certificate: bool, output: Output) -> dict:

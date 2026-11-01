@@ -7,6 +7,8 @@
     PUT    /api/v1/https/redirect     {"redirect"}
     POST   /api/v1/https/cockpit                  Cockpit uses the certificate too
     POST   /api/v1/https/renew-test               certbot renew --dry-run (job)
+    POST   /api/v1/https/self-signed              a new self-signed certificate (job, needs the appliance)
+    GET    /api/v1/https/certificate.crt          the certificate this browser is served, to trust it
     DELETE /api/v1/https?delete_certificate=1     stop using it (password re-entry)
 
 Everything runs as root in the privileged helper (asl_web_ui_priv.https has
@@ -22,7 +24,7 @@ from aiohttp_session import get_session
 from asl_web_ui_priv import https
 
 from ..privileged import PRIV_KEY, PrivError
-from ..security import SETTINGS_KEY, USER_KEY
+from ..security import SETTINGS_KEY, USER_KEY, public_host
 from .auth import recently_authenticated
 from .changes import STORE_KEY, error, read_json
 from .jobs import start as start_job
@@ -122,6 +124,29 @@ async def cockpit(request: web.Request) -> web.Response:
 @routes.post("/api/v1/https/renew-test")
 async def renew_test(request: web.Request) -> web.Response:
     return await _job(request, "Test the certificate renewal", "https.renew_test")
+
+
+@routes.post("/api/v1/https/self-signed")
+async def self_signed(request: web.Request) -> web.Response:
+    # The name this browser uses goes in the certificate too.
+    return await _job(request, "Make a new self-signed certificate", "https.renew_self_signed",
+                      {"name": public_host(request)})
+
+
+@routes.get("/api/v1/https/certificate.crt")
+async def served(request: web.Request) -> web.Response:
+    """The certificate Apache presents for the name this browser uses, for
+    the browser to save and the user to trust (Keychain, iOS profile)."""
+    name = https.browser_name(public_host(request))
+    try:
+        res = await _priv(request, "https.served_pem", {"name": name})
+    except PrivError as exc:
+        return _priv_error(exc)
+    if not res.get("pem"):
+        return error(404, "not_found", "Apache does not serve HTTPS on port 443.")
+    filename = (name or "certificate").replace(":", "_")
+    return web.Response(text=res["pem"], content_type="application/x-x509-ca-cert",
+                        headers={"Content-Disposition": f'attachment; filename="{filename}.crt"'})
 
 
 @routes.delete("/api/v1/https")

@@ -33,9 +33,11 @@ import TachometerAltIcon from "@patternfly/react-icons/dist/esm/icons/tachometer
 import WifiIcon from "@patternfly/react-icons/dist/esm/icons/wifi-icon";
 import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
 
-import { Status } from "./api";
+import { Status, SystemInfo } from "./api";
 import { useAsteriskControl } from "./AsteriskControl";
 import { Star } from "./Brand";
+import { daysLeft, EXPIRY_WARNING_DAYS, useSocketTrouble } from "./certTrust";
+import { CERTIFICATE_DOWNLOAD } from "./httpsApi";
 import { useDocumentTitle } from "./title";
 import { go } from "./useRoute";
 
@@ -85,6 +87,7 @@ type Props = {
   hostname: string;
   route: string;
   status: Status | null;
+  certificate?: SystemInfo["certificate"];
   onLogout: () => void;
   children: ReactNode;
 };
@@ -156,7 +159,66 @@ function RestartPending({ status }: { status: Status | null }) {
   );
 }
 
-export function Shell({ user, hostname, route, status, onLogout, children }: Props) {
+// Live connections (status, console, tuning) keep failing to open while
+// ordinary requests work. Usually Safari refusing a certificate the device
+// does not trust (issue #46).
+function SocketTrouble({ certificate }: { certificate?: SystemInfo["certificate"] }) {
+  const trouble = useSocketTrouble();
+  if (!trouble) return null;
+  const selfSigned = certificate?.self_signed ?? false;
+  return (
+    <PageSection className="asl-banner">
+      <Alert
+        variant="warning"
+        isInline
+        title="This browser refuses the live connection to this server"
+        actionLinks={
+          selfSigned ? (
+            <>
+              <Button variant="link" isInline component="a" href={CERTIFICATE_DOWNLOAD} download>
+                Download the certificate
+              </Button>
+              <Button variant="link" isInline onClick={() => go("https")}>
+                How to trust it
+              </Button>
+            </>
+          ) : undefined
+        }
+      >
+        Pages load, but live status, the Asterisk console and the tuning displays cannot connect.{" "}
+        {selfSigned
+          ? "Safari refuses these connections when this device does not trust the server's self-signed certificate, even after you accept its warning. Trust the certificate on this device, or give the server a Let's Encrypt certificate."
+          : "Something between this browser and the server, such as a proxy or a firewall, may be blocking WebSocket connections."}
+      </Alert>
+    </PageSection>
+  );
+}
+
+// A self-signed certificate that expires soon or has expired.
+function CertificateExpiry({ certificate }: { certificate?: SystemInfo["certificate"] }) {
+  const days = daysLeft(certificate?.expires);
+  if (!certificate?.self_signed || days === null || days > EXPIRY_WARNING_DAYS) return null;
+  const date = new Date(certificate.expires!).toLocaleDateString();
+  return (
+    <PageSection className="asl-banner">
+      <Alert
+        variant={days < 0 ? "danger" : "warning"}
+        isInline
+        title={days < 0 ? `The server's self-signed certificate expired on ${date}`
+          : `The server's self-signed certificate expires on ${date}`}
+        actionLinks={
+          <Button variant="link" isInline onClick={() => go("https")}>
+            Make a new one
+          </Button>
+        }
+      >
+        Browsers warn about an expired certificate, and devices that trust this one stop trusting it.
+      </Alert>
+    </PageSection>
+  );
+}
+
+export function Shell({ user, hostname, route, status, certificate, onLogout, children }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const base = route.split("/")[0] === "sa818" ? "hardware" : route.split("/")[0];
   useDocumentTitle(pageName(route), hostname);
@@ -218,6 +280,8 @@ export function Shell({ user, hostname, route, status, onLogout, children }: Pro
 
   return (
     <Page masthead={masthead} sidebar={sidebar} isManagedSidebar>
+      <SocketTrouble certificate={certificate} />
+      {base !== "https" && <CertificateExpiry certificate={certificate} />}
       <RestartPending status={status} />
       {children}
     </Page>

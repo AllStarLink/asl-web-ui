@@ -29,9 +29,10 @@ import {
 } from "@patternfly/react-core";
 
 import { ApiError, message } from "./api";
+import { appleProblems, daysLeft, EXPIRY_WARNING_DAYS, TrustSteps } from "./certTrust";
 import {
   CertInfo, enableListener, httpsStatus, HttpsStatus, installCertbot, obtainCertificate, removeHttps, renewTest,
-  setRedirect, cockpitCertificate,
+  renewSelfSigned, setRedirect, cockpitCertificate,
 } from "./httpsApi";
 import { useJob } from "./Job";
 import { PlainTextInput } from "./PlainInput";
@@ -55,6 +56,53 @@ function Cert({ cert }: { cert: CertInfo }) {
   );
 }
 
+// The self-signed certificate Apache serves: whether Apple's devices can
+// trust it, how to trust it, and a new one from the appliance (issue #46).
+function SelfSigned({ cert, canRenew, onRenew }: { cert: CertInfo; canRenew: boolean; onRenew: () => void }) {
+  const problems = appleProblems(cert, location.hostname);
+  const days = daysLeft(cert.expires);
+  const date = cert.expires ? new Date(cert.expires).toLocaleDateString() : "";
+  return (
+    <Card>
+      <CardTitle>Self-signed certificate</CardTitle>
+      <CardBody>
+        <div className="asl-stack">
+          <Content component="p">
+            Browsers warn about a self-signed certificate until each device is told to trust it. Safari also refuses
+            this server's live connections (status, the Asterisk console, tuning) until then, even after you accept
+            its warning. A Let's Encrypt certificate, below, avoids both if the server has a public name.
+          </Content>
+          {days !== null && days <= EXPIRY_WARNING_DAYS && (
+            <Alert variant={days < 0 ? "danger" : "warning"} isInline
+                   title={days < 0 ? `It expired on ${date}.` : `It expires on ${date}, in ${days} days.`}>
+              {canRenew ? "Make a new one, then trust it again on each device."
+                : "Replace it with a new certificate, or get a Let's Encrypt certificate below."}
+            </Alert>
+          )}
+          {problems.length > 0 ? (
+            <Alert variant="warning" isInline title="Macs, iPhones and iPads cannot trust this certificate">
+              <ul>
+                {problems.map((p) => <li key={p}>{p}</li>)}
+              </ul>
+              {canRenew ? "Make a new one that they can trust."
+                : "Making a new one needs the ASL3 appliance package (asl3-self-signed-cert)."}
+            </Alert>
+          ) : (
+            <TrustSteps fingerprint={cert.fingerprint} subject={cert.subject} />
+          )}
+          {canRenew && (
+            <div>
+              <Button variant={problems.length > 0 ? "primary" : "secondary"} onClick={onRenew}>
+                Make a new self-signed certificate
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
 export function HttpsPage() {
   const [status, setStatus] = useState<HttpsStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -68,6 +116,7 @@ export function HttpsPage() {
   const [fieldError, setFieldError] = useState<{ field: string; text: string } | null>(null);
   const [removing, setRemoving] = useState(false);
   const [deleteCert, setDeleteCert] = useState(false);
+  const [renewing, setRenewing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -133,6 +182,13 @@ export function HttpsPage() {
     } catch (err) {
       setNotice({ variant: "danger", text: message(err) });
     }
+  };
+
+  const renew = async () => {
+    setRenewing(false);
+    await job("Make a new self-signed certificate", renewSelfSigned,
+      "Apache uses the new certificate. Reload the page and accept it, then trust it on each device.",
+      "The web server now uses the new certificate, which this browser has not accepted yet. Reload the page and accept it.");
   };
 
   const remove = async () => {
@@ -249,6 +305,10 @@ export function HttpsPage() {
             </CardBody>
           </Card>
 
+          {status.served?.self_signed && (
+            <SelfSigned cert={status.served} canRenew={!!status.self_signed_tool} onRenew={() => setRenewing(true)} />
+          )}
+
           <Card>
             <CardTitle>{site?.cert ? "Let's Encrypt certificate" : "Get a Let's Encrypt certificate"}</CardTitle>
             <CardBody>
@@ -357,6 +417,20 @@ export function HttpsPage() {
         <ModalFooter>
           <Button variant="danger" onClick={remove}>Stop using it</Button>
           <Button variant="link" onClick={() => setRemoving(false)}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
+      <Modal isOpen={renewing} onClose={() => setRenewing(false)} variant="small" aria-labelledby="https-renew-title">
+        <ModalHeader title="Make a new self-signed certificate?" labelId="https-renew-title" titleIconVariant="warning" />
+        <ModalBody>
+          <Content component="p">
+            Apache switches to a new certificate, valid for 825 days, for this server's names and for{" "}
+            <b>{location.hostname}</b>. Browsers warn about it once more, and every device that trusts the current
+            certificate has to trust the new one.
+          </Content>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="primary" onClick={() => void renew()}>Make a new certificate</Button>
+          <Button variant="link" onClick={() => setRenewing(false)}>Cancel</Button>
         </ModalFooter>
       </Modal>
       {jobElement}

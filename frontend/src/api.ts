@@ -73,7 +73,48 @@ export function wsUrl(path: string): string {
 export async function openSocket(path: string, params: Record<string, string> = {}): Promise<WebSocket> {
   const { ticket } = await post<{ ticket: string }>("auth/ws-ticket");
   const query = new URLSearchParams({ ...params, ticket });
-  return new WebSocket(`${wsUrl(path)}?${query.toString()}`);
+  const socket = new WebSocket(`${wsUrl(path)}?${query.toString()}`);
+  watchSocket(socket);
+  return socket;
+}
+
+// Sockets in a row that closed without ever opening, although the ordinary
+// request for their ticket just worked. Safari does this when the device
+// does not trust the server's certificate, even after the user accepted the
+// page's warning (issue #46). Sockets the page closes itself do not count.
+let socketFailures = 0;
+const socketListeners = new Set<() => void>();
+
+function setSocketFailures(n: number) {
+  if (n === socketFailures) return;
+  socketFailures = n;
+  socketListeners.forEach((f) => f());
+}
+
+function watchSocket(socket: WebSocket) {
+  let opened = false;
+  let closedByPage = false;
+  const close = socket.close.bind(socket);
+  socket.close = (code?: number, reason?: string) => {
+    closedByPage = true;
+    close(code, reason);
+  };
+  socket.addEventListener("open", () => {
+    opened = true;
+    setSocketFailures(0);
+  });
+  socket.addEventListener("close", () => {
+    if (!opened && !closedByPage) setSocketFailures(socketFailures + 1);
+  });
+}
+
+export function socketFailuresInARow(): number {
+  return socketFailures;
+}
+
+export function onSocketFailures(listener: () => void): () => void {
+  socketListeners.add(listener);
+  return () => socketListeners.delete(listener);
 }
 
 // ---- types ---------------------------------------------------------------
@@ -132,4 +173,12 @@ export type SystemInfo = {
   kernel: string;
   uptime: number | null;
   asl_web_ui: string;
+  // The certificate Apache presents for the name this browser uses.
+  certificate: {
+    expires: string | null;
+    self_signed: boolean;
+    apple_problems: string[];
+    names: string[];
+    ips: string[];
+  } | null;
 };
