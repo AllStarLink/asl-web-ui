@@ -22,8 +22,12 @@ import {
 import AsteriskIcon from "@patternfly/react-icons/dist/esm/icons/asterisk-icon";
 import BroadcastTowerIcon from "@patternfly/react-icons/dist/esm/icons/broadcast-tower-icon";
 import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
+import BookIcon from "@patternfly/react-icons/dist/esm/icons/book-icon";
+import CommentsIcon from "@patternfly/react-icons/dist/esm/icons/comments-icon";
 import FileCodeIcon from "@patternfly/react-icons/dist/esm/icons/file-code-icon";
 import GlobeRouteIcon from "@patternfly/react-icons/dist/esm/icons/globe-route-icon";
+import HomeIcon from "@patternfly/react-icons/dist/esm/icons/home-icon";
+import ServerIcon from "@patternfly/react-icons/dist/esm/icons/server-icon";
 import NetworkIcon from "@patternfly/react-icons/dist/esm/icons/network-icon";
 import HistoryIcon from "@patternfly/react-icons/dist/esm/icons/history-icon";
 import LockIcon from "@patternfly/react-icons/dist/esm/icons/lock-icon";
@@ -35,7 +39,7 @@ import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
 
 import { Status, SystemInfo } from "./api";
 import { useAsteriskControl } from "./AsteriskControl";
-import { Star } from "./Brand";
+import { Logo } from "./Brand";
 import { daysLeft, EXPIRY_WARNING_DAYS, useSocketTrouble } from "./certTrust";
 import { CERTIFICATE_DOWNLOAD } from "./httpsApi";
 import { useDocumentTitle } from "./title";
@@ -57,6 +61,25 @@ const NAV: NavEntry[] = [
 const NETWORKING: NavEntry[] = [
   { route: "network", label: "Network", icon: <WifiIcon /> },
   { route: "44net", label: "44Net Connect", icon: <GlobeRouteIcon /> },
+];
+
+type SiteLink = { href: string; label: string; title: string; icon: ReactNode };
+
+// Links in the top bar. They open in a new tab so that the web UI stays
+// where it was.
+//
+// The node's other web tools, at the addresses the appliance's landing page
+// uses: Allmon3 on this web server, Cockpit on port 9090 of this host.
+const NODE_LINKS: SiteLink[] = [
+  { href: "/allmon3/", label: "Allmon3", title: "Allmon3 on this node", icon: <MonitoringIcon /> },
+  { href: `https://${window.location.hostname}:9090/`, label: "Cockpit", title: "Cockpit on this node", icon: <ServerIcon /> },
+];
+
+// AllStarLink project sites.
+const PROJECT_LINKS: SiteLink[] = [
+  { href: "https://allstarlink.org", label: "Home", title: "AllStarLink home page", icon: <HomeIcon /> },
+  { href: "https://allstarlink.github.io", label: "Manual", title: "AllStarLink manual", icon: <BookIcon /> },
+  { href: "https://community.allstarlink.org", label: "Community", title: "AllStarLink community forum", icon: <CommentsIcon /> },
 ];
 
 // Kept apart, at the bottom, so that newcomers reach for the guided pages first.
@@ -218,6 +241,19 @@ function CertificateExpiry({ certificate }: { certificate?: SystemInfo["certific
   );
 }
 
+function SiteLinks({ label, links }: { label: string; links: SiteLink[] }) {
+  return (
+    <nav className="asl-site-links" aria-label={label}>
+      {links.map((l) => (
+        <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" title={`${l.title} (opens in a new tab)`}>
+          {l.icon}
+          <span>{l.label}</span>
+        </a>
+      ))}
+    </nav>
+  );
+}
+
 export function Shell({ user, hostname, route, status, certificate, onLogout, children }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const base = route.split("/")[0] === "sa818" ? "hardware" : route.split("/")[0];
@@ -233,18 +269,17 @@ export function Shell({ user, hostname, route, status, certificate, onLogout, ch
         </MastheadToggle>
         <MastheadBrand>
           <MastheadLogo href="#/overview" className="asl-masthead-brand">
-            <Star />
-            <span>
-              <b>AllStarLink</b>
-              <small>
-                {user}@{hostname}
-              </small>
-            </span>
+            <Logo />
+            <small>
+              {user}@{hostname}
+            </small>
           </MastheadLogo>
         </MastheadBrand>
       </MastheadMain>
       <MastheadContent>
         <div className="asl-masthead-tools">
+          <SiteLinks label="This node's tools" links={NODE_LINKS} />
+          <SiteLinks label="AllStarLink sites" links={PROJECT_LINKS} />
           <Dropdown
             isOpen={menuOpen}
             onOpenChange={setMenuOpen}
