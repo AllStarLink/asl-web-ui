@@ -34,10 +34,19 @@ html, body, #root { height: 100%; }
   --pf-v6-c-menu-toggle--m-plain-text--Color: var(--asl-shell-fg);
 }
 .asl-masthead-brand { display: flex; align-items: center; gap: .6rem; color: var(--asl-shell-fg); text-decoration: none; }
-.asl-masthead-brand span { display: flex; flex-direction: column; line-height: 1.15; }
-.asl-masthead-brand b { font-family: var(--pf-t--global--font--family--heading); font-size: .95rem; }
-.asl-masthead-brand small { color: var(--asl-shell-muted); font-size: .78rem; }
+.asl-masthead-brand small { color: var(--asl-shell-muted); font-size: .78rem; line-height: 1.15; }
+/* The logo's text is black: give it a light tile so it reads on the dark bar. */
+.asl-logo { display: block; height: 40px; width: auto; padding: 2px 4px; background: #fff; border-radius: 4px; }
 .asl-masthead-tools { margin-inline-start: auto; display: flex; align-items: center; gap: .5rem; }
+.asl-site-links { display: flex; align-items: center; gap: .25rem; }
+.asl-site-links a { display: flex; align-items: center; gap: .4rem; padding: .35rem .6rem; border-radius: 4px; color: var(--asl-shell-fg); text-decoration: none; font-size: .875rem; }
+.asl-site-links + .asl-site-links { border-inline-start: 1px solid var(--asl-shell-current); padding-inline-start: .25rem; }
+.asl-site-links a:hover, .asl-site-links a:focus-visible { background: var(--asl-shell-hover); color: #fff; }
+/* On narrow screens keep the icons and drop the words (the title still names them). */
+@media (max-width: 767px) {
+  .asl-site-links span { display: none; }
+  .asl-masthead-brand small { display: none; }
+}
 
 /* ---- navigation ---- */
 .pf-v6-c-page__sidebar.asl-sidebar {

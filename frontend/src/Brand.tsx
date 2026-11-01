@@ -1,16 +1,17 @@
-// The AllStarLink star and name.
-export function Star({ size = 26 }: { size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
-      <polygon points="12,1.5 14.9,8.4 22.4,8.9 16.6,13.7 18.5,21 12,17 5.5,21 7.4,13.7 1.6,8.9 9.1,8.4" fill="#f5c12e" />
-    </svg>
-  );
+import logo from "./img/logo.png";
+
+// The AllStarLink logo (the same image the appliance uses for Cockpit's
+// login page). Its text is black, so it sits on a light tile in the dark
+// top bar.
+export function Logo() {
+  return <img className="asl-logo" src={logo} alt="AllStarLink" />;
 }
 
+// The name block on the login card. The full logo is shown just above the
+// card, so it is not repeated here.
 export function Brand({ subtitle }: { subtitle: string }) {
   return (
     <div className="asl-brand">
-      <Star size={34} />
       <div>
         <b>AllStarLink</b>
         <span>{subtitle}</span>
