@@ -1,3 +1,10 @@
+asl-web-ui (0.10-1) stable; urgency=medium
+
+  * Address TLS certificate generation/support/renewal
+  * Add "masthead" links
+
+ -- Helium <jason@mfamily.org>  Sun, 01 Nov 2026 15:26:38 -0500
+
 asl-web-ui (0.9-1) stable; urgency=medium
 
   * Fixes timing issues with LetsEncrypt certificate issuance
