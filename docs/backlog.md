@@ -70,3 +70,53 @@ Questions to answer:
 - The changes requested in [upstream-changes.md](upstream-changes.md):
   numeric one-shot tuning displays in app_rpt, and app_rpt's tune save
   rewriting every included file.
+
+### Self-signed certificate Apple devices can trust (#46)
+
+*Added 2026-10-31. Confirmed 2026-11-01: Allan trusted a certificate with a
+SAN in the Keychain and `.local` worked; the old certificate broke it again.
+Implemented 2026-11-01; waiting on review.*
+
+Safari refuses WebSockets to a server whose certificate the device does not
+trust, even after the user accepts the page's warning ("The certificate for
+this server is invalid"; the upgrade never reaches Apache). Seen on `.local`
+with "Prevent cross-site tracking" on. Apple trusts a TLS server certificate
+only with the names in a subjectAltName, extendedKeyUsage serverAuth and at
+most 825 days (<https://support.apple.com/en-us/103769>); the first-boot
+certificates had none of these.
+
+Why the click-through does not cover the socket: in WebKit, page loads pick a
+session through `sessionWrapperForTask`, while WebSocket tasks always use the
+default session and their trust challenge reaches Safari through a separate
+branch of `NetworkSessionCocoa::continueDidReceiveChallenge`. Safari's side is
+closed; WebKit's registrable-domain code treats `.local` and `.home` alike.
+Not a timing problem. Long-standing:
+[WebKit bug 145819](https://bugs.webkit.org/show_bug.cgi?id=145819); Cockpit
+documents it at <https://cockpit-project.org/running/safari>.
+
+Pull requests, all opened 2026-11-01:
+
+- **asl-web-ui #55**: banner when sockets keep failing; HTTPS page checks
+  Apple's rules, offers the certificate download, trust steps and
+  fingerprint, warns 30 days before expiry, and renews through the
+  appliance's script.
+- **asl3-appliance #25**: `/usr/sbin/asl3-self-signed-cert`, run by the
+  postinst with `--if-needed` (replaces a certificate that breaks the rules,
+  renews 30 days before expiry, never touches a CA-signed one) and gives
+  Cockpit a copy in `/etc/cockpit/ws-certs.d/50-asl3-self-signed.cert`.
+- **asl3-pi-image #27** and **ASL-Debian-ISO #1**: first boot uses that
+  script, or makes the same certificate and Cockpit copy with openssl.
+- Posted the explanation on #46:
+  <https://github.com/AllStarLink/asl-web-ui/issues/46#issuecomment-6561986365>.
+
+Still open:
+
+- Nobody has looked at the new banners and HTTPS card in a browser.
+- iPhone and iPad trust steps untested (asked Allan). iOS may want a CA
+  certificate rather than this `CA:FALSE` one.
+- No image built or booted with the first-boot change.
+- asl-web-ui's text after "Stop using it" says Cockpit goes back to its own
+  certificate; on an appliance it goes back to the shared self-signed one.
+- Release order: the renew button and first boot use the script only once
+  asl3-appliance ships it; until then first boot falls back to openssl.
+- Declined 2026-11-01: a Server-Sent Events fallback for status.
