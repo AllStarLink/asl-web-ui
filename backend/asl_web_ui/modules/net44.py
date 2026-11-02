@@ -2,7 +2,8 @@
 ASL3 appliance (asl_web_ui_priv.net44 has the details).
 
     GET    /api/v1/net44                          tunnel, firewall zone, hand-made tunnel, what the zone should open
-    PUT    /api/v1/net44/zone        {"echolink", "rtcm"}             create or update the firewall zone
+    PUT    /api/v1/net44/zone        {"echolink", "rtcm", "http", "https", "cockpit", "ssh"}
+                                                  create or update the firewall zone
     POST   /api/v1/net44/connection  {"config", "private_key", "mode"}  set up or replace the tunnel
     POST   /api/v1/net44/migrate                  take over a tunnel set up by hand with wg-quick
     PUT    /api/v1/net44/mode        {"mode"}     full tunnel or split routing
@@ -12,8 +13,9 @@ ASL3 appliance (asl_web_ui_priv.net44 has the details).
     DELETE /api/v1/net44?delete_zone=1            remove the tunnel (password re-entry)
     GET    /api/v1/net44/check                    the address the internet sees, registrations
 
-The zone always opens IAX2 on the port in iax.conf; EchoLink and VOTER/RTCM
-(on voter.conf's port) only when chosen. The choice is kept in the state
+The zone always opens IAX2 on the port in iax.conf; EchoLink, VOTER/RTCM
+(on voter.conf's port) and the management services (HTTP, HTTPS, Cockpit,
+SSH) only when chosen. The choice is kept in the state
 directory (SELECTION_FILE), so that when the IAX or VOTER port changes, the
 zone follows with the same choice (an after-apply step of node changes).
 Without that file (a zone made by hand), it is read from the zone.
@@ -49,6 +51,7 @@ routes = web.RouteTableDef()
 MYIP_URL = "https://www.allstarlink.org/myip.php"
 DEFAULT_VOTER_PORT = 1667
 SELECTION_FILE = "net44-zone.json"
+CHOICES = ("echolink", "rtcm", *net44.MANAGEMENT)
 
 
 def _priv_error(exc: PrivError) -> web.Response:
@@ -84,34 +87,52 @@ def _selection(request: web.Request, zone: dict | None, ports: dict) -> dict:
         with open(os.path.join(request.app[SETTINGS_KEY].state_dir, SELECTION_FILE)) as f:
             saved = json.load(f)
         if isinstance(saved.get("echolink"), bool) and isinstance(saved.get("rtcm"), bool):
-            return {"echolink": saved["echolink"], "rtcm": saved["rtcm"] and ports["voter_port"] is not None}
+            # Saved before the management services could be chosen: closed.
+            return {**{c: saved.get(c) is True for c in CHOICES},
+                    "rtcm": saved["rtcm"] and ports["voter_port"] is not None}
     except (OSError, ValueError, AttributeError):
         pass
     if not zone:
-        return {"echolink": False, "rtcm": False}
+        return {c: False for c in CHOICES}
     voter = ports["voter_port"]
-    return {"echolink": "echolink" in zone["services"],
+    return {**{c: c in zone["services"] for c in CHOICES},
             "rtcm": voter is not None and ("rtcm" in zone["services"] or f"{voter}/udp" in zone["ports"])}
 
 
-def _save_selection(request: web.Request, echolink: bool, rtcm: bool) -> None:
+def _save_selection(request: web.Request, selection: dict) -> None:
     state = request.app[SETTINGS_KEY].state_dir
     try:
         os.makedirs(state, exist_ok=True)
         with open(os.path.join(state, SELECTION_FILE), "w") as f:
-            json.dump({"echolink": echolink, "rtcm": rtcm}, f)
+            json.dump(selection, f)
     except OSError as exc:
         log.warning("cannot save the 44Net Connect zone choice: %s", exc)
 
 
-def _zone_args(ports: dict, echolink: bool, rtcm: bool) -> dict:
+def _zone_args(ports: dict, echolink: bool, rtcm: bool, **management: bool) -> dict:
     return {"iax_port": ports["iax_port"], "echolink": echolink,
-            "rtcm_port": ports["voter_port"] if rtcm and ports["voter_port"] is not None else None}
+            "rtcm_port": ports["voter_port"] if rtcm and ports["voter_port"] is not None else None,
+            "management": [m for m in net44.MANAGEMENT if management.get(m)]}
 
 
 def _expected(args: dict) -> dict:
-    services, ports = net44.zone_contents(args["iax_port"], args["echolink"], args["rtcm_port"])
+    services, ports = net44.zone_contents(args["iax_port"], args["echolink"], args["rtcm_port"], args["management"])
     return {"services": sorted(services), "ports": sorted(ports)}
+
+
+def _with_choices(request: web.Request, res: dict) -> dict:
+    """The helper's status (alone or in a setup result), with what the zone should open."""
+    status_ = res.get("status") if isinstance(res.get("status"), dict) else res
+    if not status_.get("available"):
+        return res
+    ports = asterisk_ports(request.app[SETTINGS_KEY].config_dir)
+    selection = _selection(request, status_["zone"], ports)
+    expected = _expected(_zone_args(ports, **selection))
+    zone = status_["zone"]
+    status_.update(asterisk=ports, selection=selection, expected_zone=expected,
+                   zone_current=bool(zone) and zone["services"] == expected["services"]
+                   and zone["ports"] == expected["ports"])
+    return res
 
 
 @routes.get("/api/v1/net44")
@@ -120,16 +141,7 @@ async def status(request: web.Request) -> web.Response:
         res = await _priv(request, "net44.status", timeout=60)
     except PrivError as exc:
         return _priv_error(exc)
-    if not res.get("available"):
-        return web.json_response(res)
-    ports = asterisk_ports(request.app[SETTINGS_KEY].config_dir)
-    selection = _selection(request, res["zone"], ports)
-    expected = _expected(_zone_args(ports, **selection))
-    zone = res["zone"]
-    res.update(asterisk=ports, selection=selection, expected_zone=expected,
-               zone_current=bool(zone) and zone["services"] == expected["services"]
-               and zone["ports"] == expected["ports"])
-    return web.json_response(res)
+    return web.json_response(_with_choices(request, res))
 
 
 def _changes_refused(request: web.Request) -> web.Response | None:
@@ -139,7 +151,7 @@ def _changes_refused(request: web.Request) -> web.Response | None:
 
 
 async def _change(request: web.Request, action: str, command: str, args: dict | None = None,
-                  timeout: float = 120) -> web.Response:
+                  timeout: float = 120, done=None) -> web.Response:
     refused = _changes_refused(request)
     if refused is not None:
         return refused
@@ -149,22 +161,22 @@ async def _change(request: web.Request, action: str, command: str, args: dict | 
         _audit(request, action, "failed", [exc.message[-200:]])
         return _priv_error(exc)
     _audit(request, action, "done")
-    return web.json_response(res)
+    if done is not None:
+        done()
+    return web.json_response(_with_choices(request, res))
 
 
 @routes.put("/api/v1/net44/zone")
 async def set_zone(request: web.Request) -> web.Response:
     body = await read_json(request)
-    if not isinstance(body.get("echolink"), bool) or not isinstance(body.get("rtcm"), bool):
-        return error(400, "invalid", "echolink and rtcm must be true or false.")
+    if any(not isinstance(body.get(c), bool) for c in CHOICES):
+        return error(400, "invalid", f"{', '.join(CHOICES)} must be true or false.")
+    selection = {c: body[c] for c in CHOICES}
     ports = asterisk_ports(request.app[SETTINGS_KEY].config_dir)
-    if body["rtcm"] and ports["voter_port"] is None:
+    if selection["rtcm"] and ports["voter_port"] is None:
         return error(400, "invalid", "chan_voter is not loaded, so there is no VOTER/RTCM port to open.")
-    resp = await _change(request, "44Net Connect: firewall zone", "net44.zone",
-                         _zone_args(ports, body["echolink"], body["rtcm"]))
-    if resp.status == 200:
-        _save_selection(request, body["echolink"], body["rtcm"])
-    return resp
+    return await _change(request, "44Net Connect: firewall zone", "net44.zone", _zone_args(ports, **selection),
+                         done=lambda: _save_selection(request, selection))
 
 
 @routes.post("/api/v1/net44/connection")
