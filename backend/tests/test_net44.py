@@ -76,7 +76,7 @@ def host(env, monkeypatch):  # noqa: F811
 
 def zone(**chosen):
     """A PUT net44/zone body: everything closed but what is chosen."""
-    return {**{c: False for c in ("echolink", "rtcm", *net44.MANAGEMENT)}, **chosen}
+    return {**{c: False for c in ("echolink", "rtcm", *net44.MANAGEMENT, "ami")}, **chosen}
 
 
 async def ready(host, **make):
@@ -121,7 +121,7 @@ async def test_zone_opens_iax_and_what_is_chosen(host):
     a = await host.make()
     _, body = await a.call("GET", "net44")
     assert body["available"] and body["zone"] is None and body["connection"] is None and body["legacy"] is None
-    assert body["asterisk"] == {"iax_port": 4569, "echolink": False, "voter_port": None}
+    assert body["asterisk"] == {"iax_port": 4569, "echolink": False, "voter_port": None, "ami_port": 5038}
     assert body["expected_zone"] == {"services": ["iax2"], "ports": []} and not body["zone_current"]
 
     status_, body = await a.call("PUT", "net44/zone", zone(echolink=True))
@@ -162,14 +162,29 @@ async def test_management_services_only_when_chosen(host):
     assert status_ == 400, body
 
 
+async def test_ami_on_manager_conf_port(host):
+    host.install()
+    a = await host.make()
+    status_, body = await a.call("PUT", "net44/zone", zone(ami=True))
+    assert status_ == 200 and body["zone"]["ports"] == ["5038/tcp"], body
+    assert body["selection"] == zone(ami=True) and body["zone_current"]
+
+    (host.etc / "manager.conf").write_text("[general]\nenabled = yes\nport = 15038\n")
+    _, body = await a.call("GET", "net44")
+    assert body["asterisk"]["ami_port"] == 15038 and not body["zone_current"]
+    assert body["expected_zone"] == {"services": ["iax2"], "ports": ["15038/tcp"]}
+    status_, body = await a.call("PUT", "net44/zone", zone(ami=True))
+    assert body["zone"]["ports"] == ["15038/tcp"], body
+
+
 async def test_management_choice_read_from_a_zone_made_by_hand(host):
     host.install()
     zones = host.state()["zones"]
-    zones["44NetConnect"] = {"services": ["iax2", "ssh", "cockpit"], "ports": [], "interfaces": []}
+    zones["44NetConnect"] = {"services": ["iax2", "ssh", "cockpit"], "ports": ["5038/tcp"], "interfaces": []}
     host.update(zones=zones)
     a = await host.make()
     _, body = await a.call("GET", "net44")
-    assert body["selection"] == zone(ssh=True, cockpit=True) and body["zone_current"]
+    assert body["selection"] == zone(ssh=True, cockpit=True, ami=True) and body["zone_current"]
 
 
 async def test_rtcm_needs_chan_voter(host):

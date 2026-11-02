@@ -2,7 +2,7 @@
 ASL3 appliance (asl_web_ui_priv.net44 has the details).
 
     GET    /api/v1/net44                          tunnel, firewall zone, hand-made tunnel, what the zone should open
-    PUT    /api/v1/net44/zone        {"echolink", "rtcm", "http", "https", "cockpit", "ssh"}
+    PUT    /api/v1/net44/zone        {"echolink", "rtcm", "http", "https", "cockpit", "ssh", "ami"}
                                                   create or update the firewall zone
     POST   /api/v1/net44/connection  {"config", "private_key", "mode"}  set up or replace the tunnel
     POST   /api/v1/net44/migrate                  take over a tunnel set up by hand with wg-quick
@@ -15,7 +15,7 @@ ASL3 appliance (asl_web_ui_priv.net44 has the details).
 
 The zone always opens IAX2 on the port in iax.conf; EchoLink, VOTER/RTCM
 (on voter.conf's port) and the management services (HTTP, HTTPS, Cockpit,
-SSH) only when chosen. The choice is kept in the state
+SSH, and AMI on manager.conf's port) only when chosen. The choice is kept in the state
 directory (SELECTION_FILE), so that when the IAX or VOTER port changes, the
 zone follows with the same choice (an after-apply step of node changes).
 Without that file (a zone made by hand), it is read from the zone.
@@ -50,8 +50,9 @@ log = logging.getLogger("asl-web-ui.net44")
 routes = web.RouteTableDef()
 MYIP_URL = "https://www.allstarlink.org/myip.php"
 DEFAULT_VOTER_PORT = 1667
+DEFAULT_AMI_PORT = 5038
 SELECTION_FILE = "net44-zone.json"
-CHOICES = ("echolink", "rtcm", *net44.MANAGEMENT)
+CHOICES = ("echolink", "rtcm", *net44.MANAGEMENT, "ami")
 
 
 def _priv_error(exc: PrivError) -> web.Response:
@@ -77,8 +78,10 @@ def asterisk_ports(config_dir: str) -> dict:
     if modules and module_state(ws, "chan_voter") is True and ws.exists("voter.conf"):
         value = ws.model("voter.conf").value("general", "port") or ""
         voter_port = int(value) if value.isdigit() and 0 < int(value) < 65536 else DEFAULT_VOTER_PORT
+    value = (ws.model("manager.conf").value("general", "port") if ws.exists("manager.conf") else None) or ""
+    ami_port = int(value) if value.isdigit() and 0 < int(value) < 65536 else DEFAULT_AMI_PORT
     return {"iax_port": iax_port(ws), "echolink": modules and module_state(ws, "chan_echolink") is True,
-            "voter_port": voter_port}
+            "voter_port": voter_port, "ami_port": ami_port}
 
 
 def _selection(request: web.Request, zone: dict | None, ports: dict) -> dict:
@@ -96,7 +99,8 @@ def _selection(request: web.Request, zone: dict | None, ports: dict) -> dict:
         return {c: False for c in CHOICES}
     voter = ports["voter_port"]
     return {**{c: c in zone["services"] for c in CHOICES},
-            "rtcm": voter is not None and ("rtcm" in zone["services"] or f"{voter}/udp" in zone["ports"])}
+            "rtcm": voter is not None and ("rtcm" in zone["services"] or f"{voter}/udp" in zone["ports"]),
+            "ami": f"{ports['ami_port']}/tcp" in zone["ports"]}
 
 
 def _save_selection(request: web.Request, selection: dict) -> None:
@@ -109,14 +113,16 @@ def _save_selection(request: web.Request, selection: dict) -> None:
         log.warning("cannot save the 44Net Connect zone choice: %s", exc)
 
 
-def _zone_args(ports: dict, echolink: bool, rtcm: bool, **management: bool) -> dict:
+def _zone_args(ports: dict, echolink: bool, rtcm: bool, ami: bool, **management: bool) -> dict:
     return {"iax_port": ports["iax_port"], "echolink": echolink,
             "rtcm_port": ports["voter_port"] if rtcm and ports["voter_port"] is not None else None,
-            "management": [m for m in net44.MANAGEMENT if management.get(m)]}
+            "management": [m for m in net44.MANAGEMENT if management.get(m)],
+            "ami_port": ports["ami_port"] if ami else None}
 
 
 def _expected(args: dict) -> dict:
-    services, ports = net44.zone_contents(args["iax_port"], args["echolink"], args["rtcm_port"], args["management"])
+    services, ports = net44.zone_contents(args["iax_port"], args["echolink"], args["rtcm_port"], args["management"],
+                                          args["ami_port"])
     return {"services": sorted(services), "ports": sorted(ports)}
 
 

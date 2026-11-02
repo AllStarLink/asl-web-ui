@@ -16,7 +16,8 @@ NetworkManager and firewalld:
   opens IAX2, EchoLink and VOTER/RTCM, by the appliance's firewalld services
   or by UDP port when the configured port is outside a service's range, and
   only the MANAGEMENT services chosen (firewalld's own, on their standard
-  ports). Anything else in the zone is closed. The keyfile is written only when the zone exists, and the tunnel
+  ports) and AMI (by TCP port) when chosen. Anything else in the zone is
+  closed. The keyfile is written only when the zone exists, and the tunnel
   starts only while bound to it.
 - Full tunnel: NetworkManager's own default-route handling (wg-quick's
   Table=auto). Split: no default route, host routes for ROUTE_HOSTS through
@@ -502,7 +503,7 @@ def _port(value, what: str) -> int:
 
 
 def zone_contents(iax_port: int, echolink: bool, rtcm_port: int | None,
-                  management=()) -> tuple[set[str], set[str]]:
+                  management=(), ami_port: int | None = None) -> tuple[set[str], set[str]]:
     """(services, ports) the zone opens: a service when it covers the port, else the UDP port."""
     services, ports = set(management), set()
 
@@ -518,17 +519,20 @@ def zone_contents(iax_port: int, echolink: bool, rtcm_port: int | None,
         services.add("echolink")
     if rtcm_port is not None:
         add("rtcm", rtcm_port)
+    if ami_port is not None:
+        ports.add(f"{ami_port}/tcp")
     return services, ports
 
 
 def set_zone(root: str, args: dict) -> dict:
     _require_available(root)
-    rtcm = args.get("rtcm_port")
+    rtcm, ami = args.get("rtcm_port"), args.get("ami_port")
     management = args.get("management", [])
     if not isinstance(management, list) or any(m not in MANAGEMENT for m in management):
         raise Net44Error(f"management must be a list of: {', '.join(MANAGEMENT)}.", "invalid")
     services, ports = zone_contents(_port(args.get("iax_port"), "iax_port"), args.get("echolink") is True,
-                                    None if rtcm is None else _port(rtcm, "rtcm_port"), management)
+                                    None if rtcm is None else _port(rtcm, "rtcm_port"), management,
+                                    None if ami is None else _port(ami, "ami_port"))
     current = _zone()
     if current is None:
         _check("firewall-cmd", "--permanent", f"--new-zone={ZONE}")

@@ -77,12 +77,15 @@ function ModeChoice({ mode, onChange, name }: { mode: Net44Mode; onChange: (m: N
   );
 }
 
-// Management services the zone can open, all on firewalld's standard ports.
-const MANAGEMENT: { key: "http" | "https" | "cockpit" | "ssh"; name: string; label: string }[] = [
+// Management services the zone can open: firewalld's own on their standard
+// ports, and AMI on manager.conf's port.
+type Management = { key: "http" | "https" | "cockpit" | "ssh" | "ami"; name: string; label: string };
+const management = (amiPort: number): Management[] => [
   { key: "http", name: "HTTP", label: "HTTP (TCP port 80)" },
   { key: "https", name: "HTTPS", label: "HTTPS: these web pages and the dashboards (TCP port 443)" },
   { key: "cockpit", name: "Cockpit", label: "Cockpit (TCP port 9090)" },
   { key: "ssh", name: "SSH", label: "SSH (TCP port 22)" },
+  { key: "ami", name: "AMI", label: `AMI: Asterisk Manager Interface (TCP port ${amiPort})` },
 ];
 
 function ZoneCard({ s, onDone }: { s: Net44Ready; onDone: (n: Notice, next?: Net44Ready) => void }) {
@@ -106,7 +109,8 @@ function ZoneCard({ s, onDone }: { s: Net44Ready; onDone: (n: Notice, next?: Net
   };
 
   const changed = JSON.stringify(choice) !== saved;
-  const management = MANAGEMENT.filter((m) => choice[m.key]);
+  const services = management(s.asterisk.ami_port);
+  const opened = services.filter((m) => choice[m.key]);
   const iaxService = s.asterisk.iax_port >= 4560 && s.asterisk.iax_port <= 4580;
   return (
     <Card>
@@ -154,7 +158,7 @@ function ZoneCard({ s, onDone }: { s: Net44Ready; onDone: (n: Notice, next?: Net
           </div>
           <Title headingLevel="h4">Management</Title>
           <div className="asl-stack">
-            {MANAGEMENT.map((m) => (
+            {services.map((m) => (
               <Fragment key={m.key}>
                 <Switch id={`net44-${m.key}`} label={m.label} isChecked={choice[m.key]}
                   onChange={(_e, v) => choose(m.key, v)} />
@@ -169,11 +173,12 @@ function ZoneCard({ s, onDone }: { s: Net44Ready; onDone: (n: Notice, next?: Net
               </Fragment>
             ))}
           </div>
-          {management.length > 0 && (
+          {opened.length > 0 && (
             <Alert variant="warning" isInline
-              title={`${management.map((m) => m.name).join(", ")} will be open to the whole internet`}>
+              title={`${opened.map((m) => m.name).join(", ")} will be open to the whole internet`}>
               Anyone can try to log in on the 44Net address. Use strong passwords{choice.ssh && <> and, for SSH,
               key-only logins</>}.
+              {choice.ami && <> Make sure every AMI user in <code>manager.conf</code> has a strong secret.</>}
             </Alert>
           )}
           <div className="asl-buttons">

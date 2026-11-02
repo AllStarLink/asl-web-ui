@@ -20,6 +20,7 @@ export type Net44Selection = {
   https: boolean;
   cockpit: boolean;
   ssh: boolean;
+  ami: boolean;
 };
 
 export type Net44Connection = {
@@ -61,7 +62,7 @@ export type Net44Status =
       legacy: Net44Legacy | null;
       checkpoint: { seconds_left: number } | { rolled_back: true } | null;
       issues: string[];
-      asterisk: { iax_port: number; echolink: boolean; voter_port: number | null };
+      asterisk: { iax_port: number; echolink: boolean; voter_port: number | null; ami_port: number };
       selection: Net44Selection;
       expected_zone: { services: string[]; ports: string[] };
       zone_current: boolean;
