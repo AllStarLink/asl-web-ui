@@ -12,6 +12,17 @@ export type Net44Tunnel = {
 
 export type Net44Mode = "full" | "split";
 
+// What the firewall zone opens besides IAX2.
+export type Net44Selection = {
+  echolink: boolean;
+  rtcm: boolean;
+  http: boolean;
+  https: boolean;
+  cockpit: boolean;
+  ssh: boolean;
+  ami: boolean;
+};
+
 export type Net44Connection = {
   id: string | null;
   interface: string | null;
@@ -51,8 +62,8 @@ export type Net44Status =
       legacy: Net44Legacy | null;
       checkpoint: { seconds_left: number } | { rolled_back: true } | null;
       issues: string[];
-      asterisk: { iax_port: number; echolink: boolean; voter_port: number | null };
-      selection: { echolink: boolean; rtcm: boolean };
+      asterisk: { iax_port: number; echolink: boolean; voter_port: number | null; ami_port: number };
+      selection: Net44Selection;
       expected_zone: { services: string[]; ports: string[] };
       zone_current: boolean;
     };
@@ -70,8 +81,7 @@ export type Net44Check = {
 };
 
 export const net44Status = () => get<Net44Status>("net44");
-export const setNet44Zone = (echolink: boolean, rtcm: boolean) =>
-  request<Net44Ready>("PUT", "net44/zone", { echolink, rtcm });
+export const setNet44Zone = (selection: Net44Selection) => request<Net44Ready>("PUT", "net44/zone", selection);
 export const configureNet44 = (config: string, privateKey: string, mode: Net44Mode) =>
   post<Net44Setup>("net44/connection", { config, private_key: privateKey || undefined, mode });
 export const migrateNet44 = () => post<Net44Setup>("net44/migrate");

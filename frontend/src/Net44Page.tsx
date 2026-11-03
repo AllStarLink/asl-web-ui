@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   Alert,
   AlertActionLink,
@@ -34,8 +34,8 @@ import ExternalLinkAltIcon from "@patternfly/react-icons/dist/esm/icons/external
 import { message } from "./api";
 import { duration } from "./format";
 import {
-  checkNet44, configureNet44, confirmNet44, migrateNet44, Net44Check, Net44Mode, Net44Ready, net44Status,
-  Net44Status, removeNet44, setNet44Mode, setNet44Zone, startNet44, stopNet44,
+  checkNet44, configureNet44, confirmNet44, migrateNet44, Net44Check, Net44Mode, Net44Ready, Net44Selection,
+  net44Status, Net44Status, removeNet44, setNet44Mode, setNet44Zone, startNet44, stopNet44,
 } from "./net44Api";
 import { PlainTextArea, PlainTextInput } from "./PlainInput";
 import { useReauth } from "./Reauth";
@@ -77,19 +77,29 @@ function ModeChoice({ mode, onChange, name }: { mode: Net44Mode; onChange: (m: N
   );
 }
 
+// Management services the zone can open: firewalld's own on their standard
+// ports, and AMI on manager.conf's port.
+type Management = { key: "http" | "https" | "cockpit" | "ssh" | "ami"; name: string; label: string };
+const management = (amiPort: number): Management[] => [
+  { key: "http", name: "HTTP", label: "HTTP (TCP port 80)" },
+  { key: "https", name: "HTTPS", label: "HTTPS: these web pages and the dashboards (TCP port 443)" },
+  { key: "cockpit", name: "Cockpit", label: "Cockpit (TCP port 9090)" },
+  { key: "ssh", name: "SSH", label: "SSH (TCP port 22)" },
+  { key: "ami", name: "AMI", label: `AMI: Asterisk Manager Interface (TCP port ${amiPort})` },
+];
+
 function ZoneCard({ s, onDone }: { s: Net44Ready; onDone: (n: Notice, next?: Net44Ready) => void }) {
-  const [echolink, setEcholink] = useState(s.selection.echolink);
-  const [rtcm, setRtcm] = useState(s.selection.rtcm);
+  const [choice, setChoice] = useState<Net44Selection>(s.selection);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    setEcholink(s.selection.echolink);
-    setRtcm(s.selection.rtcm);
-  }, [s.selection.echolink, s.selection.rtcm]);
+  const saved = JSON.stringify(s.selection);
+  useEffect(() => setChoice(JSON.parse(saved) as Net44Selection), [saved]);
+  const choose = (key: keyof Net44Selection, v: boolean) => setChoice((c) => ({ ...c, [key]: v }));
+  const { echolink, rtcm } = choice;
 
   const save = async () => {
     setBusy(true);
     try {
-      const next = await setNet44Zone(echolink, rtcm);
+      const next = await setNet44Zone(choice);
       onDone({ variant: "success", text: `The firewall zone ${s.zone_name} is set up.` }, next);
     } catch (err) {
       onDone({ variant: "danger", text: message(err) });
@@ -98,7 +108,9 @@ function ZoneCard({ s, onDone }: { s: Net44Ready; onDone: (n: Notice, next?: Net
     }
   };
 
-  const changed = echolink !== s.selection.echolink || rtcm !== s.selection.rtcm;
+  const changed = JSON.stringify(choice) !== saved;
+  const services = management(s.asterisk.ami_port);
+  const opened = services.filter((m) => choice[m.key]);
   const iaxService = s.asterisk.iax_port >= 4560 && s.asterisk.iax_port <= 4580;
   return (
     <Card>
@@ -108,8 +120,7 @@ function ZoneCard({ s, onDone }: { s: Net44Ready; onDone: (n: Notice, next?: Net
           <Content component="p">
             The tunnel gives this node a public address that anyone on the internet can reach. The firewall
             zone <code>{s.zone_name}</code> decides what they can reach there, so it is set up before the tunnel.
-            Management (SSH, Cockpit, these web pages, AMI) is never opened on the 44Net address: to manage the node
-            from elsewhere, use a private VPN such as Tailscale.
+            Only what is turned on below is opened; everything else is closed.
           </Content>
           <DescriptionList isHorizontal>
             <DescriptionListGroup>
@@ -136,15 +147,40 @@ function ZoneCard({ s, onDone }: { s: Net44Ready; onDone: (n: Notice, next?: Net
             <Switch id="net44-iax" label={`IAX2: AllStarLink calls (UDP port ${s.asterisk.iax_port}${iaxService ? "" : ", by number"})`}
               isChecked isDisabled />
             <Switch id="net44-echolink" label="EchoLink (UDP ports 5198–5199)" isChecked={echolink}
-              onChange={(_e, v) => setEcholink(v)} />
+              onChange={(_e, v) => choose("echolink", v)} />
             {!s.asterisk.echolink && echolink && (
               <HelperText><HelperTextItem variant="warning">EchoLink (chan_echolink) is not loaded.</HelperTextItem></HelperText>
             )}
             <Switch id="net44-rtcm"
               label={s.asterisk.voter_port !== null ? `VOTER/RTCM receivers (UDP port ${s.asterisk.voter_port})`
                 : "VOTER/RTCM receivers (chan_voter is not loaded)"}
-              isChecked={rtcm} isDisabled={s.asterisk.voter_port === null} onChange={(_e, v) => setRtcm(v)} />
+              isChecked={rtcm} isDisabled={s.asterisk.voter_port === null} onChange={(_e, v) => choose("rtcm", v)} />
           </div>
+          <Title headingLevel="h4">Management</Title>
+          <div className="asl-stack">
+            {services.map((m) => (
+              <Fragment key={m.key}>
+                <Switch id={`net44-${m.key}`} label={m.label} isChecked={choice[m.key]}
+                  onChange={(_e, v) => choose(m.key, v)} />
+                {m.key === "http" && (
+                  <HelperText>
+                    <HelperTextItem>
+                      HTTP should not be used for anything that asks for a password, but some systems may not work
+                      without it.
+                    </HelperTextItem>
+                  </HelperText>
+                )}
+              </Fragment>
+            ))}
+          </div>
+          {opened.length > 0 && (
+            <Alert variant="warning" isInline
+              title={`${opened.map((m) => m.name).join(", ")} will be open to the whole internet`}>
+              Anyone can try to log in on the 44Net address. Use strong passwords{choice.ssh && <> and, for SSH,
+              key-only logins</>}.
+              {choice.ami && <> Make sure every AMI user in <code>manager.conf</code> has a strong secret.</>}
+            </Alert>
+          )}
           <div className="asl-buttons">
             <Button variant={s.zone ? "secondary" : "primary"} isLoading={busy}
               isDisabled={busy || (!!s.zone && s.zone_current && !changed)} onClick={() => void save()}>

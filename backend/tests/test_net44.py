@@ -74,10 +74,15 @@ def host(env, monkeypatch):  # noqa: F811
     return env
 
 
+def zone(**chosen):
+    """A PUT net44/zone body: everything closed but what is chosen."""
+    return {**{c: False for c in ("echolink", "rtcm", *net44.MANAGEMENT, "ami")}, **chosen}
+
+
 async def ready(host, **make):
     host.install()
     a = await host.make(**make)
-    status_, body = await a.call("PUT", "net44/zone", {"echolink": False, "rtcm": False})
+    status_, body = await a.call("PUT", "net44/zone", zone())
     assert status_ == 200, body
     return a
 
@@ -86,6 +91,7 @@ async def configured(host, mode="full"):
     a = await ready(host)
     status_, body = await a.call("POST", "net44/connection", {"config": PORTAL, "private_key": PRIVATE, "mode": mode})
     assert status_ == 200, body
+    assert body["status"]["selection"] == zone() and body["status"]["zone_current"], body
     return a, body
 
 
@@ -106,7 +112,7 @@ async def test_needs_the_appliance(host):
     a = await host.make()
     status_, body = await a.call("GET", "net44")
     assert status_ == 200 and body == {"available": False, "reason": "appliance", "message": body["message"]}
-    status_, body = await a.call("PUT", "net44/zone", {"echolink": False, "rtcm": False})
+    status_, body = await a.call("PUT", "net44/zone", zone())
     assert status_ == 503, body
 
 
@@ -115,10 +121,10 @@ async def test_zone_opens_iax_and_what_is_chosen(host):
     a = await host.make()
     _, body = await a.call("GET", "net44")
     assert body["available"] and body["zone"] is None and body["connection"] is None and body["legacy"] is None
-    assert body["asterisk"] == {"iax_port": 4569, "echolink": False, "voter_port": None}
+    assert body["asterisk"] == {"iax_port": 4569, "echolink": False, "voter_port": None, "ami_port": 5038}
     assert body["expected_zone"] == {"services": ["iax2"], "ports": []} and not body["zone_current"]
 
-    status_, body = await a.call("PUT", "net44/zone", {"echolink": True, "rtcm": False})
+    status_, body = await a.call("PUT", "net44/zone", zone(echolink=True))
     assert status_ == 200, body
     assert body["zone"] == {"services": ["echolink", "iax2"], "ports": [], "interfaces": []}
     assert host.state()["reloads"] == 1
@@ -130,20 +136,65 @@ async def test_zone_opens_iax_and_what_is_chosen(host):
     zones["44NetConnect"]["services"].append("ssh")
     host.update(zones=zones)
     _, body = await a.call("GET", "net44")
-    assert body["selection"] == {"echolink": True, "rtcm": False} and not body["zone_current"]
+    assert body["selection"] == zone(echolink=True) and not body["zone_current"]
     assert body["expected_zone"] == {"services": ["echolink"], "ports": ["14569/udp"]}
-    status_, body = await a.call("PUT", "net44/zone", {"echolink": True, "rtcm": False})
+    status_, body = await a.call("PUT", "net44/zone", zone(echolink=True))
     assert body["zone"]["services"] == ["echolink"] and body["zone"]["ports"] == ["14569/udp"]
+
+
+async def test_management_services_only_when_chosen(host):
+    host.install()
+    a = await host.make()
+    status_, body = await a.call("PUT", "net44/zone", zone(https=True, ssh=True))
+    assert status_ == 200, body
+    assert body["zone"]["services"] == ["https", "iax2", "ssh"]
+    assert body["selection"] == zone(https=True, ssh=True) and body["zone_current"]
+    status_, body = await a.call("PUT", "net44/zone", zone(http=True, cockpit=True))
+    assert body["zone"]["services"] == ["cockpit", "http", "iax2"]
+
+    # A choice saved before these could be chosen keeps them closed.
+    (host.root.parent / "state" / "net44-zone.json").write_text('{"echolink": true, "rtcm": false}')
+    _, body = await a.call("GET", "net44")
+    assert body["selection"] == zone(echolink=True)
+    assert body["expected_zone"] == {"services": ["echolink", "iax2"], "ports": []}
+
+    status_, body = await a.call("PUT", "net44/zone", zone(ssh="yes"))
+    assert status_ == 400, body
+
+
+async def test_ami_on_manager_conf_port(host):
+    host.install()
+    a = await host.make()
+    status_, body = await a.call("PUT", "net44/zone", zone(ami=True))
+    assert status_ == 200 and body["zone"]["ports"] == ["5038/tcp"], body
+    assert body["selection"] == zone(ami=True) and body["zone_current"]
+
+    (host.etc / "manager.conf").write_text("[general]\nenabled = yes\nport = 15038\n")
+    _, body = await a.call("GET", "net44")
+    assert body["asterisk"]["ami_port"] == 15038 and not body["zone_current"]
+    assert body["expected_zone"] == {"services": ["iax2"], "ports": ["15038/tcp"]}
+    status_, body = await a.call("PUT", "net44/zone", zone(ami=True))
+    assert body["zone"]["ports"] == ["15038/tcp"], body
+
+
+async def test_management_choice_read_from_a_zone_made_by_hand(host):
+    host.install()
+    zones = host.state()["zones"]
+    zones["44NetConnect"] = {"services": ["iax2", "ssh", "cockpit"], "ports": ["5038/tcp"], "interfaces": []}
+    host.update(zones=zones)
+    a = await host.make()
+    _, body = await a.call("GET", "net44")
+    assert body["selection"] == zone(ssh=True, cockpit=True, ami=True) and body["zone_current"]
 
 
 async def test_rtcm_needs_chan_voter(host):
     host.install()
     a = await host.make()
-    status_, body = await a.call("PUT", "net44/zone", {"echolink": False, "rtcm": True})
+    status_, body = await a.call("PUT", "net44/zone", zone(rtcm=True))
     assert status_ == 400, body
     (host.etc / "modules.conf").write_text("[modules]\nautoload = no\nload = chan_voter.so\n")
     (host.etc / "voter.conf").write_text("[general]\nport = 1700\n")
-    status_, body = await a.call("PUT", "net44/zone", {"echolink": False, "rtcm": True})
+    status_, body = await a.call("PUT", "net44/zone", zone(rtcm=True))
     assert status_ == 200 and body["zone"]["ports"] == ["1700/udp"], body
 
 
@@ -159,7 +210,7 @@ async def test_iax_port_change_moves_the_zone(host):
 async def test_changes_refused_in_dev_mode(host):
     host.install()
     a = await host.make(dev=True)
-    status_, body = await a.call("PUT", "net44/zone", {"echolink": False, "rtcm": False})
+    status_, body = await a.call("PUT", "net44/zone", zone())
     assert status_ == 501, body
 
 
