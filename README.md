@@ -3,11 +3,6 @@
 A web interface for managing AllStarLink 3 node servers with a
 browser UI in the style of Cockpit, built with PatternFly.
 
-> [!CAUTION]
-> This package is under heavy development and most assuredly
-> has bugs. Don't run this on a node that you cannot easily
-> fix or rebuild if something goes wrong.
-
 The following is currently supported (almost feature-parity with asl-menu):
 
 * Basic Node Configuration
@@ -40,20 +35,12 @@ tunnel, full or split routing, and migration of a tunnel set up by hand
 * Syntax checker for Asterisk configuration files and a normalization
 engine to make customized files editable with asl-web-ui
 
-Major items remaining before release:
-
-* Tighter integration with the ASL3 Appliance package
-* All important bugs
-* Specific links/redirections to Cockpit management items
-such as WiFi Manager
-
 ## Installing
 
 asl-web-ui is distributed as a Debian package for AllStarLink 3 on Debian 13
-(trixie). Currently, it only lives in the "devel" package repo. To install:
+(trixie). To install:
 
 ```bash
-asl-repo-switch -l devel
 apt update
 apt install -y asl-web-ui
 ```
@@ -68,8 +55,7 @@ node must be manually added to the `asl-web-ui` group:
 sudo usermod -aG asl-web-ui <username>
 ```
 
-ASL3 Appliances will have a mechanism to auto-add system accounts
-when the software is fully released.
+ASL3 Appliances have a mechanism to auto-add system accounts.
 
 ### Access Must be via HTTPS
 
