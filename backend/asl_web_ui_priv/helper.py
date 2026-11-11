@@ -63,8 +63,13 @@ def start_time(pid: int) -> str:
     return fields[19]
 
 
+def action_id(command: str) -> str:
+    """The polkit action for a command; each must be declared in the .policy file."""
+    return ACTION_PREFIX + command.replace(".", "-").replace("_", "-")
+
+
 def authorized(command: str, pid: int, uid: int, pkcheck: str = PKCHECK) -> bool:
-    action = ACTION_PREFIX + command.replace(".", "-").replace("_", "-")
+    action = action_id(command)
     try:
         proc = subprocess.run([pkcheck, "--action-id", action, "--process", f"{pid},{start_time(pid)},{uid}"],
                               stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)

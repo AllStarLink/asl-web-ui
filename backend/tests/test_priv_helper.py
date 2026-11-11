@@ -7,6 +7,8 @@ import os
 import stat
 import tarfile
 import time
+from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
@@ -64,6 +66,13 @@ def test_pkcheck_is_asked_about_the_callers_process(tmp_path):
     assert pid == str(os.getpid()) and uid == str(os.getuid()) and start.isdigit()
     fake.write_text("#!/bin/sh\nexit 1\n")
     assert not helper.authorized("backup.restore", os.getpid(), os.getuid(), pkcheck=str(fake))
+
+
+def test_every_command_has_a_polkit_action():
+    # pkcheck refuses an action the .policy file does not declare, whatever the rules say (#60).
+    policy = Path(__file__).resolve().parents[2] / "conf" / "polkit" / "org.allstarlink.asl-web-ui.policy"
+    declared = {a.get("id") for a in ElementTree.parse(policy).getroot().iter("action")}
+    assert {helper.action_id(c) for c in commands.COMMANDS} <= declared
 
 
 def test_start_time_handles_odd_command_names(tmp_path, monkeypatch):

@@ -252,6 +252,24 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.allstarlink.asl-web-ui.https-renew-self-signed">
+    <description>Make a new self-signed certificate for Apache</description>
+    <message>Authentication is required to: make a new self-signed certificate for Apache</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.allstarlink.asl-web-ui.https-served-pem">
+    <description>Read the certificate Apache serves</description>
+    <message>Authentication is required to: read the certificate Apache serves</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
   <action id="org.allstarlink.asl-web-ui.asterisk-fix-ownership">
     <description>Give a configuration file back to the asterisk user</description>
     <message>Authentication is required to: give a configuration file back to the asterisk user</message>
