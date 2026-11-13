@@ -93,11 +93,12 @@ async def test_validation(module):
     assert not module.conf.exists()
 
 
-async def test_version(module):
-    module.install()
-    a = await module.make()
+async def test_version(ports):
+    calls = ports.install()
+    a = await ports.make()
     _, body = await a.call("POST", "sa818/version")
-    assert body == {**body, "ok": True, "firmware": "SA868S, version: V1.3"}
+    assert body == {**body, "ok": True, "firmware": "SA818S_V1.1"}
+    assert not calls.exists()  # no sa818 version subprocess (its parser can crash)
 
 
 def test_hand_edited_file_is_read_like_the_shell_does():
@@ -147,11 +148,12 @@ class FakeModule:
     """An SA818 at the far end of a pseudo-terminal: answers what the one on
     node40608 answered (SA818S firmware V1.1)."""
 
-    def __init__(self):
+    def __init__(self, connect=b"+DMOCONNECT:0", version=b"+VERSION:SA818S_V1.1"):
         # The far end stays open: the master reads EIO once no one has the port open.
         self.master, self.slave = pty.openpty()
         self.path = os.ttyname(self.slave)
         self.heard = []
+        self.replies = {b"AT+DMOCONNECT": connect, b"AT+VERSION": version}
         self.thread = threading.Thread(target=self.serve, daemon=True)
         self.thread.start()
 
@@ -165,7 +167,7 @@ class FakeModule:
             while b"\r\n" in buf:
                 line, buf = buf.split(b"\r\n", 1)
                 self.heard.append(line.decode())
-                reply = {b"AT+DMOCONNECT": b"+DMOCONNECT:0", b"AT+VERSION": b"+VERSION:SA818S_V1.1"}.get(line)
+                reply = self.replies.get(line)
                 if reply:
                     os.write(self.master, reply + b"\r\n")
 
@@ -207,6 +209,75 @@ def test_probe_finds_the_module_and_nothing_else(tmp_path):
     (tmp_path / "file").write_text("")
     assert sa818.probe(str(tmp_path / "file"), "9600") is None  # not a terminal
     assert sa818.probe(str(tmp_path / "missing"), "9600") is None
+
+
+@pytest.mark.parametrize("reply", [b"Wrong command", b"", b"+VERSION:", b"unexpected reply"])
+def test_probe_without_firmware_still_requires_a_handshake(reply):
+    fake = FakeModule(version=reply)
+    try:
+        assert sa818.probe(fake.path, "9600", timeout=0.1) == ""
+        assert fake.heard == ["AT+DMOCONNECT", "AT+VERSION"]
+    finally:
+        fake.close()
+
+
+@pytest.mark.parametrize("reply", [b"+DMOCONNECT:1", b"Wrong command", b""])
+def test_probe_does_not_accept_a_failed_handshake(reply):
+    fake = FakeModule(connect=reply)
+    try:
+        assert sa818.probe(fake.path, "9600", timeout=0.1) is None
+        assert fake.heard == ["AT+DMOCONNECT"]
+    finally:
+        fake.close()
+
+
+def test_probe_invalid_saved_speed():
+    fake = FakeModule()
+    try:
+        assert sa818.probe(fake.path, "invalid") is None
+        assert fake.heard == []
+    finally:
+        fake.close()
+
+
+async def test_detect_and_test_connection_without_version(ports):
+    calls = ports.install(radio=REJECTED)
+    ports.fake.replies[b"AT+VERSION"] = b"Wrong command"
+    a = await ports.make()
+    status_, body = await a.call("GET", "sa818/detect")
+    assert status_ == 200 and body["reachable"]
+    assert body["found"] == [{"port": "/dev/ttyUSB0", "speed": "9600", "firmware": None}]
+    _, body = await a.call("POST", "sa818/version")
+    assert body["ok"] and body["firmware"] is None
+    assert any("Firmware version unavailable" in line for line in body["log"])
+    assert not calls.exists()
+    assert not ports.conf.exists()  # connection testing does not save or program
+
+    # Recognizing the connection must not hide a later programming rejection.
+    _, body = await a.call("PUT", "sa818", {"settings": WANTED})
+    assert not body["programmed"]
+    assert any("programming error" in line for line in body["log"])
+    assert len(calls.read_text().splitlines()) == 1  # stop before volume/filters
+
+
+async def test_connection_uses_only_the_saved_port_and_speed(ports, monkeypatch):
+    a = await ports.make()
+    ports.conf.write_text(sa818.render({**WANTED, "CURRENT_PORT": "/dev/serial0", "CURRENT_SPEED": "19200"}))
+    seen = []
+    def probe(port, speed):
+        seen.append((port, speed))
+        return None
+    monkeypatch.setattr(sa818, "probe", probe)
+    _, body = await a.call("POST", "sa818/version")
+    assert not body["ok"] and body["firmware"] is None
+    assert seen == [(str(ports.root / "dev/serial0"), "19200")]
+
+
+async def test_connection_without_any_module(ports):
+    ports.fake.replies[b"AT+DMOCONNECT"] = b"+DMOCONNECT:1"
+    a = await ports.make()
+    _, body = await a.call("POST", "sa818/version")
+    assert not body["ok"] and body["firmware"] is None
 
 
 async def test_detect(ports):
