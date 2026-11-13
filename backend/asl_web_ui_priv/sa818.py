@@ -9,8 +9,9 @@ arguments sa818-menu builds; sa818 exits 0 even when the module rejects a
 command, so its log lines are checked for errors too.
 
 A module is found by asking each serial port what sa818 asks first
-(AT+DMOCONNECT) and then AT+VERSION; the web UI assumes it has the serial
-ports to itself and that opening one keys nothing.
+(AT+DMOCONNECT). AT+VERSION is optional: some modules acknowledge the
+connection but reply "Wrong command" to the version query. The web UI
+assumes it has the serial ports to itself and that opening one keys nothing.
 """
 
 import glob
@@ -253,9 +254,14 @@ def _ask(fd: int, command: str, timeout: float) -> str:
 
 
 def probe(path: str, speed: str, timeout: float = PROBE_TIMEOUT) -> str | None:
-    """The firmware of the SA818 answering at a serial port and speed (such as
-    SA818S_V1.1), or None: silence, another reply, or a port that cannot be
-    opened or set up all mean there is no SA818 there."""
+    """Return firmware, or "" if connected but firmware is unavailable.
+
+    Only +DMOCONNECT:0 establishes a connection. None means that handshake
+    failed, or the port could not be opened or set up. A successful handshake
+    does not mean the module will accept subsequent programming commands.
+    """
+    if speed not in SPEEDS:
+        return None
     try:
         fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     except OSError:
@@ -270,7 +276,7 @@ def probe(path: str, speed: str, timeout: float = PROBE_TIMEOUT) -> str | None:
         if _ask(fd, "AT+DMOCONNECT", timeout) != "+DMOCONNECT:0":
             return None
         version = _ask(fd, "AT+VERSION", timeout)
-        return version.removeprefix("+VERSION:") if version.startswith("+VERSION:") else None
+        return version.removeprefix("+VERSION:").strip() if version.startswith("+VERSION:") else ""
     except (OSError, termios.error):
         return None
     finally:
@@ -295,8 +301,8 @@ def detect(settings: dict[str, str], root: str = "/") -> dict:
         probed.append(port)
         for speed in speeds:
             firmware = probe(device, speed)
-            if firmware:
-                found.append({"port": port, "speed": speed, "firmware": firmware})
+            if firmware is not None:
+                found.append({"port": port, "speed": speed, "firmware": firmware or None})
                 break
     wanted = {real(p) for p in ([settings["CURRENT_PORT"]] if settings["CURRENT_PORT"] else AUTO_PORTS)}
     speed = settings["CURRENT_SPEED"] or PROBE_SPEED

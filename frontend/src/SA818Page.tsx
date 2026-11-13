@@ -95,7 +95,8 @@ function Detected({ hardware, saved, draft, onUse }: {
   }
   const where = `${first.port} at ${first.speed}`;
   if (detect.reachable) {
-    return <Alert variant="info" isInline isPlain title={`SA818 module found on ${where} (firmware ${first.firmware}).`} />;
+    const firmware = first.firmware ? `firmware ${first.firmware}` : "firmware version unavailable";
+    return <Alert variant="info" isInline isPlain title={`SA818 module found on ${where} (${firmware}).`} />;
   }
   const chosen = draft.CURRENT_PORT === first.port && draft.CURRENT_SPEED === first.speed;
   return (
@@ -216,7 +217,9 @@ export function SA818Tab({ hardware }: { hardware: Hardware }) {
     setResult(null);
     try {
       const v = await sa818Version();
-      setResult(v.ok ? { variant: "success", title: `The module answered: firmware ${v.firmware}.`, log: v.log }
+      setResult(v.ok ? { variant: "success", title: v.firmware
+        ? `The module answered: firmware ${v.firmware}.`
+        : "The module acknowledged the connection; its firmware version is unavailable.", log: v.log }
         : { variant: "danger", title: "The module did not answer on the saved serial port and speed.", log: v.log });
     } catch (err) {
       setResult({ variant: "danger", title: message(err), log: [] });
