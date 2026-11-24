@@ -94,7 +94,8 @@ def _style(text: ConfigText, near: int | None) -> tuple[str, str]:
         order = sorted(range(len(text.lines)), key=lambda i: abs(i - near))
         for i in order:
             line = text.lines[i]
-            if line.kind == "variable" and line.simple and line.operator == "=":
+            # (A line with no value has no space after "=" to copy.)
+            if line.kind == "variable" and line.simple and line.operator == "=" and line.value:
                 m = _VAR.match(line.text)
                 if m:
                     return m.group("before"), m.group("after")

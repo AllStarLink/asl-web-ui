@@ -411,3 +411,20 @@ async def test_switch_registration_needs_a_password(api):
     assert status_ == 409 and body["error"] == "requirement"
     status_, body = await a.post("nodes/plan", {"op": "registration", "method": "sip"})
     assert status_ == 400 and body["field"] == "method"
+
+
+async def test_telemetry(api):
+    a = await api.make()
+    _, node = await a.get("nodes/1999")
+    assert node["telemetry"]["telemetry"]["section"] == "telemetry"
+    assert node["telemetry"]["node"]["idrecording"]["value"] == "|iNOTSET"
+    plan, status_, res = await a.change({"op": "telemetry", "node": "1999", "settings": {"idrecording": "|mW1AW"},
+                                         "tones": {"ct2": "|t(660,880,150,2048)"}, "morse": {"speed": "25"}})
+    assert status_ == 200 and res["restart"]
+    assert plan["action"] == "node 1999: ID and telemetry"
+    _, node = await a.get("nodes/1999")
+    tones = {t["name"]: t for t in node["telemetry"]["telemetry"]["tones"]}
+    assert node["telemetry"]["telemetry"]["section"] == "telemetry-1999" and tones["ct2"]["own"]
+    assert node["telemetry"]["morse"]["settings"]["speed"]["value"] == "25"
+    status_, body = await a.post("nodes/plan", {"op": "telemetry", "node": "1999", "settings": {"idtime": "10"}})
+    assert status_ == 400 and body["field"] == "idtime"

@@ -31,7 +31,7 @@ from ..configengine.edit import Workspace
 from ..configengine.lint import lint
 from ..configengine.model import load
 from ..configengine.store import Store
-from ..nodes import access, allmon3, customize, voter
+from ..nodes import access, allmon3, customize, telemetry, voter
 from ..nodes.info import (
     DUPLEX_LABELS, INTERFACE_LABELS, PRIVATE_LIMIT, all_nodes, iax_port, is_untouched_template, node_info,
 )
@@ -117,6 +117,7 @@ async def get_node(request: web.Request) -> web.Response:
         return error(404, "not_found", f"Node {number} is not configured.")
     out = info.as_dict()
     out["customizations"] = customize.status(ws, number)
+    out["telemetry"] = telemetry.status(ws, number)
     out["voter"] = voter.status(ws.model(voter.FILE), number) if ws.exists(voter.FILE) else None
     return web.json_response(out)
 
@@ -155,6 +156,7 @@ def _describe(op: str, body: dict) -> str:
         "rename": f"change node number {node} to {body.get('number')}",
         "remove": f"remove node {node}",
         "callsign": f"node {node}: call sign",
+        "telemetry": f"node {node}: ID and telemetry",
         "duplex": f"node {node}: duplex",
         "statpost": f"node {node}: status posting",
         "startup_link": f"node {node}: connect at startup",
@@ -211,6 +213,8 @@ def _run(planner: Planner, op: str, body: dict) -> None:
         planner.remove(node)
     elif op == "callsign":
         planner.set_callsign(node, _str(body, "callsign"), bool(body.get("replace_custom")))
+    elif op == "telemetry":
+        planner.set_telemetry(node, body.get("settings"), body.get("per_link"), body.get("tones"), body.get("morse"))
     elif op == "duplex":
         duplex = _duplex(body)
         if duplex is None:

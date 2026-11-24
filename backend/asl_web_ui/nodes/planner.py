@@ -18,7 +18,7 @@ from ..configengine.edit import (
     module_state, replace_value, section_end, section_vars, set_module, set_raw, var_line,
 )
 from ..configengine.text import ConfigText
-from . import savenode, voter
+from . import savenode, telemetry, voter
 from .info import (
     ALL_CHANNEL_MODULES, CHANNEL_FILES, CHANNEL_MODULES, DEFAULT_IAX_PORT, HTTP_REGISTRATION_MODULE, INTERFACES,
     PRIVATE_LIMIT, REFERENCE_KEYS, REGISTRATION_HOST, STATPOST_URL, NodeInfo, http_registration_loaded,
@@ -218,6 +218,22 @@ class Planner:
             return
         self.section(number).set("idrecording", f"|i{call}")
         self.effects.restart = True
+
+    # ---- telemetry, ID and Morse code -------------------------------------------
+
+    def set_telemetry(self, number: str, settings: dict | None = None, per_link: dict | None = None,
+                      tones: dict | None = None, morse: dict | None = None) -> None:
+        """Change the node's ID and courtesy tone settings, its tones and its Morse
+        code ({key: value, or None to go back to the template's}); see telemetry."""
+        self.info(number)
+        try:
+            changed, notes = telemetry.apply(self.ws, number, settings or {}, per_link or {}, tones or {}, morse or {})
+        except telemetry.TelemetryError as exc:
+            raise PlanError(exc.message, exc.field)
+        for severity, note in notes:
+            self.effects.note(note, severity)
+        if changed:
+            self.effects.restart = True
 
     # ---- duplex --------------------------------------------------------------
 
