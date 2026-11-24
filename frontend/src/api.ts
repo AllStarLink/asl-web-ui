@@ -165,6 +165,22 @@ export type Status = {
     rpt_first_error: { line: number | null; file: string; message: string } | null;
   };
   error: string | null;
+  system: SystemStats;
+};
+
+// Raspberry Pi firmware throttle flags (vcgencmd get_throttled).
+export type PiFlags = { under_voltage: boolean; freq_capped: boolean; throttled: boolean; soft_temp_limit: boolean };
+
+// Read from /proc and /sys by the status poller; null where unavailable.
+export type SystemStats = {
+  cpu_percent: number | null; // null on the first round after a page connects
+  cpu_count: number | null;
+  load_average: [number, number, number] | null;
+  memory: { total: number; used: number; swap_total: number; swap_used: number } | null;
+  disk: { path: string; total: number; used: number; available: number } | null;
+  temperature: number | null; // °C
+  pi_model: string | null;
+  pi_throttled: { now: PiFlags; since_boot: PiFlags } | null;
 };
 
 export type SystemInfo = {

@@ -162,6 +162,15 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.allstarlink.asl-web-ui.pi-throttled">
+    <description>Read the Raspberry Pi's under-voltage and throttling flags</description>
+    <message>Authentication is required to: read the Raspberry Pi's under-voltage and throttling flags</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
   <action id="org.allstarlink.asl-web-ui.sa818-version">
     <description>Read the SA818 radio module's firmware version</description>
     <message>Authentication is required to: read the SA818 radio module's firmware version</message>

@@ -893,6 +893,32 @@ def apt_update(args: dict, output: Output) -> dict:
     return {"updated": True}
 
 
+# ---- Raspberry Pi -----------------------------------------------------------------------------
+
+# vcgencmd talks to the firmware through /dev/vcio (root only on the appliance)
+# or /dev/vchiq (video group); the web server runs as asterisk, so it asks here.
+# Kernels from 6.12 on no longer offer get_throttled in sysfs.
+VCGENCMD = "/usr/bin/vcgencmd"
+
+
+def pi_throttled(args: dict, output: Output) -> dict:
+    """The firmware's throttle flags (`vcgencmd get_throttled`) as a number; read only."""
+    try:
+        proc = subprocess.run([VCGENCMD, "get_throttled"], capture_output=True, text=True, timeout=10,
+                              env={"PATH": "/usr/bin:/bin"})
+    except FileNotFoundError:
+        raise CommandError("vcgencmd is not installed (it comes with raspi-utils-core).", "unavailable")
+    except subprocess.TimeoutExpired:
+        raise CommandError("vcgencmd did not answer within 10 seconds.")
+    _, sep, value = proc.stdout.strip().partition("throttled=")
+    try:
+        if proc.returncode != 0 or not sep:
+            raise ValueError
+        return {"value": int(value.strip(), 16)}
+    except ValueError:
+        raise CommandError(f"Unexpected vcgencmd output: {(proc.stdout + proc.stderr).strip()[:200]}")
+
+
 COMMANDS = {
     "backup.create": backup_create,
     "backup.delete": backup_delete,
@@ -937,4 +963,5 @@ COMMANDS = {
     "net44.remove": net44_remove,
     "dahdi.remove": dahdi_remove,
     "apt.update": apt_update,
+    "pi.throttled": pi_throttled,
 }
