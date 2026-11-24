@@ -176,6 +176,24 @@ async def test_restore_needs_password_then_runs(env):
     assert job["ok"], job
     assert (env.etc / "rpt.conf").read_text() == FILES["rpt.conf"]
     assert job["result"]["before"].endswith("_before-restore.tgz")
+    assert any("not updated for this ASL3 version: asl3-asterisk-config is not installed" in line
+               for line in job["lines"])
+
+
+async def test_restore_reports_the_update(env, monkeypatch):
+    from asl_web_ui_priv import commands
+
+    def update(output):
+        output("Updating modules.conf")
+        return {"updated": True, "reason": None}
+
+    monkeypatch.setattr(commands, "update_config", update)
+    a = await env.make()
+    made = (await a.job("POST", "backups", {}))["result"]["name"]
+    job = await a.job("POST", f"backups/local/{made}/restore", {})
+    assert job["ok"], job
+    assert "Updating modules.conf" in job["lines"]
+    assert "Updated the restored files for this ASL3 version." in job["lines"]
 
 
 async def test_import_upload(env):
