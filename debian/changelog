@@ -1,3 +1,16 @@
+asl-web-ui (1.2-1) unstable; urgency=medium
+
+  * Add dontlog variable for Apache (#63)
+  * Recognize SA818 modules w/o the version command (#64)
+  * Fix syntax checker error in dark mode (#68)
+  * Add a System Stats card (#69)
+  * Run the postinst cleanups on backup restores (#70)
+  * Add configuration for telemetry, CW ID (#72)
+  * Fix race condition during restores with astdb.sqlite (#73)
+  * Don't break on non-node-connect startup_macros (#74)
+
+ -- Helium <jason@mfamily.org>  Tue, 24 Nov 2026 19:53:19 -0500
+
 asl-web-ui (1.1-1) unstable; urgency=medium
 
   * Fix missing polkit policy for self-signed certs 
