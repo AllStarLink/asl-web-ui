@@ -325,6 +325,23 @@ async def test_connect_at_startup_permanent_and_custom(api):
     assert status_ == 200 and "+startup_macro = *8122001" in plan["files"][0]["diff"]
 
 
+async def test_custom_startup_macro_survives_other_changes(api):
+    # A startup_macro that is not a link command (*698 announces the node's
+    # address) is reported as custom and kept through other edits (#65).
+    _with_functions(api)
+    (api.etc / "rpt.conf").write_text((api.etc / "rpt.conf").read_text().replace(
+        "rxchannel = SimpleUSB/1999      ; SimpleUSB\n", "rxchannel = SimpleUSB/1999      ; SimpleUSB\nstartup_macro = *698\n"))
+    a = await api.make()
+    _, node = await a.get("nodes/1999")
+    assert node["startup"]["custom"] is True and node["startup"]["target"] is None
+    status_, body = await a.post("nodes/plan", {"op": "startup_link", "node": "1999", "target": None})
+    assert status_ == 409 and body["error"] == "custom_macro"
+    _, status_, _ = await a.change({"op": "rename", "node": "1999", "number": "2001"})
+    assert status_ == 200
+    _, node = await a.get("nodes/2001")
+    assert node["startup"]["macro"] == "*698" and node["startup"]["custom"] is True
+
+
 async def test_add_permanent_link_commands(api):
     _with_functions(api)
     a = await api.make()
