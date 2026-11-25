@@ -733,16 +733,24 @@ def sa818_apply(args: dict, output: Output) -> dict:
 
 
 def sa818_version(args: dict, output: Output) -> dict:
-    """Ask the module for its firmware version: shows the connection works."""
+    """Test the saved connection, with firmware when the module supports it.
+
+    Do not run sa818 version: it can crash parsing "Wrong command" from an
+    otherwise responsive module. Use the same handshake as detection.
+    """
     _, saved = _sa818_saved()
-    base = []
-    if saved["CURRENT_PORT"]:
-        base += ["--port", saved["CURRENT_PORT"]]
-    if saved["CURRENT_SPEED"]:
-        base += ["--speed", saved["CURRENT_SPEED"]]
-    ok, lines = sa818.run(SA818_TOOL, base + ["version"])
-    firmware = next((m.group(1).strip() for line in lines if (m := re.search(r"Firmware (.*)$", line))), None)
-    return {"ok": ok and firmware is not None, "firmware": firmware, "log": lines}
+    ports = [saved["CURRENT_PORT"]] if saved["CURRENT_PORT"] else sa818.AUTO_PORTS
+    speed = saved["CURRENT_SPEED"] or sa818.PROBE_SPEED
+    lines = []
+    for port in ports:
+        firmware = sa818.probe(_path(port), speed)
+        if firmware is not None:
+            lines.append(f"{port} at {speed}: +DMOCONNECT:0")
+            lines.append(f"Firmware: {firmware}" if firmware else
+                         "Firmware version unavailable; the module acknowledged the connection.")
+            return {"ok": True, "firmware": firmware or None, "log": lines}
+        lines.append(f"{port} at {speed}: no connection acknowledgment.")
+    return {"ok": False, "firmware": None, "log": lines}
 
 
 def sa818_detect(args: dict, output: Output) -> dict:
