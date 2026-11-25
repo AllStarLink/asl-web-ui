@@ -234,7 +234,7 @@ def render_site(names: list[str], redirect: bool, cert: str | None) -> str:
     head = [f"    ServerName {names[0]}"] + ([f"    ServerAlias {' '.join(names[1:])}"] if names[1:] else []) + [
         f"    DocumentRoot {DOCUMENT_ROOT}",
         "    ErrorLog ${APACHE_LOG_DIR}/error.log",
-        "    CustomLog ${APACHE_LOG_DIR}/access.log combined",
+        "    CustomLog ${APACHE_LOG_DIR}/access.log combined env=!dontlog",
     ]
     lines = [
         "# HTTPS for asl-web-ui's Let's Encrypt certificate. Written by asl-web-ui (its HTTPS",
