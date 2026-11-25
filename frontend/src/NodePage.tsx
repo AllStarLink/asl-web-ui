@@ -60,7 +60,6 @@ type Draft = {
   target: string;
   linkMode: "transceive" | "monitor";
   permanent: boolean;
-  replaceMacro: boolean;
   iface: string;
   custom: string[];
   voter: VoterDraft;
@@ -75,8 +74,8 @@ function initial(node: NodeDetail): Draft {
   return {
     number: node.number, password: "", callsign: node.callsign ?? "", replaceId: false,
     duplex: String(node.duplex ?? 2), l2l: node.linktolink, statpost: node.statpost,
-    linkOn: st.target !== null || st.custom, target: st.target ?? "", linkMode: st.mode ?? "transceive",
-    permanent: st.permanent, replaceMacro: false,
+    linkOn: st.target !== null, target: st.target ?? "", linkMode: st.mode ?? "transceive",
+    permanent: st.permanent,
     iface: node.interface ?? "SimpleUSB", custom: node.customizations.selected, voter: voterDraft(node.voter),
     telemetry: telemetryDraft(node.telemetry),
   };
@@ -111,14 +110,14 @@ function changes(node: NodeDetail, list: NodeList, d: Draft):
   }
   if (d.statpost !== base.statpost) add("general", "statpost", { enabled: d.statpost });
   const st = node.startup;
-  if (d.linkOn !== base.linkOn || (d.linkOn && (d.target.trim() !== base.target || d.linkMode !== base.linkMode ||
-                                                d.permanent !== base.permanent))) {
+  // A custom startup macro is left alone: this page only writes link macros.
+  if (!st.custom && (d.linkOn !== base.linkOn || (d.linkOn && (d.target.trim() !== base.target ||
+                                                                d.linkMode !== base.linkMode ||
+                                                                d.permanent !== base.permanent)))) {
     if (d.linkOn && !/^[0-9]{4,7}$/.test(d.target.trim())) problems.target = "Enter the node number to connect to.";
-    if (st.custom && !d.replaceMacro) problems.replaceMacro = "Tick this to replace the custom startup macro.";
     if (d.linkOn && d.permanent && !st.permanent_available) add("general", "permanent_links");
     add("general", "startup_link", {
       target: d.linkOn ? d.target.trim() : null, mode: d.linkMode, permanent: d.linkOn && d.permanent,
-      replace_custom: d.replaceMacro,
     });
   }
   if (d.iface !== base.iface) add("interface", "interface", { interface: d.iface });
@@ -282,13 +281,15 @@ function General({ node, list, status, draft, set, problems, dirty, changeRegist
             </FormGroup>
           )}
           <FormGroup role="radiogroup" fieldId="startup-on" label="Connect at startup" isStack>
-            {st.custom && <Content component="p">Custom startup macro: <code>{st.macro}</code></Content>}
-            <Radio id="startup-off" name="startup-on" label="Don't connect to another node" isChecked={!draft.linkOn}
-                   onChange={() => set({ linkOn: false })} />
+            <Radio id="startup-off" name="startup-on" label="Don't connect to another node"
+                   isChecked={!st.custom && !draft.linkOn} isDisabled={st.custom} onChange={() => set({ linkOn: false })} />
             <Radio id="startup-yes" name="startup-on" label="Connect to a node when Asterisk starts"
-                   isChecked={draft.linkOn} onChange={() => set({ linkOn: true })} />
+                   isChecked={!st.custom && draft.linkOn} isDisabled={st.custom} onChange={() => set({ linkOn: true })} />
+            <Help hint={st.custom && <>This node's <code>startup_macro</code> (<code>{st.macro}</code>) is an
+              advanced customization, not a simple link to another node, so these options don't apply and it isn't
+              changed here. Edit it in <a href="#/config">Manual Config Edit</a>.</>} />
           </FormGroup>
-          {draft.linkOn && (
+          {!st.custom && draft.linkOn && (
             <>
               <FormGroup label="Node to connect to" fieldId="startup-target">
                 <PlainTextInput id="startup-target" value={draft.target} onChange={(_e, v) => set({ target: v })}
@@ -311,13 +312,6 @@ function General({ node, list, status, draft, set, problems, dirty, changeRegist
                               "out in the stock rpt.conf."} />
               </FormGroup>
             </>
-          )}
-          {st.custom && (
-            <FormGroup fieldId="startup-replace">
-              <Checkbox id="startup-replace" isChecked={draft.replaceMacro} onChange={(_e, v) => set({ replaceMacro: v })}
-                        label={`Replace the custom startup macro (${st.macro})`} />
-              <Help problem={problems.replaceMacro} />
-            </FormGroup>
           )}
           <FormGroup label="Post node status" fieldId="node-statpost">
             <Switch id="node-statpost" isChecked={draft.statpost} isDisabled={node.private}
