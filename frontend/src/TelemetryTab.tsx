@@ -51,6 +51,13 @@ const MORSE: { key: string; label: string; unit: string; range: [number, number]
 const TRUE = /^(yes|true|y|t|1|on)$/i;
 const NAME = /^[A-Za-z0-9_-]+$/;
 const BUILDER = "https://www.allstarlink.org/telemetry-builder/";
+// Shown under a tone being edited.
+const builderHint = (
+  <div>
+    Make tone sequences with the{" "}
+    <a href={BUILDER} target="_blank" rel="noreferrer">AllStarLink telemetry builder</a>.
+  </div>
+);
 
 const msToS = (v: string) => String(Number(v) / 1000);
 const sToMs = (v: string) => (/^\d+(\.\d{1,3})?$/.test(v.trim()) ? String(Math.round(Number(v) * 1000)) : null);
@@ -411,6 +418,7 @@ export function TelemetryTab({ node, draft, set, problems }: {
                         <Help problem={p}>
                           <Source s={x} v={v} where={`in [${stanzaFor(t.telemetry, x, v)}]`}
                                   reset={() => tone(x.name, null)} show={(f) => f || "silent"} />
+                          {v !== null && !(x.own && v === x.value) && builderHint}
                         </Help>
                       </Td>
                     </Tr>
@@ -429,6 +437,7 @@ export function TelemetryTab({ node, draft, set, problems }: {
                             const { [n]: _gone, ...rest } = draft.tones;
                             set({ ...draft, tones: rest, added: draft.added.filter((a) => a !== n) });
                           }}>Remove</Button>
+                          {builderHint}
                         </Help>
                       </Td>
                     </Tr>
