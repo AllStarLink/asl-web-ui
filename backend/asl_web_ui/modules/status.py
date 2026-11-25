@@ -5,7 +5,10 @@
 
 The poller runs only while at least one page is connected. Each round asks
 Asterisk only for its uptime; the node list is fetched again after a restart
-or reload. Registrations cost two more CLI commands, so they are collected
+or reload. Each round also reads the system stats (CPU, load, memory, disk,
+temperature) from /proc and /sys; on a Raspberry Pi the firmware's throttle
+flags come from the privileged helper at most once a minute. Registrations
+cost two more CLI commands, so they are collected
 only while a page that shows them asks for the "registrations" topic: as
 ?topics=registrations on the socket URL, or later with a text frame
 {"type": "subscribe", "topics": [...]}. Otherwise the last ones collected are
@@ -25,7 +28,7 @@ from dataclasses import asdict
 from aiohttp import WSMsgType, web
 from aiohttp_session import get_session
 
-from .. import restart, systemd
+from .. import restart, sysstats, systemd
 from ..asterisk_cli import (
     AsteriskCLI,
     AsteriskUnavailable,
@@ -36,6 +39,7 @@ from ..asterisk_cli import (
     parse_rpt_version,
     parse_uptime_seconds,
 )
+from ..privileged import PRIV_KEY, PrivError
 from ..security import SETTINGS_KEY, is_group_member
 from .auth import STORAGE_KEY
 
@@ -46,12 +50,18 @@ INTERVAL = 5.0
 CLOSE_SESSION_ENDED = 4401
 TOPICS = frozenset({"registrations"})
 NODES_MAX_AGE = 60.0  # fetch the node list at least this often, even without a reload
+PI_THROTTLE_INTERVAL = 60.0  # ask the privileged helper for the Pi's throttle flags at most this often
 
 
 class StatusHub:
     def __init__(self, cli: AsteriskCLI, unit_state=systemd.unit_state, interval: float = INTERVAL,
-                 config_dir: str = "/etc/asterisk", state_dir: str | None = None):
+                 config_dir: str = "/etc/asterisk", state_dir: str | None = None, priv=None,
+                 stats: sysstats.SysStats | None = None):
         self.cli = cli
+        self.priv = priv
+        self.stats = stats or sysstats.SysStats()
+        # (asked at, decoded flags or None, last error) for the Pi's throttle flags
+        self._throttle: tuple[float, dict | None, str | None] | None = None
         self.config_dir = config_dir
         self.state_dir = state_dir
         self.rpt_lint = restart.RptLintCache(config_dir)
@@ -88,6 +98,27 @@ class StatusHub:
         self._nodes = None if started is None else (started, reloaded, mono, nodes)
         return nodes
 
+    async def _pi_throttled(self) -> dict | None:
+        mono = time.monotonic()
+        if self._throttle and mono - self._throttle[0] < PI_THROTTLE_INTERVAL:
+            return self._throttle[1]
+        error = None
+        try:
+            reply = await self.priv.call("pi.throttled", {}, "status-poller", timeout=15)
+            flags = sysstats.decode_throttled(int(reply["value"]))
+        except (PrivError, KeyError, TypeError, ValueError) as exc:
+            flags, error = None, getattr(exc, "message", str(exc))
+            if not self._throttle or self._throttle[2] != error:  # once, not every minute
+                log.warning("cannot read the Raspberry Pi's throttle flags: %s", error)
+        self._throttle = (mono, flags, error)
+        return flags
+
+    async def _system(self) -> dict:
+        stats = await asyncio.to_thread(self.stats.collect)
+        if stats["pi_model"] and self.priv is not None:
+            stats["pi_throttled"] = await self._pi_throttled()
+        return stats
+
     async def collect(self, registrations: bool = False) -> dict:
         svc = await self.unit_state("asterisk.service")
         running = svc.get("ActiveState") == "active"
@@ -109,6 +140,7 @@ class StatusHub:
             # Restart pending (files changed since Asterisk started) and
             # whether rpt.conf currently has errors (restart/reload warnings).
             "config": {"changed": [], "rpt_errors": 0, "rpt_first_error": None},
+            "system": await self._system(),
         }
         try:
             rpt = await asyncio.to_thread(self.rpt_lint.get)
@@ -272,7 +304,8 @@ def setup(app: web.Application) -> None:
     if CLI_KEY not in app:
         app[CLI_KEY] = AsteriskCLI()
     app[HUB_KEY] = StatusHub(app[CLI_KEY], unit_state=app.get(UNIT_STATE_KEY, systemd.unit_state),
-                             config_dir=app[SETTINGS_KEY].config_dir, state_dir=app[SETTINGS_KEY].state_dir)
+                             config_dir=app[SETTINGS_KEY].config_dir, state_dir=app[SETTINGS_KEY].state_dir,
+                             priv=app.get(PRIV_KEY))
 
     async def stop(app: web.Application) -> None:
         await app[HUB_KEY].close()

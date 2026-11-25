@@ -29,9 +29,9 @@ import InfoCircleIcon from "@patternfly/react-icons/dist/esm/icons/info-circle-i
 import LockIcon from "@patternfly/react-icons/dist/esm/icons/lock-icon";
 import TimesCircleIcon from "@patternfly/react-icons/dist/esm/icons/times-circle-icon";
 
-import { get, message, Status, SystemInfo } from "./api";
+import { get, message, PiFlags, Status, SystemInfo, SystemStats } from "./api";
 import { Connectivity, ResultLabel, when } from "./Diagnostics";
-import { duration } from "./format";
+import { byteSize, duration } from "./format";
 import { FirstRun, useNodeList, useNodeWizard } from "./Nodes";
 import { systemAction } from "./nodesApi";
 import { useReauth } from "./Reauth";
@@ -88,6 +88,98 @@ export function AsteriskState({ status }: { status: Status | null }) {
   if (a.state !== "active") return <Label color="red" icon={<TimesCircleIcon />}>Stopped</Label>;
   if (!a.reachable) return <Label color="orange" icon={<ExclamationTriangleIcon />}>Not responding</Label>;
   return <Label color="green" icon={<CheckCircleIcon />}>Running</Label>;
+}
+
+// Warning thresholds for the System Stats card. A Pi 4 or 5 starts throttling
+// at 80 °C (the 3B+ at 60 °C), so 75 °C warns before that; the Pi's own
+// throttle flags report actual throttling on any model.
+const WARN = { percent: 90, temperature: 75, loadPerCore: 2 };
+
+const PI_FLAG_TEXT: [keyof PiFlags, string][] = [
+  ["throttled", "throttled"],
+  ["freq_capped", "frequency capped"],
+  ["soft_temp_limit", "soft temperature limit"],
+];
+
+type StatRow = { term: string; value: string; warn?: boolean; sub?: string };
+
+function percent(part: number, whole: number): number {
+  return whole > 0 ? Math.round((100 * part) / whole) : 0;
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function statRows(s: SystemStats): StatRow[] {
+  const rows: StatRow[] = [];
+  if (s.pi_model) rows.push({ term: "Hardware", value: s.pi_model });
+  const cores = s.cpu_count ? ` (${s.cpu_count} core${s.cpu_count === 1 ? "" : "s"})` : "";
+  rows.push({ term: "CPU use", value: s.cpu_percent === null ? "—" : `${Math.round(s.cpu_percent)}%${cores}` });
+  if (s.load_average) {
+    const busy = s.cpu_count !== null && s.load_average[0] > WARN.loadPerCore * s.cpu_count;
+    rows.push({
+      term: "Load average",
+      value: s.load_average.map((v) => v.toFixed(2)).join(", "),
+      warn: busy,
+      sub: busy ? "Higher than the CPU can keep up with" : "1, 5 and 15 minutes",
+    });
+  }
+  if (s.memory) {
+    const m = s.memory;
+    const pct = percent(m.used, m.total);
+    rows.push({ term: "Memory", value: `${byteSize(m.used)} of ${byteSize(m.total)} (${pct}%)`, warn: pct > WARN.percent });
+    if (m.swap_total > 0) rows.push({ term: "Swap", value: `${byteSize(m.swap_used)} of ${byteSize(m.swap_total)}` });
+  }
+  if (s.disk) {
+    const d = s.disk;
+    const pct = percent(d.used, d.used + d.available);
+    rows.push({ term: `Disk (${d.path})`, value: `${byteSize(d.used)} of ${byteSize(d.total)} (${pct}%)`, warn: pct > WARN.percent });
+  }
+  if (s.temperature !== null) {
+    rows.push({ term: "CPU temperature", value: `${s.temperature.toFixed(0)} °C`, warn: s.temperature >= WARN.temperature });
+  }
+  if (s.pi_model) {
+    const t = s.pi_throttled;
+    if (!t) {
+      rows.push({ term: "Power", value: "—", sub: "Could not read the Pi's firmware flags" });
+    } else {
+      rows.push(
+        t.now.under_voltage
+          ? { term: "Power", value: "Under-voltage now", warn: true, sub: "Use a better power supply or cable" }
+          : t.since_boot.under_voltage
+            ? { term: "Power", value: "Under-voltage since boot", warn: true, sub: "Use a better power supply or cable" }
+            : { term: "Power", value: "OK" },
+      );
+      const now = PI_FLAG_TEXT.filter(([k]) => t.now[k]).map(([, text]) => text);
+      const before = PI_FLAG_TEXT.filter(([k]) => t.since_boot[k]).map(([, text]) => text);
+      rows.push(
+        now.length
+          ? { term: "Throttling", value: `${capitalize(now.join(", "))} now`, warn: true }
+          : before.length
+            ? { term: "Throttling", value: `${capitalize(before.join(", "))} since boot`, warn: true }
+            : { term: "Throttling", value: "None" },
+      );
+    }
+  }
+  return rows;
+}
+
+function SystemStatsList({ status }: { status: Status | null }) {
+  if (!status) return <Spinner size="md" aria-label="Loading" />;
+  return (
+    <DescriptionList isHorizontal isCompact>
+      {statRows(status.system).map((r) => (
+        <DescriptionListGroup key={r.term}>
+          <DescriptionListTerm>{r.term}</DescriptionListTerm>
+          <DescriptionListDescription>
+            {r.warn && <ExclamationTriangleIcon className="asl-warn" />} {r.value}
+            {r.sub && <div className="asl-sub">{r.sub}</div>}
+          </DescriptionListDescription>
+        </DescriptionListGroup>
+      ))}
+    </DescriptionList>
+  );
 }
 
 export function RegistrationLabel({ node }: { node: Status["nodes"][number] }) {
@@ -170,6 +262,11 @@ export function Overview({ status, system }: Props) {
             <CardBody>
               <Health status={status} />
             </CardBody>
+            <CardFooter>
+              <Button variant="link" isInline onClick={() => go("asterisk")}>
+                Asterisk details
+              </Button>
+            </CardFooter>
           </Card>
           <Card>
             <CardTitle>Nodes</CardTitle>
@@ -194,26 +291,10 @@ export function Overview({ status, system }: Props) {
             </CardFooter>
           </Card>
           <Card>
-            <CardTitle>Asterisk</CardTitle>
+            <CardTitle>System Stats</CardTitle>
             <CardBody>
-              <DescriptionList isHorizontal isCompact>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>Status</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    <AsteriskState status={status} />
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>Running for</DescriptionListTerm>
-                  <DescriptionListDescription>{duration(status?.asterisk.uptime)}</DescriptionListDescription>
-                </DescriptionListGroup>
-              </DescriptionList>
+              <SystemStatsList status={status} />
             </CardBody>
-            <CardFooter>
-              <Button variant="link" isInline onClick={() => go("asterisk")}>
-                Asterisk details
-              </Button>
-            </CardFooter>
           </Card>
           <Card>
             <CardTitle>System</CardTitle>
