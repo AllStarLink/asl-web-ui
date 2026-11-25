@@ -90,7 +90,28 @@ export type VoterStatus = {
   master_elsewhere: string[];
 };
 
-export type NodeDetail = NodeInfo & { customizations: CustomStatus; voter: VoterStatus | null };
+// One setting as Asterisk sees it: its value, whether the section sets it
+// itself, and what it is without that line (a template's value, or app_rpt's
+// default; null: not set at all).
+export type Setting = { value: string | null; own: boolean; fallback: string | null; from: string | null };
+
+export type TelemetryStanza = {
+  section: string; // the stanza the node uses
+  exists: boolean;
+  users: string[]; // the nodes that use it
+  in_place: boolean; // false: the first change makes the node a copy of its own
+  copy: string; // that copy's name
+};
+
+export type TelemetryStatus = {
+  node: Record<"idrecording" | "idtalkover" | "idtime" | "politeid" | "unlinkedct" | "remotect" | "linkunkeyct" |
+    "nounkeyct" | "nolocallinkct", Setting>;
+  per_link: Record<string, Setting>;
+  telemetry: TelemetryStanza & { tones: (Setting & { name: string; description: string })[] };
+  morse: TelemetryStanza & { settings: Record<"speed" | "frequency" | "amplitude" | "idfrequency" | "idamplitude", Setting> };
+};
+
+export type NodeDetail = NodeInfo & { customizations: CustomStatus; voter: VoterStatus | null; telemetry: TelemetryStatus };
 
 export type Note = { severity: "info" | "warning"; text: string };
 

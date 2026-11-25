@@ -276,3 +276,30 @@ def test_first_run_loads_the_channel_driver(tmp_path):
     p.planner(lambda pl: pl.first_run("2701", password="secret1", interface="SimpleUSB", duplex=1, callsign="w1aw"))
     assert effective(p.ns)["modules"]["chan_simpleusb"] is True
     assert effective(p.pl)["modules"]["chan_simpleusb"] is True
+
+
+def test_customizations_keep_the_nodes_own_tones(tmp_path):
+    """Not a comparison with node-setup (it has no tone editing): choosing or
+    dropping a customization keeps the tones and wait times set for the node."""
+    etc = stock(tmp_path / "etc")
+    (etc / "custom" / "rpt" / "test-tones.conf").write_text(
+        ";MENU:test-tones:telemetry:Test tones\n\n[telemetry-test-tones](!)\nct2 = |t(1000,0,50,2048)\n")
+    ws = Workspace(str(etc))
+    pl = Planner(ws)
+    pl.set_telemetry("1999", tones={"ct3": "|t(500,0,50,2048)"})
+    pl.customize("1999", ["test-tones", "hd"])
+    rpt = ws.model("rpt.conf")
+    assert rpt.get("telemetry-1999").templates == ["telemetry-main", "telemetry-test-tones"]
+    assert rpt.value("telemetry-1999", "ct2") == "|t(1000,0,50,2048)"
+    assert rpt.value("telemetry-1999", "ct3") == "|t(500,0,50,2048)"
+    pl.customize("1999", [])
+    rpt = ws.model("rpt.conf")
+    assert rpt.get("telemetry-1999").templates == ["telemetry-main"]
+    assert rpt.value("1999", "telemetry") == "telemetry-1999"
+    assert rpt.value("telemetry-1999", "ct3") == "|t(500,0,50,2048)"
+    # With nothing of its own, the node goes back to the shared stanza.
+    pl.set_telemetry("1999", tones={"ct3": None})
+    pl.customize("1999", ["test-tones"])
+    pl.customize("1999", [])
+    rpt = ws.model("rpt.conf")
+    assert rpt.value("1999", "telemetry") == "telemetry" and rpt.get("telemetry-1999") is None

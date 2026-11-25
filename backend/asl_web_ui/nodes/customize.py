@@ -240,16 +240,21 @@ def apply(ws: Workspace, number: str, names: list[str], effects: Effects) -> Non
         section = f"{kind}-{number}"
         rpt = ws.model(RPT)
         old = rpt.get(section)
+        # The settings the node's stanza has of its own (tones or Morse code
+        # changed on the Telemetry tab, or by hand) stay, after the templates.
+        ref = info.references[kind]
+        source = rpt.get(ref.section) if ref.exists else None
+        kept = [ws.text(v.file).lines[v.line].raw for v in (source.own() if source else []) if v.file == source.file]
         if old is not None:
             text = ws.text(old.file)
             remove_section(text, find_headers(text, section)[0])
-        if new == [f"{kind}-main"]:
+        if new == [f"{kind}-main"] and not kept:
             Section(ws, RPT, number).unset(key)
         else:
             Section(ws, RPT, number).set(key, section)
             node_cat = ws.model(RPT).get(number)
             text = ws.text(node_cat.file)
-            append_section(text, section, new, before=node_cat.line)
+            append_section(text, section, new, kept, before=node_cat.line)
         effects.restart = True
 
     # The channel driver section (simpleusb.conf / usbradio.conf).
