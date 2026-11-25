@@ -7,7 +7,9 @@
     POST   /api/v1/backups                {"upload"}     create (job), optionally upload
     GET    /api/v1/backups/local/{name}/contents          what a restore would write
     POST   /api/v1/backups/local/{name}/restore           restore (job; password re-entry; restarts
-                                                         a running Asterisk)
+                                                         a running Asterisk), then update the files
+                                                         (asl3-asterisk-config's postinst, as a
+                                                         package upgrade would)
     POST   /api/v1/backups/local/{name}/upload            copy to the AllStarLink server (job)
     GET    /api/v1/backups/local/{name}/download
     DELETE /api/v1/backups/local/{name}
@@ -131,7 +133,7 @@ async def _restore(request: web.Request, job, name: str) -> dict:
             raise RestoreError(f"Could not stop Asterisk, so nothing was restored: {output[-300:] or 'no output'}")
         _audit(request, "stop Asterisk for a restore", "done", [name])
     try:
-        res = await _priv(request, "backup.restore", {"name": name})
+        res = await _priv(request, "backup.restore", {"name": name}, on_output=job.output)
     finally:
         if running:
             job.output("Starting Asterisk…")
@@ -145,6 +147,7 @@ async def _restore(request: web.Request, job, name: str) -> dict:
     job.output(f"Wrote {res['written']} files. The previous configuration is saved as {res['before']}.")
     for s in res["skipped"]:
         job.output(f"Skipped {s['name']}: {s['reason']}")
+    _report_update(job, res)
     _audit(request, "restore backup", "done", [name, f"before={res['before']}"])
     if running and not started:
         raise RestoreError(f"The backup was restored (the previous configuration is saved as {res['before']}), "
@@ -303,6 +306,17 @@ async def contents(request: web.Request) -> web.Response:
         return web.json_response(await _priv(request, "backup.read", {"name": _name(request)}))
     except PrivError as exc:
         return _priv_error(exc)
+
+
+def _report_update(job, res: dict) -> None:
+    """The update after a restore (asl3-asterisk-config's postinst): its
+    failure does not undo the restore, so it is reported, not raised."""
+    update = res.get("update") or {}
+    if update.get("updated"):
+        job.output("Updated the restored files for this ASL3 version.")
+    elif update.get("reason"):
+        job.output(f"The restored files were not updated for this ASL3 version: {update['reason']} "
+                   "Run \"sudo dpkg-reconfigure asl3-asterisk-config\" to update them.")
 
 
 @routes.post("/api/v1/backups/local/{name}/restore")

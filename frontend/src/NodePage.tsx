@@ -41,10 +41,11 @@ import {
 import { useNodeList } from "./Nodes";
 import { TuningPanel } from "./Tuning";
 import { RegistrationLabel } from "./Overview";
+import { telemetryChanges, TelemetryDraft, telemetryDraft, TelemetryProblems, TelemetryTab } from "./TelemetryTab";
 import { go, useLeaveGuard } from "./useRoute";
 import { VoterDraft, voterDraft, voterOp, VoterTab } from "./VoterTab";
 
-// The General, Radio interface and Customizations tabs edit one draft of the
+// The General, Radio interface, VOTER, Telemetry and Customizations tabs edit one draft of the
 // node's settings. It survives switching tabs, and is reviewed and saved (or
 // discarded) as one change. Tuning and access lists take effect immediately.
 type Draft = {
@@ -59,10 +60,10 @@ type Draft = {
   target: string;
   linkMode: "transceive" | "monitor";
   permanent: boolean;
-  replaceMacro: boolean;
   iface: string;
   custom: string[];
   voter: VoterDraft;
+  telemetry: TelemetryDraft;
 };
 type SetDraft = (change: Partial<Draft>) => void;
 type Problems = Partial<Record<keyof Draft, string>>;
@@ -73,9 +74,10 @@ function initial(node: NodeDetail): Draft {
   return {
     number: node.number, password: "", callsign: node.callsign ?? "", replaceId: false,
     duplex: String(node.duplex ?? 2), l2l: node.linktolink, statpost: node.statpost,
-    linkOn: st.target !== null || st.custom, target: st.target ?? "", linkMode: st.mode ?? "transceive",
-    permanent: st.permanent, replaceMacro: false,
+    linkOn: st.target !== null, target: st.target ?? "", linkMode: st.mode ?? "transceive",
+    permanent: st.permanent,
     iface: node.interface ?? "SimpleUSB", custom: node.customizations.selected, voter: voterDraft(node.voter),
+    telemetry: telemetryDraft(node.telemetry),
   };
 }
 
@@ -83,7 +85,8 @@ const sameSet = (a: string[], b: string[]) => [...a].sort().join() === [...b].so
 
 // The draft's differences from the node, as plan operations (with the tab
 // each belongs to), and what is wrong with the fields that changed.
-function changes(node: NodeDetail, list: NodeList, d: Draft): { ops: (Op & { tab: string })[]; problems: Problems } {
+function changes(node: NodeDetail, list: NodeList, d: Draft):
+  { ops: (Op & { tab: string })[]; problems: Problems; telemetry: TelemetryProblems } {
   const ops: (Op & { tab: string })[] = [];
   const problems: Problems = {};
   const n = node.number;
@@ -107,26 +110,33 @@ function changes(node: NodeDetail, list: NodeList, d: Draft): { ops: (Op & { tab
   }
   if (d.statpost !== base.statpost) add("general", "statpost", { enabled: d.statpost });
   const st = node.startup;
-  if (d.linkOn !== base.linkOn || (d.linkOn && (d.target.trim() !== base.target || d.linkMode !== base.linkMode ||
-                                                d.permanent !== base.permanent))) {
+  // A custom startup macro is left alone: this page only writes link macros.
+  if (!st.custom && (d.linkOn !== base.linkOn || (d.linkOn && (d.target.trim() !== base.target ||
+                                                                d.linkMode !== base.linkMode ||
+                                                                d.permanent !== base.permanent)))) {
     if (d.linkOn && !/^[0-9]{4,7}$/.test(d.target.trim())) problems.target = "Enter the node number to connect to.";
-    if (st.custom && !d.replaceMacro) problems.replaceMacro = "Tick this to replace the custom startup macro.";
     if (d.linkOn && d.permanent && !st.permanent_available) add("general", "permanent_links");
     add("general", "startup_link", {
       target: d.linkOn ? d.target.trim() : null, mode: d.linkMode, permanent: d.linkOn && d.permanent,
-      replace_custom: d.replaceMacro,
     });
   }
   if (d.iface !== base.iface) add("interface", "interface", { interface: d.iface });
   if (!sameSet(d.custom, base.custom)) add("customizations", "customize", { names: d.custom });
   const voter = node.interface === "Voter" ? voterOp(base.voter, d.voter) : null;
   if (voter) add("voter", "voter", voter);
+  const tm = telemetryChanges(node.telemetry, base.telemetry, d.telemetry);
+  if (tm.params) add("telemetry", "telemetry", tm.params);
+  // Both set idrecording.
+  if (ops.some((o) => o.op === "callsign") && tm.params && "idrecording" in (tm.params.settings as object)) {
+    problems.callsign = "The ID on the Telemetry tab is changed too. Change one or the other.";
+    tm.problems["settings.idrecording"] = "The call sign on the General tab is changed too. Change one or the other.";
+  }
   if (d.number !== n) {
     const problem = numberProblem(d.number, list.nodes.map((x) => x.number), n);
     if (problem) problems.number = problem;
     add("general", "rename", { number: d.number });
   }
-  return { ops, problems };
+  return { ops, problems, telemetry: tm.problems };
 }
 
 function Help({ problem, hint }: { problem?: string; hint?: ReactNode }) {
@@ -248,7 +258,8 @@ function General({ node, list, status, draft, set, problems, dirty, changeRegist
           <FormGroup label="Call sign" fieldId="node-callsign">
             <PlainTextInput id="node-callsign" value={draft.callsign} onChange={(_e, v) => set({ callsign: v.toUpperCase() })}
                             validated={problems.callsign ? "error" : "default"} autoComplete="off" />
-            <Help problem={problems.callsign} hint={!node.id_simple && <>Custom ID: <code>{node.idrecording}</code></>} />
+            <Help problem={problems.callsign}
+                  hint={!node.id_simple && <>Custom ID: <code>{node.idrecording}</code>, set on the Telemetry tab.</>} />
             {!node.id_simple && draft.callsign.trim() !== "" && (
               <>
                 <Checkbox id="node-replace-id" isChecked={draft.replaceId} onChange={(_e, v) => set({ replaceId: v })}
@@ -270,13 +281,15 @@ function General({ node, list, status, draft, set, problems, dirty, changeRegist
             </FormGroup>
           )}
           <FormGroup role="radiogroup" fieldId="startup-on" label="Connect at startup" isStack>
-            {st.custom && <Content component="p">Custom startup macro: <code>{st.macro}</code></Content>}
-            <Radio id="startup-off" name="startup-on" label="Don't connect to another node" isChecked={!draft.linkOn}
-                   onChange={() => set({ linkOn: false })} />
+            <Radio id="startup-off" name="startup-on" label="Don't connect to another node"
+                   isChecked={!st.custom && !draft.linkOn} isDisabled={st.custom} onChange={() => set({ linkOn: false })} />
             <Radio id="startup-yes" name="startup-on" label="Connect to a node when Asterisk starts"
-                   isChecked={draft.linkOn} onChange={() => set({ linkOn: true })} />
+                   isChecked={!st.custom && draft.linkOn} isDisabled={st.custom} onChange={() => set({ linkOn: true })} />
+            <Help hint={st.custom && <>This node's <code>startup_macro</code> (<code>{st.macro}</code>) is an
+              advanced customization, not a simple link to another node, so these options don't apply and it isn't
+              changed here. Edit it in <a href="#/config">Manual Config Edit</a>.</>} />
           </FormGroup>
-          {draft.linkOn && (
+          {!st.custom && draft.linkOn && (
             <>
               <FormGroup label="Node to connect to" fieldId="startup-target">
                 <PlainTextInput id="startup-target" value={draft.target} onChange={(_e, v) => set({ target: v })}
@@ -299,13 +312,6 @@ function General({ node, list, status, draft, set, problems, dirty, changeRegist
                               "out in the stock rpt.conf."} />
               </FormGroup>
             </>
-          )}
-          {st.custom && (
-            <FormGroup fieldId="startup-replace">
-              <Checkbox id="startup-replace" isChecked={draft.replaceMacro} onChange={(_e, v) => set({ replaceMacro: v })}
-                        label={`Replace the custom startup macro (${st.macro})`} />
-              <Help problem={problems.replaceMacro} />
-            </FormGroup>
           )}
           <FormGroup label="Post node status" fieldId="node-statpost">
             <Switch id="node-statpost" isChecked={draft.statpost} isDisabled={node.private}
@@ -563,13 +569,13 @@ function Customizations({ node, draft, set, enable }: {
   );
 }
 
-const TABS = ["general", "interface", "tuning", "voter", "access", "customizations"] as const;
+const TABS = ["general", "interface", "tuning", "voter", "telemetry", "access", "customizations"] as const;
 type TabKey = (typeof TABS)[number];
 const TAB_NAMES: Record<TabKey, string> = {
-  general: "General", interface: "Radio interface", tuning: "Tuning", voter: "VOTER", access: "Access control",
-  customizations: "Customizations",
+  general: "General", interface: "Radio interface", tuning: "Tuning", voter: "VOTER", telemetry: "Telemetry",
+  access: "Access control", customizations: "Customizations",
 };
-const DRAFT_TABS = ["general", "interface", "voter", "customizations"];
+const DRAFT_TABS = ["general", "interface", "voter", "telemetry", "customizations"];
 // An RTCM/VOTER node has a VOTER tab instead of Tuning.
 const tabsFor = (node: NodeDetail | null): TabKey[] =>
   TABS.filter((t) => (node?.interface === "Voter" ? t !== "tuning" : t !== "voter"));
@@ -603,10 +609,10 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
     setDraft((d) => (d ? { ...d, ...change } : d));
   }, []);
 
-  const pending = useMemo(() => (node && list && draft ? changes(node, list, draft) : { ops: [], problems: {} }),
+  const pending = useMemo(() => (node && list && draft ? changes(node, list, draft) : { ops: [], problems: {}, telemetry: {} }),
     [node, list, draft]);
   const dirty = pending.ops.length > 0;
-  const valid = Object.keys(pending.problems).length === 0;
+  const valid = Object.keys(pending.problems).length === 0 && Object.keys(pending.telemetry).length === 0;
   const dirtyTabs = new Set(pending.ops.map((o) => o.tab));
   const count = pending.ops.filter((o) => o.op !== "permanent_links").length;
 
@@ -704,6 +710,10 @@ export function NodePage({ number, tab, status }: { number: string; tab: string;
             {active === "interface" && <Interface node={node} list={list} draft={draft} set={set} />}
             {active === "tuning" && <Tuning node={node} status={status} />}
             {active === "voter" && <VoterTab node={node} draft={draft.voter} set={(voter) => set({ voter })} />}
+            {active === "telemetry" && (
+              <TelemetryTab node={node} draft={draft.telemetry} set={(telemetry) => set({ telemetry })}
+                            problems={pending.telemetry} />
+            )}
             {active === "access" && <Access node={node} />}
             {active === "customizations" && (
               <Customizations node={node} draft={draft} set={set}

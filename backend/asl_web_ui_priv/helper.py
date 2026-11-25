@@ -35,6 +35,8 @@ PKCHECK = "/usr/bin/pkcheck"
 ACTION_PREFIX = "org.allstarlink.asl-web-ui."
 TIME_LIMIT = 900  # factory restore runs apt-get
 MAX_REQUEST = 1 << 20
+# Read-only commands the status poller runs repeatedly: not logged unless they fail.
+QUIET = frozenset({"pi.throttled"})
 WEB_USER_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$")
 
 
@@ -116,7 +118,8 @@ def handle(channel: Channel, caller: tuple[int, int, int] | None,
     if not is_authorized(command, pid, uid):
         log(f"denied {command} for uid={uid} web-user={user}")
         raise RequestError("not authorized by polkit", "denied")
-    log(f"{command} for web-user={user}")
+    if command not in QUIET:
+        log(f"{command} for web-user={user}")
 
     def output(text: str) -> None:
         channel.send(op="output", text=text)

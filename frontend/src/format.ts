@@ -18,3 +18,15 @@ export function duration(seconds: number | null | undefined): string {
   }
   return parts.length ? parts.join(", ") : "less than a minute";
 }
+
+// Sizes in binary units, e.g. "1.9 GiB".
+export function byteSize(n: number): string {
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(i ? 1 : 0)} ${units[i]}`;
+}

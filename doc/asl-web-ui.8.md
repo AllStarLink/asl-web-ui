@@ -147,7 +147,10 @@ are logged to the journal.
 Restoring a backup writes only the paths in the include list, refuses
 absolute paths, "..", links leading elsewhere and special files, never takes
 file ownership from the archive, and saves the current configuration as a
-backup first.
+backup first. After the files are written, **dpkg-reconfigure
+asl3-asterisk-config** updates them for the installed ASL3 version, as a
+package upgrade would; if that fails, the restore stands and the job log
+says so.
 
 # SEE ALSO
 **asl-menu**(1), **node-setup**(8), **asl-backup-menu**(1),

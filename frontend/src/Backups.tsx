@@ -65,6 +65,9 @@ function useAfterRestore() {
   return { element, show: () => setOpen(true) };
 }
 
+const UPDATE_NOTE = "After restoring, the Asterisk configuration files are updated for this version of ASL3, "
+  + "as a package upgrade would update them, so a backup made on an older version keeps working.";
+
 function RestoreDialog({ name, onCancel, onRestore }: { name: string; onCancel: () => void; onRestore: () => void }) {
   const [contents, setContents] = useState<Contents | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +91,7 @@ function RestoreDialog({ name, onCancel, onRestore }: { name: string; onCancel: 
                 is saved as a backup first, so this can be undone. If Asterisk is running, it stops during the restore
                 and starts again afterwards.
               </Content>
+              <Content component="p">{UPDATE_NOTE}</Content>
               <ExpandableSection toggleText="Files in the backup">
                 <pre className="asl-job-log">{contents.files.map((f) => "/" + f).join("\n")}</pre>
               </ExpandableSection>
@@ -329,27 +333,30 @@ function Cloud({ list, reload }: { list: BackupList; reload: () => Promise<void>
           <CardTitle>Backups on the AllStarLink server</CardTitle>
           <CardBody>
             {names.length === 0 ? <Content component="p">There are no backups for this node.</Content> : (
-              <Table aria-label="AllStarLink backups" variant="compact">
-                <Thead>
-                  <Tr>
-                    <Th>Backup</Th>
-                    <Th screenReaderText="Actions" />
-                  </Tr>
-                </Thead>
-                <Tbody>
-                  {names.map((n) => (
-                    <Tr key={n}>
-                      <Td dataLabel="Backup"><code>{n}</code></Td>
-                      <Td isActionCell>
-                        <div className="asl-buttons asl-end">
-                          <Button variant="secondary" size="sm" onClick={() => fetch(n, false)}>Copy to this server</Button>
-                          <Button variant="secondary" isDanger size="sm" onClick={() => fetch(n, true)}>Restore</Button>
-                        </div>
-                      </Td>
+              <>
+                <Content component="p">{UPDATE_NOTE}</Content>
+                <Table aria-label="AllStarLink backups" variant="compact">
+                  <Thead>
+                    <Tr>
+                      <Th>Backup</Th>
+                      <Th screenReaderText="Actions" />
                     </Tr>
-                  ))}
-                </Tbody>
-              </Table>
+                  </Thead>
+                  <Tbody>
+                    {names.map((n) => (
+                      <Tr key={n}>
+                        <Td dataLabel="Backup"><code>{n}</code></Td>
+                        <Td isActionCell>
+                          <div className="asl-buttons asl-end">
+                            <Button variant="secondary" size="sm" onClick={() => fetch(n, false)}>Copy to this server</Button>
+                            <Button variant="secondary" isDanger size="sm" onClick={() => fetch(n, true)}>Restore</Button>
+                          </div>
+                        </Td>
+                      </Tr>
+                    ))}
+                  </Tbody>
+                </Table>
+              </>
             )}
           </CardBody>
         </Card>
