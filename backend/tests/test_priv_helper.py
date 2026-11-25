@@ -175,6 +175,63 @@ def test_restore_refuses_non_asl3_archives_and_bad_names(root):
     assert result("backup.restore", {"name": "missing.tgz"})["code"] == "not_found"
 
 
+class FakeReconfigure:
+    calls: list = []
+    returncode = 0
+
+    def __init__(self, argv, **kw):
+        FakeReconfigure.calls.append(argv)
+        self.stdout = io.StringIO("Updating modules.conf\n")
+
+    def wait(self):
+        return self.returncode
+
+
+@pytest.fixture
+def reconfigure(root, monkeypatch):
+    """asl3-asterisk-config installed; dpkg-reconfigure replaced."""
+    info = root / "var" / "lib" / "dpkg" / "info"
+    info.mkdir(parents=True)
+    (info / "asl3-asterisk-config.list").write_text("/etc/asterisk\n")
+    FakeReconfigure.calls, FakeReconfigure.returncode = [], 0
+    real = commands.update_config
+    monkeypatch.setattr(commands, "update_config", lambda output: real(output, run=FakeReconfigure))
+    return FakeReconfigure
+
+
+def test_restore_updates_the_asterisk_files(root, reconfigure):
+    _archive(root, "ASL_u.tgz", [_file("etc/asterisk/rpt_http_registrations.conf")])
+    replies = run("backup.restore", {"name": "ASL_u.tgz"})
+    assert replies[-1]["data"]["update"] == {"updated": True, "reason": None}
+    assert reconfigure.calls == [["/usr/sbin/dpkg-reconfigure", "--frontend=noninteractive", "asl3-asterisk-config"]]
+    assert {"op": "output", "text": "Updating modules.conf"} in replies
+
+
+def test_restore_update_failure_keeps_the_restore(root, reconfigure):
+    reconfigure.returncode = 1
+    _archive(root, "ASL_f.tgz", [_file("etc/asterisk/rpt_http_registrations.conf", b"restored")])
+    res = result("backup.restore", {"name": "ASL_f.tgz"})
+    assert res["ok"] and res["data"]["update"]["updated"] is False
+    assert "exit code 1" in res["data"]["update"]["reason"]
+    assert (root / "etc" / "asterisk" / "rpt_http_registrations.conf").read_text() == "restored"
+
+
+def test_restore_update_skipped_without_the_package(root):
+    _archive(root, "ASL_n.tgz", [_file("etc/asterisk/rpt_http_registrations.conf")])
+    update = result("backup.restore", {"name": "ASL_n.tgz"})["data"]["update"]
+    assert update == {"updated": False, "reason": "asl3-asterisk-config is not installed."}
+
+
+def test_restore_update_skipped_when_no_asterisk_file_is_written(root, reconfigure):
+    marker = root / "etc" / "asterisk" / "rpt_http_registrations.conf"
+    marker.unlink()
+    marker.mkdir()
+    _archive(root, "ASL_s.tgz", [_file("etc/asterisk/rpt_http_registrations.conf")])
+    data = result("backup.restore", {"name": "ASL_s.tgz"})["data"]
+    assert data["written"] == 0 and data["update"] == {"updated": False, "reason": None}
+    assert reconfigure.calls == []
+
+
 def test_read_lists_what_would_be_restored(root):
     _archive(root, "ASL_r.tgz", [_file("etc/asterisk/rpt_http_registrations.conf"), _file("etc/shadow")])
     data = result("backup.read", {"name": "ASL_r.tgz"})["data"]

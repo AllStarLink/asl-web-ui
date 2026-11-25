@@ -405,13 +405,39 @@ def _safe_parent(rel: str) -> str | None:
     return expected
 
 
+CONFIG_PACKAGE = "asl3-asterisk-config"
+CONFIG_PACKAGE_LIST = f"/var/lib/dpkg/info/{CONFIG_PACKAGE}.list"  # present while the package is installed
+RECONFIGURE = ["/usr/sbin/dpkg-reconfigure", "--frontend=noninteractive", CONFIG_PACKAGE]
+
+
+def update_config(output: Output, run=subprocess.Popen) -> dict:
+    """Run asl3-asterisk-config's postinst over restored files, as a package
+    upgrade would: a backup made on an older ASL3 gets the configuration
+    changes made since (non-DAHDI bridging, AppAuth, module path, ...)."""
+    if not os.path.exists(_path(CONFIG_PACKAGE_LIST)):
+        return {"updated": False, "reason": f"{CONFIG_PACKAGE} is not installed."}
+    output(f"Updating the restored files for this ASL3 version (dpkg-reconfigure {CONFIG_PACKAGE})…")
+    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive", PATH="/usr/sbin:/usr/bin:/sbin:/bin")
+    try:
+        proc = run(RECONFIGURE, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                   env=env, text=True)
+    except OSError as exc:
+        return {"updated": False, "reason": f"Could not run dpkg-reconfigure: {exc}"}
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        output(line.rstrip("\n"))
+    if proc.wait() != 0:
+        return {"updated": False, "reason": f"dpkg-reconfigure failed (exit code {proc.returncode})."}
+    return {"updated": True, "reason": None}
+
+
 def backup_restore(args: dict, output: Output) -> dict:
     path = _backup_path(_str(args, "name", 120))
     plan = _restore_plan(path)
     if not plan["asl3"]:
         raise CommandError("The archive does not appear to have been made on an ASL3 system.", "invalid")
     before = _create(_new_name("_before-restore"))
-    written, skipped = 0, list(plan["skipped"])
+    written, skipped, asterisk_written = 0, list(plan["skipped"]), False
     with tarfile.open(path, "r:gz") as tar:
         for rel, m in plan["members"]:
             parent = _safe_parent(rel)
@@ -446,7 +472,10 @@ def backup_restore(args: dict, output: Output) -> dict:
                     continue
                 _atomic_write(dest, src.read(), mode, uid, gid)
             written += 1
-    return {"written": written, "skipped": skipped, "before": before["name"]}
+            if rel.startswith(CONFIG_DIR.lstrip("/") + "/"):
+                asterisk_written = True
+    update = update_config(output) if asterisk_written else {"updated": False, "reason": None}
+    return {"written": written, "skipped": skipped, "before": before["name"], "update": update}
 
 
 # ---- factory restore ------------------------------------------------------------------------
