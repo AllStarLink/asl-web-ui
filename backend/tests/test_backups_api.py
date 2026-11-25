@@ -79,20 +79,27 @@ async def env(aiohttp_client, tmp_path, monkeypatch, cloud):
     (root / "etc" / "allmon3" / "allmon3.ini").write_text("[1999]\nhost=127.0.0.1\nuser=admin\npass=make4An1ce-secret\n")
     (root / "var" / "lib" / "asl-web-ui" / "staging").mkdir(parents=True)
     systemctl = tmp_path / "systemctl"
-    systemctl.write_text(f"#!/bin/sh\necho \"$@\" >> {tmp_path}/systemctl.log\n")
+    # Logs each call; on "stop", counts the before-restore backups present then;
+    # fails "start" while start.fail exists.
+    backups = root / "var" / "asl-backups"
+    systemctl.write_text(f"#!/bin/sh\necho \"$@\" >> {tmp_path}/systemctl.log\n"
+                         f"[ \"$2\" = stop ] && ls {backups} 2>/dev/null | grep -c _before-restore "
+                         f"> {tmp_path}/stop.count\n"
+                         f"[ \"$2\" = start ] && [ -e {tmp_path}/start.fail ] && {{ echo Job failed; exit 1; }}\n"
+                         "exit 0\n")
     systemctl.chmod(0o755)
     server, uploads = cloud
 
     async def connect():
         return FakeTransport()
 
-    async def make(recent_auth=600, cli=None, **more):
+    async def make(recent_auth=600, cli=None, asterisk="active", **more):
         settings = config.Settings(config_dir=str(etc), state_dir=str(tmp_path / "state"), recent_auth=recent_auth,
                                    backup_dir=str(root / "var" / "asl-backups"),
                                    staging_dir=str(root / "var" / "lib" / "asl-web-ui" / "staging"),
                                    backup_server=server, **more)
         app = create_app(settings, auth_connect=connect, overrides={
-            status.CLI_KEY: cli or FakeCLI(), status.UNIT_STATE_KEY: unit("active"), control.SYSTEMCTL_KEY: str(systemctl),
+            status.CLI_KEY: cli or FakeCLI(), status.UNIT_STATE_KEY: unit(asterisk), control.SYSTEMCTL_KEY: str(systemctl),
             PRIV_KEY: InProcessClient(str(root))})
         client = await aiohttp_client(app, cookie_jar=DummyCookieJar())
 
@@ -136,6 +143,7 @@ async def env(aiohttp_client, tmp_path, monkeypatch, cloud):
 
     e = Env()
     e.root, e.etc, e.make, e.uploads, e.log = root, etc, make, uploads, tmp_path / "systemctl.log"
+    e.start_fail = tmp_path / "start.fail"
     return e
 
 
@@ -176,6 +184,49 @@ async def test_restore_needs_password_then_runs(env):
     assert job["ok"], job
     assert (env.etc / "rpt.conf").read_text() == FILES["rpt.conf"]
     assert job["result"]["before"].endswith("_before-restore.tgz")
+    assert job["result"]["asterisk"] == "restarted"
+
+
+def calls(env) -> list[str]:
+    return env.log.read_text().splitlines() if env.log.exists() else []
+
+
+async def test_restore_stops_asterisk_first(env):
+    """#71: Asterisk keeps the astdb open, so it is stopped before anything is
+    written (and before the before-restore backup), then started again."""
+    a = await env.make()
+    made = (await a.job("POST", "backups", {}))["result"]["name"]
+    job = await a.job("POST", f"backups/local/{made}/restore", {})
+    assert job["ok"], job
+    assert calls(env) == ["--no-ask-password stop asterisk.service", "--no-ask-password start asterisk.service"]
+    assert (env.log.parent / "stop.count").read_text().strip() == "0"  # stopped before the before-restore backup
+    assert job["lines"].index("Stopping Asterisk…") < job["lines"].index("Starting Asterisk…")
+
+
+async def test_restore_leaves_a_stopped_asterisk_stopped(env):
+    a = await env.make(asterisk="inactive")
+    made = (await a.job("POST", "backups", {}))["result"]["name"]
+    job = await a.job("POST", f"backups/local/{made}/restore", {})
+    assert job["ok"] and job["result"]["asterisk"] == "not_running", job
+    assert calls(env) == []
+
+
+async def test_restore_starts_asterisk_again_when_it_fails(env):
+    a = await env.make()
+    job = await a.job("POST", "backups/local/missing.tgz/restore", {})
+    assert not job["ok"] and job["code"] == "not_found", job
+    assert [c.split()[1] for c in calls(env)] == ["stop", "start"]
+
+
+async def test_restore_reports_asterisk_not_starting(env):
+    a = await env.make()
+    made = (await a.job("POST", "backups", {}))["result"]["name"]
+    (env.etc / "rpt.conf").write_text("changed\n")
+    env.start_fail.write_text("")
+    job = await a.job("POST", f"backups/local/{made}/restore", {})
+    assert not job["ok"] and "did not start" in job["error"], job
+    assert (env.etc / "rpt.conf").read_text() == FILES["rpt.conf"]
+    assert any(line.startswith("Asterisk did not start: Job failed") for line in job["lines"])
 
 
 async def test_import_upload(env):
@@ -199,6 +250,13 @@ async def test_cloud_list_and_fetch(env):
     job = await a.job("POST", "backups/cloud/fetch", {"name": "20261001120000.tgz"})
     assert job["ok"] and job["result"]["name"] == "ASL_2026-10-01_120000.tgz", job
     assert (env.root / "var" / "asl-backups" / "ASL_2026-10-01_120000.tgz").exists()
+
+
+async def test_cloud_fetch_and_restore_stops_asterisk(env):
+    a = await env.make()
+    job = await a.job("POST", "backups/cloud/fetch", {"name": "20261001120000.tgz", "restore": True})
+    assert job["ok"] and job["result"]["restored"]["asterisk"] == "restarted", job
+    assert [c.split()[1] for c in calls(env)] == ["stop", "start"]
 
 
 async def test_cloud_needs_savenode(env):

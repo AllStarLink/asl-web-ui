@@ -6,7 +6,8 @@
                                                          change is planned with nodes/plan "savenode")
     POST   /api/v1/backups                {"upload"}     create (job), optionally upload
     GET    /api/v1/backups/local/{name}/contents          what a restore would write
-    POST   /api/v1/backups/local/{name}/restore           restore (job; password re-entry)
+    POST   /api/v1/backups/local/{name}/restore           restore (job; password re-entry; restarts
+                                                         a running Asterisk)
     POST   /api/v1/backups/local/{name}/upload            copy to the AllStarLink server (job)
     GET    /api/v1/backups/local/{name}/download
     DELETE /api/v1/backups/local/{name}
@@ -24,6 +25,7 @@ savenode.conf, savenode.cgi to upload, getfile.cgi?NAME to download, and
 the server's index page listing the node's archives.
 """
 
+import asyncio
 import logging
 import os
 import re
@@ -41,7 +43,9 @@ from ..privileged import PRIV_KEY, PrivError
 from ..security import SETTINGS_KEY, USER_KEY
 from .auth import recently_authenticated
 from .changes import STORE_KEY, error, read_json
+from .control import SYSTEMCTL_KEY, UNIT, systemctl
 from .jobs import start as start_job
+from .status import HUB_KEY
 
 log = logging.getLogger("asl-web-ui.backups")
 routes = web.RouteTableDef()
@@ -92,6 +96,64 @@ async def _reauth(request: web.Request) -> web.Response | None:
     if not recently_authenticated(session, _settings(request)):
         return error(403, "reauth_required", "Enter your password again to continue.")
     return None
+
+
+class RestoreError(Exception):
+    def __init__(self, message: str, code: str = "failed"):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+
+
+async def _restore(request: web.Request, job, name: str) -> dict:
+    """backup.restore with Asterisk stopped, then started again if it was running.
+
+    Asterisk keeps /var/lib/asterisk/astdb.sqlite3 open while it runs, and a
+    restore replaces files with new ones: a running Asterisk would go on
+    using the old database, now without a name, and lose what it writes
+    there (#71). Stopping it first also means the before-restore backup
+    holds the database as Asterisk last wrote it, and the restart the
+    restored configuration needs happens here.
+    """
+    settings = _settings(request)
+    hub = request.app[HUB_KEY]
+    binary = request.app[SYSTEMCTL_KEY]
+    running, started = False, True
+    if not settings.dev:  # the development Asterisk has its own database
+        state = await hub.unit_state(UNIT)
+        running = state.get("ActiveState") in ("active", "activating", "reloading")
+    if running:
+        job.output("Stopping Asterisk…")
+        code, output = await systemctl(binary, "stop", UNIT)
+        hub.invalidate()
+        if code != 0:
+            _audit(request, "stop Asterisk for a restore", "failed", [output[-300:]])
+            raise RestoreError(f"Could not stop Asterisk, so nothing was restored: {output[-300:] or 'no output'}")
+        _audit(request, "stop Asterisk for a restore", "done", [name])
+    try:
+        res = await _priv(request, "backup.restore", {"name": name})
+    finally:
+        if running:
+            job.output("Starting Asterisk…")
+            code, output = await systemctl(binary, "start", UNIT)
+            hub.invalidate()
+            _audit(request, "start Asterisk after a restore", "done" if code == 0 else "failed",
+                   [name] if code == 0 else [output[-300:]])
+            started = code == 0
+            if not started:
+                job.output(f"Asterisk did not start: {output[-300:] or 'no output'}")
+    job.output(f"Wrote {res['written']} files. The previous configuration is saved as {res['before']}.")
+    for s in res["skipped"]:
+        job.output(f"Skipped {s['name']}: {s['reason']}")
+    _audit(request, "restore backup", "done", [name, f"before={res['before']}"])
+    if running and not started:
+        raise RestoreError(f"The backup was restored (the previous configuration is saved as {res['before']}), "
+                           "but Asterisk did not start again. Start it from the Asterisk page.")
+    if running:
+        rpt = await asyncio.to_thread(hub.rpt_lint.get)
+        if rpt["errors"]:
+            job.output("The restored rpt.conf has errors: app_rpt brings up no node until they are fixed.")
+    return {**res, "asterisk": "restarted" if running else "not_running"}
 
 
 def local_backups(backup_dir: str) -> list[dict]:
@@ -252,12 +314,7 @@ async def restore(request: web.Request) -> web.Response:
 
     async def work(job):
         job.output(f"Restoring {name}…")
-        res = await _priv(request, "backup.restore", {"name": name})
-        job.output(f"Wrote {res['written']} files. The previous configuration is saved as {res['before']}.")
-        for s in res["skipped"]:
-            job.output(f"Skipped {s['name']}: {s['reason']}")
-        _audit(request, "restore backup", "done", [name, f"before={res['before']}"])
-        return res
+        return await _restore(request, job, name)
 
     return await start_job(request, f"Restore {name}", work)
 
@@ -388,11 +445,7 @@ async def fetch_cloud(request: web.Request) -> web.Response:
         out = {"name": res["name"]}
         if then_restore:
             job.output(f"Restoring {res['name']}…")
-            restored = await _priv(request, "backup.restore", {"name": res["name"]})
-            job.output(f"Wrote {restored['written']} files. The previous configuration is saved as "
-                       f"{restored['before']}.")
-            _audit(request, "restore backup", "done", [res["name"], f"before={restored['before']}"])
-            out["restored"] = restored
+            out["restored"] = await _restore(request, job, res["name"])
         return out
 
     return await start_job(request, f"Get {name} from AllStarLink", work)
