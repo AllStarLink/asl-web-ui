@@ -44,7 +44,8 @@ function when(epoch: number): string {
   return new Date(epoch * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-// After a restore: offer the Asterisk restart that makes it take effect.
+// After a factory reset: offer the Asterisk restart that makes it take effect.
+// (A backup restore restarts a running Asterisk itself.)
 function useAfterRestore() {
   const [controlElement, control] = useAsteriskControl();
   const [open, setOpen] = useState(false);
@@ -87,7 +88,8 @@ function RestoreDialog({ name, onCancel, onRestore }: { name: string; onCancel: 
             <>
               <Content component="p">
                 {contents.files.length} files are written back, replacing the current ones. The current configuration
-                is saved as a backup first, so this can be undone.
+                is saved as a backup first, so this can be undone. If Asterisk is running, it stops during the restore
+                and starts again afterwards.
               </Content>
               <Content component="p">{UPDATE_NOTE}</Content>
               <ExpandableSection toggleText="Files in the backup">
@@ -149,7 +151,6 @@ function SyncCredentials({ list, reload }: { list: BackupList; reload: () => Pro
 function ThisServer({ list, reload }: { list: BackupList; reload: () => Promise<void> }) {
   const [jobElement, runJob] = useJob();
   const [reauthElement, withReauth] = useReauth();
-  const after = useAfterRestore();
   const [upload, setUpload] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -162,9 +163,8 @@ function ThisServer({ list, reload }: { list: BackupList; reload: () => Promise<
   };
   const restore = async (name: string) => {
     setRestoring(null);
-    const res = await runJob(`Restore ${name}`, () => withReauth(() => restoreBackup(name)));
+    await runJob(`Restore ${name}`, () => withReauth(() => restoreBackup(name)));
     await reload();
-    if (res?.ok) after.show();
   };
   const remove = async (name: string) => {
     setDeleting(null);
@@ -192,7 +192,6 @@ function ThisServer({ list, reload }: { list: BackupList; reload: () => Promise<
     <div className="asl-stack">
       {jobElement}
       {reauthElement}
-      {after.element}
       <SyncCredentials list={list} reload={reload} />
       <Card>
         <CardTitle>Create a backup</CardTitle>
@@ -272,7 +271,6 @@ function ThisServer({ list, reload }: { list: BackupList; reload: () => Promise<
 function Cloud({ list, reload }: { list: BackupList; reload: () => Promise<void> }) {
   const [jobElement, runJob] = useJob();
   const [reauthElement, withReauth] = useReauth();
-  const after = useAfterRestore();
   const [node, setNode] = useState("");
   const [password, setPassword] = useState("");
   const [names, setNames] = useState<string[] | null>(null);
@@ -292,17 +290,15 @@ function Cloud({ list, reload }: { list: BackupList; reload: () => Promise<void>
     }
   };
   const fetch = async (name: string, restore: boolean) => {
-    const res = await runJob(restore ? `Restore ${name}` : `Copy ${name} to this server`,
+    await runJob(restore ? `Restore ${name}` : `Copy ${name} to this server`,
       () => (restore ? withReauth(() => cloudFetch(name, true, creds)) : cloudFetch(name, false, creds)));
     await reload();
-    if (restore && res?.ok) after.show();
   };
 
   return (
     <div className="asl-stack">
       {jobElement}
       {reauthElement}
-      {after.element}
       <SyncCredentials list={list} reload={reload} />
       <Card>
         <CardTitle>AllStarLink backup server</CardTitle>
