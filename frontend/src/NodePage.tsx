@@ -366,8 +366,8 @@ function Tuning({ node, status }: { node: NodeDetail; status: Status | null }) {
         </Immediate>
         <TuningPanel node={node.number} status={status} />
         <Content component="p" className="asl-sub">
-          Does this interface have an SA818 radio module (SHARI and similar)? Its frequency, tones and filters are set
-          on the <Button variant="link" isInline onClick={() => go("hardware/sa818")}>Hardware</Button> page.
+          Does this interface have a supported serial radio module (SA818-compatible or SR110U V223)? Its supported settings are configured
+          on the <Button variant="link" isInline onClick={() => go("hardware/radio")}>Hardware</Button> page.
         </Content>
       </div>
     );

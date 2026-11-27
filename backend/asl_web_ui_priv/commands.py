@@ -709,9 +709,10 @@ def fix_ownership(args: dict, output: Output) -> dict:
     return {"path": name}
 
 
-# ---- SA818 RF modules (as sa818-menu) --------------------------------------------------
+# ---- Radio programming (compatible with sa818-menu storage) --------------------------------------------------
 
 SA818_TOOL = sa818.TOOL
+SR110U_TOOL = sa818.SR110U_TOOL
 
 
 def _sa818_saved() -> tuple[bool, dict[str, str]]:
@@ -722,21 +723,54 @@ def _sa818_saved() -> tuple[bool, dict[str, str]]:
 def sa818_read(args: dict, output: Output) -> dict:
     exists, settings = _sa818_saved()
     return {"saved": exists, "settings": settings, "ports": sa818.ports(ROOT),
-            "tool": os.path.exists(SA818_TOOL)}
+            "tool": os.path.exists(SA818_TOOL), "sr110u_tool": os.path.isfile(SR110U_TOOL) and os.access(SR110U_TOOL, os.X_OK)}
 
 
-def _sa818_program(settings: dict[str, str], output: Output) -> tuple[bool, list[str]]:
-    log = []
-    for args in sa818.tool_args(settings):
-        log.append("# sa818 " + " ".join(args))
+def _sa818_program(settings: dict[str, str], output: Output) -> tuple[bool, list[str], list[str]]:
+    base = []
+    if settings["CURRENT_PORT"]:
+        base += ["--port", settings["CURRENT_PORT"]]
+    if settings["CURRENT_SPEED"]:
+        base += ["--speed", settings["CURRENT_SPEED"]]
+    ok, lines = sa818.run(SA818_TOOL, base + ["version"])
+    log = ["# sa818 " + " ".join(base + ["version"]), *lines]
+    for line in log:
+        output(line)
+    if not ok:
+        return False, log, []
+    sr110u = any("Firmware SR110U, version:" in line for line in lines)
+    protocol, unsupported = "sa818", []
+    tool, name = SA818_TOOL, "sa818"
+    if sr110u:
+        if not any(line.endswith("Firmware SR110U, version: 110U-V223") for line in lines):
+            log.append("SR110U firmware is not supported by the verified V223 programming profile; no settings sent.")
+            return False, log, []
+        if settings["CURRENT_BAND"] != "UHF" or settings["CURRENT_TONE"] == "DCS":
+            log.append("SR110U V223 requires UHF and CTCSS or no tone; no settings sent.")
+            return False, log, []
+        if not os.path.isfile(SR110U_TOOL) or not os.access(SR110U_TOOL, os.X_OK):
+            log.append("The sr110u command is missing or not executable. Install the matching ASL3 programmer package; no settings sent.")
+            output(log[-1])
+            return False, log, []
+        protocol = "sr110u-v223"
+        tool, name = SR110U_TOOL, "sr110u"
+        unsupported = ["CTCSS reverse burst (tail tone)", "pre/de-emphasis", "high-pass filter", "low-pass filter"]
+        log.append("SR110U V223: programming channel, volume and any opted-in advanced controls; tail/filter settings are not supported or applied.")
         output(log[-1])
-        ok, lines = sa818.run(SA818_TOOL, args)
+    if protocol != "sr110u-v223" and settings["CURRENT_SR_ADVANCED"] == "Enabled":
+        log.append("Advanced controls require verified firmware 110U-V223; no settings sent.")
+        output(log[-1])
+        return False, log, []
+    for args in sa818.tool_args(settings, protocol):
+        log.append("# " + name + " " + " ".join(args))
+        output(log[-1])
+        ok, lines = sa818.run(tool, args)
         log += lines
         for line in lines:
             output(line)
         if not ok:
-            return False, log
-    return True, log
+            return False, log, unsupported
+    return True, log, unsupported
 
 
 def sa818_apply(args: dict, output: Output) -> dict:
@@ -757,29 +791,22 @@ def sa818_apply(args: dict, output: Output) -> dict:
             raise CommandError(f"{sa818.CONF} is not a regular file.", "invalid")
         _atomic_write(path, sa818.render(settings).encode(), stat.S_IMODE(st.st_mode) if st else 0o644,
                       st.st_uid if st else 0, st.st_gid if st else 0)
-    ok, log = _sa818_program(settings, output)
-    return {"saved": changed, "programmed": ok, "log": log, "settings": settings}
+    ok, log, unsupported = _sa818_program(settings, output)
+    return {"saved": changed, "programmed": ok, "log": log, "settings": settings, "unsupported": unsupported}
 
 
 def sa818_version(args: dict, output: Output) -> dict:
-    """Test the saved connection, with firmware when the module supports it.
-
-    Do not run sa818 version: it can crash parsing "Wrong command" from an
-    otherwise responsive module. Use the same handshake as detection.
-    """
+    """Test the saved connection using sa818, with optional firmware metadata."""
     _, saved = _sa818_saved()
-    ports = [saved["CURRENT_PORT"]] if saved["CURRENT_PORT"] else sa818.AUTO_PORTS
-    speed = saved["CURRENT_SPEED"] or sa818.PROBE_SPEED
-    lines = []
-    for port in ports:
-        firmware = sa818.probe(_path(port), speed)
-        if firmware is not None:
-            lines.append(f"{port} at {speed}: +DMOCONNECT:0")
-            lines.append(f"Firmware: {firmware}" if firmware else
-                         "Firmware version unavailable; the module acknowledged the connection.")
-            return {"ok": True, "firmware": firmware or None, "log": lines}
-        lines.append(f"{port} at {speed}: no connection acknowledgment.")
-    return {"ok": False, "firmware": None, "log": lines}
+    base = []
+    if saved["CURRENT_PORT"]:
+        base += ["--port", saved["CURRENT_PORT"]]
+    if saved["CURRENT_SPEED"]:
+        base += ["--speed", saved["CURRENT_SPEED"]]
+    ok, lines = sa818.run(SA818_TOOL, base + ["version"])
+    firmware = next((m.group(1).strip() for line in lines if (m := re.search(r"Firmware (.*)$", line))), None)
+    # The CLI can acknowledge a connection without a usable firmware version.
+    return {"ok": ok, "firmware": firmware, "log": lines}
 
 
 def sa818_detect(args: dict, output: Output) -> dict:
