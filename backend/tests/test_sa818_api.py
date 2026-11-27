@@ -36,6 +36,10 @@ def module(env, monkeypatch):  # noqa: F811
         tool.write_text(FAKE.format(log=env.log.parent / "sa818.log", radio=radio, version=version))
         tool.chmod(0o755)
         monkeypatch.setattr(commands, "SA818_TOOL", str(tool))
+        sr_tool = tool.with_name("sr110u")
+        sr_tool.write_text(tool.read_text().replace('echo "$@" >>', 'echo "$@" >> ' + str(env.log.parent / "sr110u.log") + '\necho "$@" >>'))
+        sr_tool.chmod(0o755)
+        monkeypatch.setattr(commands, "SR110U_TOOL", str(sr_tool))
         return env.log.parent / "sa818.log"
     env.install = install
     env.conf = env.root / "etc" / "sa818.conf"
@@ -338,8 +342,8 @@ async def test_sr110u_profile_programs_supported_controls_only(module):
     assert body["programmed"] and len(body["unsupported"]) == 4
     commands_sent = calls.read_text().splitlines()
     assert commands_sent == ["version",
-        "--protocol sr110u-v223 radio --bw 1 --frequency 445.1250 --offset 5.0000 --squelch 1 --ctcss 103.5,None",
-        "--protocol sr110u-v223 volume --level 6"]
+        "radio --bw 1 --frequency 445.1250 --offset 5.0000 --squelch 1 --ctcss 103.5,None",
+        "volume --level 6"]
 
 
 @pytest.mark.parametrize("firmware,tone", [("110U-V303", "CTCSS"), ("110U-V223", "DCS")])
@@ -374,7 +378,7 @@ async def test_advanced_controls_round_trip_and_arguments(module):
     assert status_ == 200 and body["programmed"]
     sent = calls.read_text().splitlines()
     assert sent[1].endswith("--sr110u-flags 6")
-    assert sent[-1] == "--protocol sr110u-v223 advanced --mic 7 --timeout 2 --vox 0 --power-saving disable"
+    assert sent[-1] == "advanced --mic 7 --timeout 2 --vox 0 --power-saving disable"
     assert "SCRAMBLE" not in module.conf.read_text()
     _, read = await a.call("GET", "sa818")
     for key in ADVANCED:
@@ -421,3 +425,40 @@ def test_old_configuration_does_not_opt_into_advanced_writes():
     settings = sa818.parse("CURRENT_FREQ_RX=445.1250\nCURRENT_FREQ_TX=445.1250\nCURRENT_BAND=UHF\n")
     assert settings["CURRENT_SR_ADVANCED"] == "Disabled"
     assert len(sa818.tool_args(settings, "sr110u-v223")) == 2
+
+
+async def test_sr110u_writes_use_separate_executable(module):
+    calls = module.install(version=SR_VERSION)
+    a = await module.make()
+    _, body = await a.call("PUT", "sa818", {"settings": {**WANTED, "CURRENT_BAND": "UHF",
+        "CURRENT_FREQ_RX": "445.1250", "CURRENT_FREQ_TX": "445.1250"}})
+    assert body["programmed"]
+    assert calls.with_name("sr110u.log").read_text().splitlines() == calls.read_text().splitlines()[1:]
+    assert any(line.startswith("# sr110u radio") for line in body["log"])
+    assert not any(line.startswith("# sa818 radio") for line in body["log"])
+
+
+@pytest.mark.parametrize("present", [False, True])
+async def test_missing_sr110u_never_falls_back_to_sa818(module, monkeypatch, present):
+    calls = module.install(version=SR_VERSION)
+    bad_tool = module.log.parent / "unusable-sr110u"
+    if present:
+        bad_tool.write_text("not executable")
+        bad_tool.chmod(0o644)
+    monkeypatch.setattr(commands, "SR110U_TOOL", str(bad_tool))
+    a = await module.make()
+    _, state = await a.call("GET", "sa818")
+    assert state["tool"] and not state["sr110u_tool"]
+    _, body = await a.call("PUT", "sa818", {"settings": {**WANTED, "CURRENT_BAND": "UHF",
+        "CURRENT_FREQ_RX": "445.1250", "CURRENT_FREQ_TX": "445.1250"}})
+    assert not body["programmed"]
+    assert calls.read_text().splitlines() == ["version"]
+    assert any("sr110u command is missing" in line for line in body["log"])
+
+
+async def test_sa818_never_uses_sr110u_executable(module):
+    module.install()
+    a = await module.make()
+    _, body = await a.call("PUT", "sa818", {"settings": WANTED})
+    assert body["programmed"]
+    assert not (module.log.parent / "sr110u.log").exists()

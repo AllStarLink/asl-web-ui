@@ -1,10 +1,10 @@
-"""SA818 RF modules, as sa818-menu (asl3 package) handles them.
+"""Serial radio programming with SA818-compatible saved settings.
 
 This workflow does not read settings back; saved intent lives in /etc/sa818.conf,
 the file sa818-menu keeps: KEY=VALUE lines that sa818-menu loads with the
 shell's "." as root. Every value written here comes from a fixed list or a
 strict pattern, so the file stays safe to source. The module is programmed
-by running the sa818 commands for the detected firmware profile. Older sa818
+by running sa818 for SA818-compatible modules or sr110u for exact 110U-V223. Older sa818
 versions can exit 0 even when a module rejects a command, so log lines are
 checked for errors as well as the exit status.
 
@@ -25,6 +25,7 @@ import tty
 
 CONF = "/etc/sa818.conf"
 TOOL = "/usr/bin/sa818"
+SR110U_TOOL = "/usr/bin/sr110u"
 # Where sa818 looks when no port is given, in order.
 AUTO_PORTS = ["/dev/serial0", "/dev/ttyUSB0"]
 PORT_PATTERNS = ["/dev/serial[0-9]", "/dev/ttyAMA[0-9]*", "/dev/ttyUSB[0-9]*", "/dev/ttyACM[0-9]*", "/dev/ttyS0"]
@@ -208,14 +209,12 @@ def check(settings: dict, ports_exist=os.path.exists) -> dict[str, str]:
 
 
 def tool_args(s: dict[str, str], protocol: str = "sa818") -> list[list[str]]:
-    """The sa818 commands sa818-menu runs (do_sa818_update), in order."""
+    """Arguments for the separately selected sa818 or sr110u executable."""
     base = []
     if s["CURRENT_PORT"]:
         base += ["--port", s["CURRENT_PORT"]]
     if s["CURRENT_SPEED"]:
         base += ["--speed", s["CURRENT_SPEED"]]
-    if protocol == "sr110u-v223":
-        base += ["--protocol", protocol]
     radio = base + ["radio", "--bw", "0" if s["CURRENT_BANDWIDTH"] == "Narrow" else "1",
                     "--frequency", s["CURRENT_FREQ_RX"]]
     if s["CURRENT_FREQ_RX"] != s["CURRENT_FREQ_TX"]:
@@ -326,7 +325,7 @@ def probe(path: str, speed: str, timeout: float = PROBE_TIMEOUT) -> str | None:
 
 
 def detect(settings: dict[str, str], root: str = "/") -> dict:
-    """Look for SA818 modules on every serial port, at the default speed and
+    """Look for serial radio modules on every serial port, at the default speed and
     the saved one. Each device is asked once, under the first name ports()
     gives it (/dev/serial0 before /dev/ttyAMA0). "reachable": whether the
     saved port and speed (or sa818's automatic choice) lead to one of them."""

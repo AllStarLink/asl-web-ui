@@ -28,8 +28,8 @@ import { PlainTextInput } from "./PlainInput";
 import { applySA818, programSA818, readSA818, SA818Result, SA818Settings, SA818State, sa818Version } from "./sa818Api";
 import { useLeaveGuard } from "./useRoute";
 
-// sa818-menu's settings for an SA818 RF module (SHARI and similar), saved
-// to /etc/sa818.conf and programmed into the module with the sa818 command.
+// Compatibility API/settings names are retained; visible identity comes from firmware.
+// SA818-compatible and exact SR110U V223 modules use distinct programming commands.
 
 type Problems = Partial<Record<keyof SA818Settings, string>>;
 
@@ -47,7 +47,7 @@ function problems(s: SA818Settings, bands: Record<string, [number, number]>): Pr
   }
   const rx = Number(s.CURRENT_FREQ_RX);
   if (!out.CURRENT_FREQ_RX && !((rx > 144 && rx < 148) || (rx > 420 && rx < 450))) {
-    out.CURRENT_FREQ_RX = "sa818 programs receive frequencies in the amateur bands only (144-148 or 420-450 MHz).";
+    out.CURRENT_FREQ_RX = "This programmer supports receive frequencies in the amateur bands only (144-148 or 420-450 MHz).";
   }
   if (s.CURRENT_SR_ADVANCED === "Enabled" && s.CURRENT_SR_VOX !== "0" && s.CURRENT_SR_POWER_SAVING === "Enabled") {
     out.CURRENT_SR_POWER_SAVING = "Disable power saving before enabling VOX.";
@@ -78,6 +78,19 @@ function Log({ lines }: { lines: string[] }) {
   return <pre className="asl-job-log">{lines.join("\n")}</pre>;
 }
 
+function moduleName(firmware: string | null | undefined): string {
+  if (/^(SR)?110U-V/.test(firmware || "")) return "SR110U";
+  if (/^SA[0-9]+[A-Za-z]*_/.test(firmware || "")) return firmware!.split("_")[0];
+  return "Unidentified serial radio";
+}
+
+function selectedRadio(hardware: Hardware, draft: SA818Settings) {
+  // Match the CLI's automatic port priority, not the order discovery reports devices.
+  const ports = draft.CURRENT_PORT ? [draft.CURRENT_PORT] : ["/dev/serial0", "/dev/ttyUSB0"];
+  return ports.map((port) => hardware.detect?.found.find((m) => m.port === port &&
+    m.speed === (draft.CURRENT_SPEED || "9600"))).find((m) => m !== undefined);
+}
+
 // What looking for a module on the serial ports found, against the saved connection.
 function Detected({ hardware, saved, draft, onUse }: {
   hardware: Hardware; saved: boolean; draft: SA818Settings; onUse: (port: string, speed: string) => void;
@@ -87,23 +100,23 @@ function Detected({ hardware, saved, draft, onUse }: {
   const again = (
     <Button variant="link" isInline onClick={() => void scan(true)} isLoading={scanning} isDisabled={scanning}>Look again</Button>
   );
-  const [first] = detect.found;
+  const first = selectedRadio(hardware, draft) ?? detect.found[0];
   if (!first) {
     return (
-      <Alert variant="warning" isInline title="No SA818 module answered" actionLinks={again}>
+      <Alert variant="warning" isInline title="No serial radio module answered" actionLinks={again}>
         Nothing answered on {detect.probed.join(", ") || "this server's serial ports"}.{" "}
         {saved ? "The settings below are saved, but the module may be disconnected or powered off." : ""}
       </Alert>
     );
   }
   const where = `${first.port} at ${first.speed}`;
-  if (detect.reachable) {
+  if (selectedRadio(hardware, draft)) {
     const firmware = first.firmware ? `firmware ${first.firmware}` : "firmware version unavailable";
-    return <Alert variant="info" isInline isPlain title={`SA818 module found on ${where} (${firmware}).`} />;
+    return <Alert variant="info" isInline isPlain title={`${moduleName(first.firmware)} module found on ${where} (${firmware}).`} />;
   }
   const chosen = draft.CURRENT_PORT === first.port && draft.CURRENT_SPEED === first.speed;
   return (
-    <Alert variant="warning" isInline title={`SA818 module found on ${where}, but the saved connection does not reach it`}
+    <Alert variant="warning" isInline title={`${moduleName(first.firmware)} module found on ${where}, but the saved connection does not reach it`}
            actionLinks={<>
              <Button variant="link" isInline onClick={() => onUse(first.port, first.speed)} isDisabled={chosen}>
                Use {where}
@@ -115,7 +128,7 @@ function Detected({ hardware, saved, draft, onUse }: {
   );
 }
 
-// The SA818 tab of the Hardware page.
+// Shared radio form; distinct identities and capability gates on the selected connection.
 export function SA818Tab({ hardware }: { hardware: Hardware }) {
   const [state, setState] = useState<SA818State | null>(null);
   const [draft, setDraft] = useState<SA818Settings | null>(null);
@@ -145,7 +158,7 @@ export function SA818Tab({ hardware }: { hardware: Hardware }) {
   }, [load]);
 
   const dirty = !!state && !!draft && JSON.stringify(state.settings) !== JSON.stringify(draft);
-  const stays = useCallback((r: string) => r === "hardware" || r === "hardware/sa818", []);
+  const stays = useCallback((r: string) => r === "hardware" || r === "hardware/radio" || r === "hardware/sa818" || r === "sa818", []);
   useLeaveGuard(dirty ? stays : null);
 
   if (loadError) {
@@ -163,11 +176,12 @@ export function SA818Tab({ hardware }: { hardware: Hardware }) {
     );
   }
 
-  const selectedModule = hardware.detect?.found.find((m) =>
-    (draft.CURRENT_PORT ? m.port === draft.CURRENT_PORT : ["/dev/serial0", "/dev/ttyUSB0"].includes(m.port)) &&
-    m.speed === (draft.CURRENT_SPEED || "9600"));
+  const selectedModule = selectedRadio(hardware, draft);
   const sr110u = /^(SR)?110U-V[0-9]+$/.test(selectedModule?.firmware || "");
   const advancedSupported = selectedModule?.firmware === "110U-V223";
+  const unsupportedSR = sr110u && !advancedSupported;
+  const programmer = sr110u ? "sr110u" : "sa818";
+  const programmerAvailable = sr110u ? state.sr110u_tool : state.tool;
   const advancedEnabled = draft.CURRENT_SR_ADVANCED === "Enabled";
   const set = (change: Partial<SA818Settings>) => setDraft({ ...draft, ...change });
   const found = problems(draft, state.choices.bands);
@@ -251,11 +265,11 @@ export function SA818Tab({ hardware }: { hardware: Hardware }) {
       <PageSection>
         <div className="asl-stack">
           <Content component="p" className="asl-sub">
-            SA818 radios are commonly used in hotspot-type nodes.
+            Program SA818-compatible modules or SR110U 110U-V223. These are different module families, not interchangeable protocols.
           </Content>
-          {!state.tool && (
-            <Alert variant="warning" isInline title="The sa818 command is missing">
-              It comes with the asl3 package; the module cannot be programmed without it.
+          {!programmerAvailable && (
+            <Alert variant="warning" isInline title={`The ${programmer} command is missing`}>
+              Install the matching ASL3 package; no fallback to a different programmer is used.
             </Alert>
           )}
           <Alert variant="info" isInline isPlain
@@ -263,7 +277,14 @@ export function SA818Tab({ hardware }: { hardware: Hardware }) {
                    : "No settings are saved yet; these are sa818-menu's defaults."} />
           <Detected hardware={hardware} saved={state.saved} draft={draft}
                     onUse={(port, speed) => set({ CURRENT_PORT: port, CURRENT_SPEED: speed })} />
-          {sr110u && <Alert variant="info" isInline title="SR110U-compatible radio detected">
+          {!selectedModule?.firmware && <Alert variant="warning" isInline title="Module identity is unverified">
+            A connection acknowledgment does not identify a board. The legacy SA818-compatible path remains available;
+            SR110U programming requires exact firmware identification. Confirm the module before programming.
+          </Alert>}
+          {unsupportedSR && <Alert variant="warning" isInline title="Unsupported SR110U firmware — programming blocked">
+            Only 110U-V223 is supported. Do not use its commands for another SR110U version.
+          </Alert>}
+          {advancedSupported && <Alert variant="info" isInline title="SR110U 110U-V223 — dedicated sr110u programmer">
             The 110U-V223 profile supports channel, CTCSS, volume and the advanced controls below. DCS, tail and SA818 audio-filter controls are unavailable.
             Command acknowledgments are not settings readback or RF verification.
           </Alert>}
@@ -271,7 +292,7 @@ export function SA818Tab({ hardware }: { hardware: Hardware }) {
             <div ref={resultRef} className="asl-scroll-target">
               <Alert variant={result.variant} isInline title={result.title}>
                 {result.log.length > 0 && (
-                  <ExpandableSection toggleText="What sa818 reported">
+                  <ExpandableSection toggleText="Programmer output">
                     <Log lines={result.log} />
                   </ExpandableSection>
                 )}
@@ -486,12 +507,12 @@ export function SA818Tab({ hardware }: { hardware: Hardware }) {
       </PageSection>
       <PageSection className="asl-save-bar" stickyOnBreakpoint={{ default: "bottom" }} aria-label="Save">
         <div className="asl-save-row">
-          <Button onClick={save} isLoading={busy === "save"} isDisabled={busy !== null || !valid || (!dirty && state.saved)}>
+          <Button onClick={save} isLoading={busy === "save"} isDisabled={busy !== null || !valid || unsupportedSR || !programmerAvailable || (!dirty && state.saved)}>
             Save and program
           </Button>
           <Button variant="link" onClick={() => setDraft(state.settings)} isDisabled={!dirty || busy !== null}>Discard changes</Button>
           <Button variant="secondary" onClick={program} isLoading={busy === "program"}
-                  isDisabled={busy !== null || dirty || !state.saved}>
+                  isDisabled={busy !== null || dirty || !state.saved || unsupportedSR || !programmerAvailable}>
             Program again
           </Button>
           <span className="asl-sub">

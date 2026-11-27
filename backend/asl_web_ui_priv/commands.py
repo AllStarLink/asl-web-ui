@@ -709,9 +709,10 @@ def fix_ownership(args: dict, output: Output) -> dict:
     return {"path": name}
 
 
-# ---- SA818 RF modules (as sa818-menu) --------------------------------------------------
+# ---- Radio programming (compatible with sa818-menu storage) --------------------------------------------------
 
 SA818_TOOL = sa818.TOOL
+SR110U_TOOL = sa818.SR110U_TOOL
 
 
 def _sa818_saved() -> tuple[bool, dict[str, str]]:
@@ -722,7 +723,7 @@ def _sa818_saved() -> tuple[bool, dict[str, str]]:
 def sa818_read(args: dict, output: Output) -> dict:
     exists, settings = _sa818_saved()
     return {"saved": exists, "settings": settings, "ports": sa818.ports(ROOT),
-            "tool": os.path.exists(SA818_TOOL)}
+            "tool": os.path.exists(SA818_TOOL), "sr110u_tool": os.path.isfile(SR110U_TOOL) and os.access(SR110U_TOOL, os.X_OK)}
 
 
 def _sa818_program(settings: dict[str, str], output: Output) -> tuple[bool, list[str], list[str]]:
@@ -739,6 +740,7 @@ def _sa818_program(settings: dict[str, str], output: Output) -> tuple[bool, list
         return False, log, []
     sr110u = any("Firmware SR110U, version:" in line for line in lines)
     protocol, unsupported = "sa818", []
+    tool, name = SA818_TOOL, "sa818"
     if sr110u:
         if not any(line.endswith("Firmware SR110U, version: 110U-V223") for line in lines):
             log.append("SR110U firmware is not supported by the verified V223 programming profile; no settings sent.")
@@ -746,7 +748,12 @@ def _sa818_program(settings: dict[str, str], output: Output) -> tuple[bool, list
         if settings["CURRENT_BAND"] != "UHF" or settings["CURRENT_TONE"] == "DCS":
             log.append("SR110U V223 requires UHF and CTCSS or no tone; no settings sent.")
             return False, log, []
+        if not os.path.isfile(SR110U_TOOL) or not os.access(SR110U_TOOL, os.X_OK):
+            log.append("The sr110u command is missing or not executable. Install the matching ASL3 programmer package; no settings sent.")
+            output(log[-1])
+            return False, log, []
         protocol = "sr110u-v223"
+        tool, name = SR110U_TOOL, "sr110u"
         unsupported = ["CTCSS reverse burst (tail tone)", "pre/de-emphasis", "high-pass filter", "low-pass filter"]
         log.append("SR110U V223: programming channel, volume and any opted-in advanced controls; tail/filter settings are not supported or applied.")
         output(log[-1])
@@ -755,9 +762,9 @@ def _sa818_program(settings: dict[str, str], output: Output) -> tuple[bool, list
         output(log[-1])
         return False, log, []
     for args in sa818.tool_args(settings, protocol):
-        log.append("# sa818 " + " ".join(args))
+        log.append("# " + name + " " + " ".join(args))
         output(log[-1])
-        ok, lines = sa818.run(SA818_TOOL, args)
+        ok, lines = sa818.run(tool, args)
         log += lines
         for line in lines:
             output(line)

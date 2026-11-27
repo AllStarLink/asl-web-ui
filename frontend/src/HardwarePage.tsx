@@ -28,7 +28,7 @@ export type Hardware = {
   scan: (again?: boolean) => Promise<void>;
 };
 
-// Looks for an SA818 on the serial ports when the page opens (the server
+// Looks for supported serial radios on the serial ports when the page opens (the server
 // keeps the answer until asked to look again).
 function useHardware(): Hardware {
   const [detect, setDetect] = useState<SA818Detect | null>(null);
@@ -52,8 +52,7 @@ function useHardware(): Hardware {
 }
 
 // Radio hardware attached to the server, one tab for each kind (issue #33).
-// SA818 is the only one so far, so #/hardware shows it, once a module answered
-// or its settings are saved; otherwise it says none was found (issue #47).
+// Preserve old hardware/sa818 links; the visible page is module-neutral.
 export function HardwarePage() {
   const hardware = useHardware();
   const { detect, error, scanning, scan } = hardware;
@@ -63,8 +62,8 @@ export function HardwarePage() {
       <Title headingLevel="h1">Hardware</Title>
       <Content component="p">Radio hardware attached to this server.</Content>
       {tabs && (
-        <Tabs activeKey="sa818" onSelect={(_e, key) => go(`hardware/${key}`)} className="asl-head-tabs">
-          <Tab eventKey="sa818" title={<TabTitleText>SA818 radio</TabTitleText>} />
+        <Tabs activeKey="radio" onSelect={(_e, key) => go(`hardware/${key}`)} className="asl-head-tabs">
+          <Tab eventKey="radio" title={<TabTitleText>Radio programming</TabTitleText>} />
         </Tabs>
       )}
     </PageSection>
@@ -75,7 +74,7 @@ export function HardwarePage() {
       <>
         {head(false)}
         <PageSection>
-          <Spinner size="md" aria-label="Looking" /> <span className="asl-sub">Looking for an SA818 module on the serial ports…</span>
+          <Spinner size="md" aria-label="Looking" /> <span className="asl-sub">Looking for SA818-compatible or SR110U modules on the serial ports…</span>
         </PageSection>
       </>
     );
@@ -87,14 +86,14 @@ export function HardwarePage() {
         <PageSection>
           <EmptyState titleText="No radio hardware found" headingLevel="h2" icon={BroadcastTowerIcon}>
             <EmptyStateBody>
-              No SA818 radio module answered on{" "}
+              No supported serial radio module answered on{" "}
               {detect.probed.length ? detect.probed.join(", ") : "this server's serial ports (there are none)"}. If one is
               connected, check its cable and power, then look again.
             </EmptyStateBody>
             <EmptyStateFooter>
               <EmptyStateActions>
                 <Button onClick={() => void scan(true)} isLoading={scanning} isDisabled={scanning}>Look again</Button>
-                <Button variant="link" onClick={() => setAnyway(true)}>Set up an SA818 anyway</Button>
+                <Button variant="link" onClick={() => setAnyway(true)}>Set up a radio anyway</Button>
               </EmptyStateActions>
             </EmptyStateFooter>
           </EmptyState>
@@ -107,7 +106,7 @@ export function HardwarePage() {
       {head(true)}
       {error && (
         <PageSection>
-          <Alert variant="warning" isInline title={`Could not look for an SA818 module: ${error}`} />
+          <Alert variant="warning" isInline title={`Could not look for radio modules: ${error}`} />
         </PageSection>
       )}
       <SA818Tab hardware={hardware} />

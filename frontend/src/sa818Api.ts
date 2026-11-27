@@ -35,6 +35,7 @@ export type SA818State = {
   settings: SA818Settings;
   ports: string[];
   tool: boolean;
+  sr110u_tool: boolean;
   choices: { ctcss: string[]; dcs: string[]; speeds: string[]; bands: Record<string, [number, number]> };
 };
 

@@ -1,5 +1,5 @@
-# Desktop UI examples
+# Desktop radio UI examples
 
-Captured 2026-11-26 from this PR's current UI code in Chromium at a 1440-pixel desktop viewport; some images crop to the relevant panel.
+Captured 2026-11-27 from this PR's built frontend in Chromium at a 1440-pixel desktop viewport. SR110U channel/advanced views and a separate SA818S V1.2 view demonstrate distinct identities on the neutral Radio programming page.
 
-API responses, node numbers, names, log entries and radio settings are demonstration fixtures, not production data or radio readback. No live backend, radio programming, playback or connection command was used for these images. Mobile screenshots have been omitted.
+API responses, names and radio settings are example fixtures, not production data or hardware readback. No live backend, radio programming or RF action was used. Mobile screenshots are omitted. The advanced-controls image crops to its card.

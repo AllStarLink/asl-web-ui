@@ -90,7 +90,7 @@ async def apply(request: web.Request) -> web.Response:
         res = await _priv(request, "sa818.apply", {"settings": body["settings"]})
     except PrivError as exc:
         return _priv_error(exc)
-    _audit(request, "SA818: save and program", res)
+    _audit(request, "Radio: save and program", res)
     return web.json_response(res)
 
 
@@ -103,7 +103,7 @@ async def program(request: web.Request) -> web.Response:
         res = await _priv(request, "sa818.apply", {"settings": saved["settings"]})
     except PrivError as exc:
         return _priv_error(exc)
-    _audit(request, "SA818: program again", res)
+    _audit(request, "Radio: program again", res)
     return web.json_response(res)
 
 
@@ -188,7 +188,7 @@ async def plan_file(request: web.Request) -> web.Response:
     plans[plan_id] = {"user": request[USER_KEY], "content": content, "hash": expected, "expires": now + PLAN_LIFETIME}
     diff = "".join(difflib.unified_diff(current["content"].splitlines(True), content.splitlines(True),
                                         f"a{sa818.CONF}", f"b{sa818.CONF}"))
-    return web.json_response({"id": plan_id, "name": "sa818.conf", "action": "SA818: edit sa818.conf", "diff": diff,
+    return web.json_response({"id": plan_id, "name": "sa818.conf", "action": "Radio: edit sa818.conf", "diff": diff,
                               "created": False, "findings": findings})
 
 
@@ -202,10 +202,10 @@ async def apply_file(request: web.Request) -> web.Response:
         res = await _priv(request, "file.write", {"path": sa818.CONF, "content": plan["content"],
                                                   "expected_hash": plan["hash"]})
     except PrivError as exc:
-        request.app[STORE_KEY].record(request[USER_KEY], "SA818: edit sa818.conf", "failed", [exc.message],
+        request.app[STORE_KEY].record(request[USER_KEY], "Radio: edit sa818.conf", "failed", [exc.message],
                                       files=[sa818.CONF])
         return _priv_error(exc)
-    request.app[STORE_KEY].record(request[USER_KEY], "SA818: edit sa818.conf", "applied", [], files=[sa818.CONF])
+    request.app[STORE_KEY].record(request[USER_KEY], "Radio: edit sa818.conf", "applied", [], files=[sa818.CONF])
     _forget_detect(request)
     log.info("%s: edited %s", request[USER_KEY], sa818.CONF)
     return web.json_response({"hash": res["hash"], "warnings": []})
