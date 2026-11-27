@@ -87,18 +87,18 @@ function moduleName(firmware: string | null | undefined): string {
 function selectedRadio(hardware: Hardware, draft: SA818Settings) {
   // Match the CLI's automatic port priority, not the order discovery reports devices.
   const ports = draft.CURRENT_PORT ? [draft.CURRENT_PORT] : ["/dev/serial0", "/dev/ttyUSB0"];
-  return ports.map((port) => hardware.detect?.found.find((m) => m.port === port &&
+  return ports.map((port) => hardware.detect?.found.find((m) => (m.port === port || m.aliases?.includes(port)) &&
     m.speed === (draft.CURRENT_SPEED || "9600"))).find((m) => m !== undefined);
 }
 
 // What looking for a module on the serial ports found, against the saved connection.
-function Detected({ hardware, saved, draft, onUse }: {
-  hardware: Hardware; saved: boolean; draft: SA818Settings; onUse: (port: string, speed: string) => void;
+function Detected({ hardware, saved, draft, onUse, busy }: {
+  hardware: Hardware; saved: boolean; draft: SA818Settings; busy: boolean; onUse: (port: string, speed: string) => void;
 }) {
   const { detect, scanning, scan } = hardware;
   if (!detect) return null;
   const again = (
-    <Button variant="link" isInline onClick={() => void scan(true)} isLoading={scanning} isDisabled={scanning}>Look again</Button>
+    <Button variant="link" isInline onClick={() => void scan(true)} isLoading={scanning} isDisabled={scanning || busy}>Look again</Button>
   );
   const first = selectedRadio(hardware, draft) ?? detect.found[0];
   if (!first) {
@@ -112,7 +112,7 @@ function Detected({ hardware, saved, draft, onUse }: {
   const where = `${first.port} at ${first.speed}`;
   if (selectedRadio(hardware, draft)) {
     const firmware = first.firmware ? `firmware ${first.firmware}` : "firmware version unavailable";
-    return <Alert variant="info" isInline isPlain title={`${moduleName(first.firmware)} module found on ${where} (${firmware}).`} />;
+    return <Alert variant="info" isInline isPlain title={`${moduleName(first.firmware)} module found on ${where} (${firmware}).`} actionLinks={again} />;
   }
   const chosen = draft.CURRENT_PORT === first.port && draft.CURRENT_SPEED === first.speed;
   return (
@@ -230,6 +230,7 @@ export function SA818Tab({ hardware }: { hardware: Hardware }) {
     setResult(null);
     try {
       finish(await programSA818(), false);
+      await hardware.scan();
     } catch (err) {
       setResult({ variant: "danger", title: message(err), log: [] });
     } finally {
@@ -246,6 +247,7 @@ export function SA818Tab({ hardware }: { hardware: Hardware }) {
         ? `The module answered: firmware ${v.firmware}.`
         : "The module acknowledged the connection; its firmware version is unavailable.", log: v.log }
         : { variant: "danger", title: "Connection test failed. See the programmer log below.", log: v.log });
+      await hardware.scan(true);
     } catch (err) {
       setResult({ variant: "danger", title: message(err), log: [] });
     } finally {
@@ -275,7 +277,7 @@ export function SA818Tab({ hardware }: { hardware: Hardware }) {
           <Alert variant="info" isInline isPlain
                  title={state.saved ? "Saved settings, not radio readback: these are the values last saved by this page or sa818-menu."
                    : "No settings are saved yet; these are sa818-menu's defaults."} />
-          <Detected hardware={hardware} saved={state.saved} draft={draft}
+          <Detected hardware={hardware} saved={state.saved} draft={draft} busy={busy !== null}
                     onUse={(port, speed) => set({ CURRENT_PORT: port, CURRENT_SPEED: speed })} />
           {!selectedModule?.firmware && <Alert variant="warning" isInline title="Module identity is unverified">
             A connection acknowledgment does not identify a board. The legacy SA818-compatible path remains available;
@@ -507,12 +509,12 @@ export function SA818Tab({ hardware }: { hardware: Hardware }) {
       </PageSection>
       <PageSection className="asl-save-bar" stickyOnBreakpoint={{ default: "bottom" }} aria-label="Save">
         <div className="asl-save-row">
-          <Button onClick={save} isLoading={busy === "save"} isDisabled={busy !== null || !valid || unsupportedSR || !programmerAvailable || (!dirty && state.saved)}>
+          <Button onClick={save} isLoading={busy === "save"} isDisabled={busy !== null || hardware.scanning || !valid || unsupportedSR || !programmerAvailable || (!dirty && state.saved)}>
             Save and program
           </Button>
           <Button variant="link" onClick={() => setDraft(state.settings)} isDisabled={!dirty || busy !== null}>Discard changes</Button>
           <Button variant="secondary" onClick={program} isLoading={busy === "program"}
-                  isDisabled={busy !== null || dirty || !state.saved || unsupportedSR || !programmerAvailable}>
+                  isDisabled={busy !== null || hardware.scanning || dirty || !state.saved || unsupportedSR || !programmerAvailable}>
             Program again
           </Button>
           <span className="asl-sub">

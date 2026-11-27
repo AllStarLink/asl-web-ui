@@ -286,7 +286,7 @@ def _ask(fd: int, command: str, timeout: float) -> str:
         if left <= 0 or not select.select([fd], [], [], left)[0]:
             break
         reply += os.read(fd, 256)
-    return reply.split(b"\n")[0].decode("ascii", "replace").strip()
+    return reply.split(b"\n")[0].decode("ascii", "replace").strip("\x00\r\n ")
 
 
 def probe(path: str, speed: str, timeout: float = PROBE_TIMEOUT) -> str | None:
@@ -334,7 +334,9 @@ def detect(settings: dict[str, str], root: str = "/") -> dict:
         return os.path.realpath(os.path.join(root, port.lstrip("/")))
 
     found, probed, seen = [], [], set()
-    for port in ports(root):
+    available = ports(root)
+    aliases = {port: [other for other in available if real(other) == real(port)] for port in available}
+    for port in available:
         device = real(port)
         if device in seen:
             continue
@@ -343,7 +345,7 @@ def detect(settings: dict[str, str], root: str = "/") -> dict:
         for speed in speeds:
             firmware = probe(device, speed)
             if firmware is not None:
-                found.append({"port": port, "speed": speed, "firmware": firmware or None})
+                found.append({"port": port, "speed": speed, "firmware": firmware or None, "aliases": aliases[port]})
                 break
     wanted = {real(p) for p in ([settings["CURRENT_PORT"]] if settings["CURRENT_PORT"] else AUTO_PORTS)}
     speed = settings["CURRENT_SPEED"] or PROBE_SPEED

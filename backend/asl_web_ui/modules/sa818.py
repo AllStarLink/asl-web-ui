@@ -40,6 +40,7 @@ routes = web.RouteTableDef()
 PLANS_KEY = web.AppKey("sa818_plans", dict)
 DETECT_KEY = web.AppKey("sa818_detect", dict)
 PLAN_LIFETIME = 900
+DETECT_LIFETIME = 30
 
 CHOICES = {
     "ctcss": sa818.CTCSS,
@@ -58,6 +59,10 @@ def _priv_error(exc: PrivError) -> web.Response:
 
 
 async def _priv(request: web.Request, command: str, args: dict | None = None) -> dict:
+    if command in {"sa818.apply", "sa818.version"}:
+        async with request.app[DETECT_KEY]["lock"]:
+            _forget_detect(request)
+            return await request.app[PRIV_KEY].call(command, args or {}, request[USER_KEY], timeout=180)
     return await request.app[PRIV_KEY].call(command, args or {}, request[USER_KEY], timeout=180)
 
 
@@ -119,9 +124,10 @@ async def _detect(request: web.Request, again: bool) -> web.Response:
     cache = request.app[DETECT_KEY]
     # One look at a time: two at once would talk over each other on the ports.
     async with cache["lock"]:
-        if again or "result" not in cache:
+        if again or "result" not in cache or time.monotonic() - cache.get("checked_at", 0) >= DETECT_LIFETIME:
             try:
                 cache["result"] = await _priv(request, "sa818.detect")
+                cache["checked_at"] = time.monotonic()
             except PrivError as exc:
                 return _priv_error(exc)
         return web.json_response(cache["result"])

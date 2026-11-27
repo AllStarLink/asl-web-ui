@@ -272,7 +272,7 @@ async def test_detect_and_test_connection_without_version(ports):
     a = await ports.make()
     status_, body = await a.call("GET", "sa818/detect")
     assert status_ == 200 and body["reachable"]
-    assert body["found"] == [{"port": "/dev/ttyUSB0", "speed": "9600", "firmware": None}]
+    assert body["found"] == [{"port": "/dev/ttyUSB0", "speed": "9600", "firmware": None, "aliases": ["/dev/ttyUSB0"]}]
     _, body = await a.call("POST", "sa818/version")
     assert body["ok"] and body["firmware"] is None
     assert any("firmware version unavailable" in line for line in body["log"])
@@ -311,7 +311,7 @@ async def test_detect(ports):
     status_, body = await a.call("GET", "sa818/detect")
     assert status_ == 200, body
     # serial0 and ttyAMA0 are the same device: asked once, under the first name.
-    assert body == {"found": [{"port": "/dev/ttyUSB0", "speed": "9600", "firmware": "SA818S_V1.1"}],
+    assert body == {"found": [{"port": "/dev/ttyUSB0", "speed": "9600", "firmware": "SA818S_V1.1", "aliases": ["/dev/ttyUSB0"]}],
                     "probed": ["/dev/serial0", "/dev/ttyUSB0"], "reachable": True, "saved": False}
     assert ports.fake.heard == ["AT+DMOCONNECT", "AT+VERSION"]
     _, again = await a.call("GET", "sa818/detect")
@@ -462,3 +462,79 @@ async def test_sa818_never_uses_sr110u_executable(module):
     _, body = await a.call("PUT", "sa818", {"settings": WANTED})
     assert body["programmed"]
     assert not (module.log.parent / "sr110u.log").exists()
+
+
+@pytest.mark.parametrize("connect,version,alternate", [
+    (b"\x00+DMOCONNECT:0\x00", b"Wrong command", b"+DMOVERQ:110U-V223"),
+    (b"+DMOCONNECT:0", b"Wrong command", b"\x00+DMOVERQ:110U-V223\x00"),
+    (b"+DMOCONNECT:0", b"\x00+VERSION:SA818S_V1.2\x00", None),
+])
+def test_probe_accepts_cli_compatible_nul_padding(connect, version, alternate):
+    fake = FakeModule(connect=connect, version=version)
+    if alternate:
+        fake.replies[b"AT+DMOVERQ"] = alternate
+    try:
+        assert sa818.probe(fake.path, "9600", timeout=.1) == ("110U-V223" if alternate else "SA818S_V1.2")
+    finally:
+        fake.close()
+
+
+def test_detect_exposes_aliases_for_saved_connection(tmp_path, monkeypatch):
+    dev = tmp_path / "dev"
+    dev.mkdir()
+    (dev / "ttyAMA0").touch()
+    (dev / "serial0").symlink_to(dev / "ttyAMA0")
+    monkeypatch.setattr(sa818, "probe", lambda *args: "110U-V223")
+    result = sa818.detect({**sa818.DEFAULTS, "CURRENT_PORT": "/dev/ttyAMA0"}, str(tmp_path))
+    assert result["reachable"]
+    assert result["found"] == [{"port": "/dev/serial0", "speed": "9600", "firmware": "110U-V223",
+                                "aliases": ["/dev/serial0", "/dev/ttyAMA0"]}]
+
+
+async def test_discovery_expires_and_version_invalidates_cache(ports, monkeypatch):
+    from asl_web_ui.modules import sa818 as api
+    calls = ports.install()
+    a = await ports.make()
+    _, initial = await a.call("GET", "sa818/detect")
+    assert initial["found"][0]["firmware"] == "SA818S_V1.1"
+    ports.fake.replies[b"AT+VERSION"] = b"Wrong command"
+    ports.fake.replies[b"AT+DMOVERQ"] = b"+DMOVERQ:110U-V223"
+    _, cached = await a.call("GET", "sa818/detect")
+    assert cached == initial
+    monkeypatch.setattr(api, "DETECT_LIFETIME", 0)
+    _, fresh = await a.call("GET", "sa818/detect")
+    assert fresh["found"][0]["firmware"] == "110U-V223"
+    monkeypatch.setattr(api, "DETECT_LIFETIME", 30)
+    ports.fake.replies[b"AT+VERSION"] = b"+VERSION:SA818S_V1.2"
+    await a.call("POST", "sa818/version")
+    _, refreshed = await a.call("GET", "sa818/detect")
+    assert refreshed["found"][0]["firmware"] == "SA818S_V1.2"
+    assert calls.read_text().splitlines() == ["version"]  # no programming
+
+
+async def test_discovery_waits_for_programming():
+    import asyncio
+    from types import SimpleNamespace
+    from asl_web_ui.modules import sa818 as api
+    entered, release = asyncio.Event(), asyncio.Event()
+    calls = []
+
+    async def call(command, *args, **kwargs):
+        calls.append(command)
+        if command == "sa818.apply":
+            entered.set()
+            await release.wait()
+        return {}
+
+    class Request(dict):
+        pass
+    request = Request({api.USER_KEY: "operator"})
+    request.app = {api.DETECT_KEY: {"lock": asyncio.Lock()}, api.PRIV_KEY: SimpleNamespace(call=call)}
+    programming = asyncio.create_task(api._priv(request, "sa818.apply", {}))
+    await entered.wait()
+    discovery = asyncio.create_task(api._detect(request, True))
+    await asyncio.sleep(0)
+    assert calls == ["sa818.apply"]
+    release.set()
+    await asyncio.gather(programming, discovery)
+    assert calls == ["sa818.apply", "sa818.detect"]

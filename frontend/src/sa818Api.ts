@@ -43,7 +43,7 @@ export type SA818Result = { saved: boolean; programmed: boolean; unsupported?: s
 export type SA818Version = { ok: boolean; firmware: string | null; log: string[] };
 // Modules that answered on the serial ports; reachable: the saved port and
 // speed (or sa818's automatic choice) lead to one of them.
-export type SA818Found = { port: string; speed: string; firmware: string | null };
+export type SA818Found = { port: string; speed: string; firmware: string | null; aliases?: string[] };
 export type SA818Detect = { found: SA818Found[]; probed: string[]; reachable: boolean; saved: boolean };
 
 export const readSA818 = () => get<SA818State>("sa818");
