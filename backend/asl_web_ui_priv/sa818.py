@@ -1,12 +1,12 @@
 """SA818 RF modules, as sa818-menu (asl3 package) handles them.
 
-The module cannot be read back, so the settings live in /etc/sa818.conf,
+This workflow does not read settings back; saved intent lives in /etc/sa818.conf,
 the file sa818-menu keeps: KEY=VALUE lines that sa818-menu loads with the
 shell's "." as root. Every value written here comes from a fixed list or a
 strict pattern, so the file stays safe to source. The module is programmed
-by running the sa818 command three times (radio, volume, filters) with the
-arguments sa818-menu builds; sa818 exits 0 even when the module rejects a
-command, so its log lines are checked for errors too.
+by running the sa818 commands for the detected firmware profile. Older sa818
+versions can exit 0 even when a module rejects a command, so log lines are
+checked for errors as well as the exit status.
 
 A module is found by asking each serial port what sa818 asks first
 (AT+DMOCONNECT). AT+VERSION is optional: some modules acknowledge the
@@ -63,6 +63,15 @@ DEFAULTS = {
     "CURRENT_FILTER_LOW_PASS": "Disabled",
     "CURRENT_PORT": "",
     "CURRENT_SPEED": "",
+    # Opt-in: old files must not silently acquire additional hardware writes.
+    "CURRENT_SR_ADVANCED": "Disabled",
+    "CURRENT_SR_BUSY_LOCK": "Enabled",
+    "CURRENT_SR_POWER": "High",
+    "CURRENT_SR_COMPANDING": "Disabled",
+    "CURRENT_SR_VOX": "0",
+    "CURRENT_SR_MIC": "6",
+    "CURRENT_SR_TIMEOUT": "3",
+    "CURRENT_SR_POWER_SAVING": "Disabled",
 }
 CHOICES = {
     "CURRENT_BAND": ["VHF", "UHF"],
@@ -79,6 +88,14 @@ CHOICES = {
     "CURRENT_FILTER_HIGH_PASS": ["Enabled", "Disabled"],
     "CURRENT_FILTER_LOW_PASS": ["Enabled", "Disabled"],
     "CURRENT_SPEED": [""] + SPEEDS,
+    "CURRENT_SR_ADVANCED": ["Enabled", "Disabled"],
+    "CURRENT_SR_BUSY_LOCK": ["Enabled", "Disabled"],
+    "CURRENT_SR_POWER": ["High", "Low"],
+    "CURRENT_SR_COMPANDING": ["Enabled", "Disabled"],
+    "CURRENT_SR_VOX": [str(i) for i in range(9)],
+    "CURRENT_SR_MIC": [str(i) for i in range(1, 9)],
+    "CURRENT_SR_TIMEOUT": [str(i) for i in range(10)],
+    "CURRENT_SR_POWER_SAVING": ["Enabled", "Disabled"],
 }
 # sa818-menu's limits for each band (set_band_limits); whole MHz are compared.
 BAND_LIMITS = {"VHF": (134, 174), "UHF": (400, 480)}
@@ -184,16 +201,21 @@ def check(settings: dict, ports_exist=os.path.exists) -> dict[str, str]:
     port = out["CURRENT_PORT"]
     if port and (not _PORT.match(port) or ".." in port or not ports_exist(port)):
         raise Invalid(f"{port} is not a serial device on this server.", "CURRENT_PORT")
+    if (out["CURRENT_SR_ADVANCED"] == "Enabled" and out["CURRENT_SR_VOX"] != "0"
+            and out["CURRENT_SR_POWER_SAVING"] == "Enabled"):
+        raise Invalid("VOX requires power saving disabled.", "CURRENT_SR_POWER_SAVING")
     return out
 
 
-def tool_args(s: dict[str, str]) -> list[list[str]]:
+def tool_args(s: dict[str, str], protocol: str = "sa818") -> list[list[str]]:
     """The sa818 commands sa818-menu runs (do_sa818_update), in order."""
     base = []
     if s["CURRENT_PORT"]:
         base += ["--port", s["CURRENT_PORT"]]
     if s["CURRENT_SPEED"]:
         base += ["--speed", s["CURRENT_SPEED"]]
+    if protocol == "sr110u-v223":
+        base += ["--protocol", protocol]
     radio = base + ["radio", "--bw", "0" if s["CURRENT_BANDWIDTH"] == "Narrow" else "1",
                     "--frequency", s["CURRENT_FREQ_RX"]]
     if s["CURRENT_FREQ_RX"] != s["CURRENT_FREQ_TX"]:
@@ -216,6 +238,21 @@ def tool_args(s: dict[str, str]) -> list[list[str]]:
         a for key, opt in (("CURRENT_EMPHASIS", "--emphasis"), ("CURRENT_FILTER_HIGH_PASS", "--highpass"),
                            ("CURRENT_FILTER_LOW_PASS", "--lowpass"))
         for a in (opt, "enable" if s[key] == "Enabled" else "disable")]
+    if protocol == "sr110u-v223":
+        if "--tail" in radio:
+            i = radio.index("--tail")
+            del radio[i:i + 2]
+        if s["CURRENT_SR_ADVANCED"] == "Enabled":
+            flags = (int(s["CURRENT_SR_BUSY_LOCK"] == "Enabled")
+                     | (int(s["CURRENT_SR_COMPANDING"] == "Enabled") << 1)
+                     | (int(s["CURRENT_SR_POWER"] == "Low") << 2))
+            radio += ["--sr110u-flags", str(flags)]
+            advanced = base + ["advanced", "--mic", s["CURRENT_SR_MIC"],
+                               "--timeout", s["CURRENT_SR_TIMEOUT"],
+                               "--vox", s["CURRENT_SR_VOX"], "--power-saving",
+                               "enable" if s["CURRENT_SR_POWER_SAVING"] == "Enabled" else "disable"]
+            return [radio, volume, advanced]
+        return [radio, volume]
     return [radio, volume, filters]
 
 
@@ -276,7 +313,12 @@ def probe(path: str, speed: str, timeout: float = PROBE_TIMEOUT) -> str | None:
         if _ask(fd, "AT+DMOCONNECT", timeout) != "+DMOCONNECT:0":
             return None
         version = _ask(fd, "AT+VERSION", timeout)
-        return version.removeprefix("+VERSION:").strip() if version.startswith("+VERSION:") else ""
+        if version.startswith("+VERSION:") and version.removeprefix("+VERSION:").strip():
+            return version.removeprefix("+VERSION:").strip()
+        alternate = _ask(fd, "AT+DMOVERQ", timeout)
+        if re.fullmatch(r"\+DMOVERQ:(?:SR)?110U-V[0-9]+", alternate):
+            return alternate.split(":", 1)[1]
+        return ""
     except (OSError, termios.error):
         return None
     finally:

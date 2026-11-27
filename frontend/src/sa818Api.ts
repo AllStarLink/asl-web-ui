@@ -20,6 +20,14 @@ export type SA818Settings = {
   CURRENT_FILTER_LOW_PASS: "Enabled" | "Disabled";
   CURRENT_PORT: string;
   CURRENT_SPEED: string;
+  CURRENT_SR_ADVANCED: "Enabled" | "Disabled";
+  CURRENT_SR_BUSY_LOCK: "Enabled" | "Disabled";
+  CURRENT_SR_POWER: "High" | "Low";
+  CURRENT_SR_COMPANDING: "Enabled" | "Disabled";
+  CURRENT_SR_VOX: string;
+  CURRENT_SR_MIC: string;
+  CURRENT_SR_TIMEOUT: string;
+  CURRENT_SR_POWER_SAVING: "Enabled" | "Disabled";
 };
 
 export type SA818State = {
@@ -30,7 +38,7 @@ export type SA818State = {
   choices: { ctcss: string[]; dcs: string[]; speeds: string[]; bands: Record<string, [number, number]> };
 };
 
-export type SA818Result = { saved: boolean; programmed: boolean; log: string[]; settings: SA818Settings };
+export type SA818Result = { saved: boolean; programmed: boolean; unsupported?: string[]; log: string[]; settings: SA818Settings };
 export type SA818Version = { ok: boolean; firmware: string | null; log: string[] };
 // Modules that answered on the serial ports; reachable: the saved port and
 // speed (or sa818's automatic choice) lead to one of them.

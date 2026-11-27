@@ -13,7 +13,7 @@ from test_backups_api import cloud, env  # noqa: F401 (fixtures)
 FAKE = """#!/bin/sh
 echo "$@" >> {log}
 case "$*" in
-  *version*) echo "SA818: INFO: Firmware SA868S, version: V1.3" >&2 ;;
+  *version*) {version} ;;
   *radio*) {radio} ;;
   *volume*) echo "SA818: INFO: +DMOSETVOLUME:0 Volume level: 6, OK" >&2 ;;
   *filters*) echo "SA818: INFO: +DMOSETFILTER:0 filters ..." >&2 ;;
@@ -22,6 +22,8 @@ esac
 OK = 'echo "SA818: INFO: +DMOSETGROUP:0, BW: Wide, OK" >&2'
 REJECTED = 'echo "SA818: ERROR: SA818 programming error" >&2'
 NO_MODULE = 'echo "Connection error" >&2; exit 1'
+VERSION = 'echo "SA818: INFO: Firmware SA868S, version: V1.3" >&2'
+NO_VERSION = 'echo "SA818: INFO: SA818 connected; firmware version unavailable" >&2'
 
 WANTED = {**sa818.DEFAULTS, "CURRENT_FREQ_RX": "146.52", "CURRENT_FREQ_TX": "146.52", "CURRENT_VOLUME": "6",
           "CURRENT_TONE": "CTCSS", "CURRENT_CTCSS_RX": "100.0", "CURRENT_CTCSS_TX": "100.0"}
@@ -29,9 +31,9 @@ WANTED = {**sa818.DEFAULTS, "CURRENT_FREQ_RX": "146.52", "CURRENT_FREQ_TX": "146
 
 @pytest.fixture
 def module(env, monkeypatch):  # noqa: F811
-    def install(radio=OK):
+    def install(radio=OK, version=VERSION):
         tool = env.log.parent / "sa818"
-        tool.write_text(FAKE.format(log=env.log.parent / "sa818.log", radio=radio))
+        tool.write_text(FAKE.format(log=env.log.parent / "sa818.log", radio=radio, version=version))
         tool.chmod(0o755)
         monkeypatch.setattr(commands, "SA818_TOOL", str(tool))
         return env.log.parent / "sa818.log"
@@ -57,6 +59,7 @@ async def test_save_and_program(module):
     assert text.startswith("CURRENT_BAND=VHF\nCURRENT_BANDWIDTH=Wide\nCURRENT_FREQ_RX=146.5200\n")
     assert "CURRENT_PORT=\nCURRENT_SPEED=\n" in text
     assert calls.read_text().splitlines() == [
+        "version",
         "radio --bw 1 --frequency 146.5200 --squelch 1 --ctcss 100.0,100.0 --tail close",
         "volume --level 6",
         "filters --emphasis disable --highpass disable --lowpass disable"]
@@ -93,12 +96,31 @@ async def test_validation(module):
     assert not module.conf.exists()
 
 
-async def test_version(ports):
-    calls = ports.install()
-    a = await ports.make()
+async def test_version(module, monkeypatch):
+    calls = module.install()
+    def no_probe(*args, **kwargs):
+        pytest.fail("Test Connection must use the CLI, not the direct serial probe")
+    monkeypatch.setattr(sa818, "probe", no_probe)
+    a = await module.make()
     _, body = await a.call("POST", "sa818/version")
-    assert body == {**body, "ok": True, "firmware": "SA818S_V1.1"}
-    assert not calls.exists()  # no sa818 version subprocess (its parser can crash)
+    assert body == {**body, "ok": True, "firmware": "SA868S, version: V1.3"}
+    assert calls.read_text().splitlines() == ["version"]
+
+
+@pytest.mark.parametrize("reply", [NO_VERSION, NO_MODULE,
+                                  'echo "SA818: ERROR: failed" >&2',
+                                  'echo "Traceback (most recent call last):" >&2; exit 1'])
+async def test_connection_cli_outcomes_without_firmware(module, monkeypatch, reply):
+    calls = module.install(version=reply)
+    def no_probe(*args, **kwargs):
+        pytest.fail("No direct-probe fallback, including when the CLI fails")
+    monkeypatch.setattr(sa818, "probe", no_probe)
+    a = await module.make()
+    _, body = await a.call("POST", "sa818/version")
+    assert body["ok"] is (reply == NO_VERSION)
+    assert body["firmware"] is None
+    assert calls.read_text().splitlines() == ["version"]
+    assert not module.conf.exists()
 
 
 def test_hand_edited_file_is_read_like_the_shell_does():
@@ -216,7 +238,7 @@ def test_probe_without_firmware_still_requires_a_handshake(reply):
     fake = FakeModule(version=reply)
     try:
         assert sa818.probe(fake.path, "9600", timeout=0.1) == ""
-        assert fake.heard == ["AT+DMOCONNECT", "AT+VERSION"]
+        assert fake.heard == ["AT+DMOCONNECT", "AT+VERSION", "AT+DMOVERQ"]
     finally:
         fake.close()
 
@@ -241,7 +263,7 @@ def test_probe_invalid_saved_speed():
 
 
 async def test_detect_and_test_connection_without_version(ports):
-    calls = ports.install(radio=REJECTED)
+    calls = ports.install(radio=REJECTED, version=NO_VERSION)
     ports.fake.replies[b"AT+VERSION"] = b"Wrong command"
     a = await ports.make()
     status_, body = await a.call("GET", "sa818/detect")
@@ -249,35 +271,34 @@ async def test_detect_and_test_connection_without_version(ports):
     assert body["found"] == [{"port": "/dev/ttyUSB0", "speed": "9600", "firmware": None}]
     _, body = await a.call("POST", "sa818/version")
     assert body["ok"] and body["firmware"] is None
-    assert any("Firmware version unavailable" in line for line in body["log"])
-    assert not calls.exists()
+    assert any("firmware version unavailable" in line for line in body["log"])
+    assert calls.read_text().splitlines() == ["version"]
     assert not ports.conf.exists()  # connection testing does not save or program
 
     # Recognizing the connection must not hide a later programming rejection.
     _, body = await a.call("PUT", "sa818", {"settings": WANTED})
     assert not body["programmed"]
     assert any("programming error" in line for line in body["log"])
-    assert len(calls.read_text().splitlines()) == 1  # stop before volume/filters
+    assert len(calls.read_text().splitlines()) == 3  # connection test, preflight version, then radio; stop before volume/filters
 
 
-async def test_connection_uses_only_the_saved_port_and_speed(ports, monkeypatch):
-    a = await ports.make()
-    ports.conf.write_text(sa818.render({**WANTED, "CURRENT_PORT": "/dev/serial0", "CURRENT_SPEED": "19200"}))
-    seen = []
-    def probe(port, speed):
-        seen.append((port, speed))
-        return None
-    monkeypatch.setattr(sa818, "probe", probe)
+async def test_connection_uses_only_the_saved_port_and_speed(module):
+    calls = module.install(version=NO_VERSION)
+    a = await module.make()
+    module.conf.write_text(sa818.render({**WANTED, "CURRENT_PORT": "/dev/serial0", "CURRENT_SPEED": "19200"}))
+    before = module.conf.read_bytes()
+    _, body = await a.call("POST", "sa818/version")
+    assert body["ok"] and body["firmware"] is None
+    assert calls.read_text().splitlines() == ["--port /dev/serial0 --speed 19200 version"]
+    assert module.conf.read_bytes() == before
+
+
+async def test_connection_without_any_module(module):
+    calls = module.install(version=NO_MODULE)
+    a = await module.make()
     _, body = await a.call("POST", "sa818/version")
     assert not body["ok"] and body["firmware"] is None
-    assert seen == [(str(ports.root / "dev/serial0"), "19200")]
-
-
-async def test_connection_without_any_module(ports):
-    ports.fake.replies[b"AT+DMOCONNECT"] = b"+DMOCONNECT:1"
-    a = await ports.make()
-    _, body = await a.call("POST", "sa818/version")
-    assert not body["ok"] and body["firmware"] is None
+    assert calls.read_text().splitlines() == ["version"]
 
 
 async def test_detect(ports):
@@ -306,3 +327,97 @@ async def test_detect_checks_the_saved_port_and_speed(ports):
     await a.call("PUT", "sa818", {"settings": {**WANTED, "CURRENT_PORT": "/dev/ttyUSB0", "CURRENT_SPEED": "9600"}})
     _, body = await a.call("GET", "sa818/detect")
     assert body["reachable"]
+
+
+async def test_sr110u_profile_programs_supported_controls_only(module):
+    calls = module.install(version='echo "SA818: INFO: Firmware SR110U, version: 110U-V223" >&2')
+    a = await module.make()
+    wanted = {**WANTED, "CURRENT_BAND": "UHF", "CURRENT_FREQ_RX": "445.1250", "CURRENT_FREQ_TX": "450.1250",
+              "CURRENT_CTCSS_RX": "None", "CURRENT_CTCSS_TX": "103.5"}
+    _, body = await a.call("PUT", "sa818", {"settings": wanted})
+    assert body["programmed"] and len(body["unsupported"]) == 4
+    commands_sent = calls.read_text().splitlines()
+    assert commands_sent == ["version",
+        "--protocol sr110u-v223 radio --bw 1 --frequency 445.1250 --offset 5.0000 --squelch 1 --ctcss 103.5,None",
+        "--protocol sr110u-v223 volume --level 6"]
+
+
+@pytest.mark.parametrize("firmware,tone", [("110U-V303", "CTCSS"), ("110U-V223", "DCS")])
+async def test_sr110u_rejects_unknown_firmware_and_dcs(module, firmware, tone):
+    calls = module.install(version=f'echo "SA818: INFO: Firmware SR110U, version: {firmware}" >&2')
+    a = await module.make()
+    _, body = await a.call("PUT", "sa818", {"settings": {**WANTED, "CURRENT_BAND": "UHF",
+        "CURRENT_FREQ_RX": "445.1250", "CURRENT_FREQ_TX": "445.1250", "CURRENT_TONE": tone}})
+    assert not body["programmed"]
+    assert calls.read_text().splitlines() == ["version"]
+
+
+def test_sr110u_discovery_version():
+    fake = FakeModule(version=b"Wrong command")
+    fake.replies[b"AT+DMOVERQ"] = b"+DMOVERQ:110U-V223"
+    try:
+        assert sa818.probe(fake.path, "9600", timeout=.1) == "110U-V223"
+    finally:
+        fake.close()
+
+
+SR_VERSION = 'echo "SA818: INFO: Firmware SR110U, version: 110U-V223" >&2'
+ADVANCED = {**WANTED, "CURRENT_BAND": "UHF", "CURRENT_FREQ_RX": "445.1250", "CURRENT_FREQ_TX": "450.1250",
+            "CURRENT_SR_ADVANCED": "Enabled", "CURRENT_SR_BUSY_LOCK": "Disabled", "CURRENT_SR_POWER": "Low",
+            "CURRENT_SR_COMPANDING": "Enabled", "CURRENT_SR_MIC": "7", "CURRENT_SR_TIMEOUT": "2"}
+
+
+async def test_advanced_controls_round_trip_and_arguments(module):
+    calls = module.install(version=SR_VERSION)
+    a = await module.make()
+    status_, body = await a.call("PUT", "sa818", {"settings": ADVANCED})
+    assert status_ == 200 and body["programmed"]
+    sent = calls.read_text().splitlines()
+    assert sent[1].endswith("--sr110u-flags 6")
+    assert sent[-1] == "--protocol sr110u-v223 advanced --mic 7 --timeout 2 --vox 0 --power-saving disable"
+    assert "SCRAMBLE" not in module.conf.read_text()
+    _, read = await a.call("GET", "sa818")
+    for key in ADVANCED:
+        if key.startswith("CURRENT_SR_"):
+            assert read["settings"][key] == ADVANCED[key]
+    assert not sa818.lint_text(module.conf.read_text())
+
+
+@pytest.mark.parametrize("key,value", [("CURRENT_SR_MIC", "0"), ("CURRENT_SR_MIC", "9"),
+    ("CURRENT_SR_TIMEOUT", "10"), ("CURRENT_SR_VOX", "9"), ("CURRENT_SR_POWER", "2"),
+    ("CURRENT_SR_COMPANDING", "yes"), ("CURRENT_SR_BUSY_LOCK", "$(id)"), ("CURRENT_SR_POWER_SAVING", "0")])
+async def test_advanced_validation_no_writes(module, key, value):
+    calls = module.install(version=SR_VERSION)
+    a = await module.make()
+    status_, body = await a.call("PUT", "sa818", {"settings": {**ADVANCED, key: value}})
+    assert status_ == 400 and body["field"] == key
+    assert not module.conf.exists() and not calls.exists()
+
+
+async def test_vox_power_saving_conflict_no_writes(module):
+    calls = module.install(version=SR_VERSION)
+    a = await module.make()
+    status_, body = await a.call("PUT", "sa818", {"settings": {**ADVANCED,
+        "CURRENT_SR_VOX": "1", "CURRENT_SR_POWER_SAVING": "Enabled"}})
+    assert status_ == 400 and body["field"] == "CURRENT_SR_POWER_SAVING"
+    assert not calls.exists() and not module.conf.exists()
+
+
+async def test_advanced_standard_firmware_fails_before_programming(module):
+    calls = module.install()
+    a = await module.make()
+    _, body = await a.call("PUT", "sa818", {"settings": ADVANCED})
+    assert not body["programmed"] and calls.read_text().splitlines() == ["version"]
+
+
+async def test_advanced_group_failure_stops_later_commands(module):
+    calls = module.install(version=SR_VERSION, radio=REJECTED)
+    a = await module.make()
+    _, body = await a.call("PUT", "sa818", {"settings": ADVANCED})
+    assert not body["programmed"] and len(calls.read_text().splitlines()) == 2
+
+
+def test_old_configuration_does_not_opt_into_advanced_writes():
+    settings = sa818.parse("CURRENT_FREQ_RX=445.1250\nCURRENT_FREQ_TX=445.1250\nCURRENT_BAND=UHF\n")
+    assert settings["CURRENT_SR_ADVANCED"] == "Disabled"
+    assert len(sa818.tool_args(settings, "sr110u-v223")) == 2
