@@ -434,3 +434,80 @@ async def test_savenode_uses_only_the_live_registration(env):
     status_, body = await (await env.make(cli=BothCLI())).call("POST", "nodes/plan", {"op": "savenode",
                                                                                      "node": "63001"})
     assert status_ == 409 and "different passwords" in body["message"]
+
+
+async def test_allmon3_persistent_data_real_backup_and_restore(env):
+    """Idle fixture: real archive/restore, not a manually recursive tar."""
+    import sqlite3
+    from asl_web_ui_priv import commands
+    base = env.root / "etc/allmon3"
+    for directory in ("favorites", "audio/audio-originals", "logging", "addons.d"):
+        (base / directory).mkdir(parents=True, exist_ok=True)
+    values = {
+        "favorites/favorites.json": '{"1999":{"2000":"Saved favorite"}}',
+        "audio/audio-originals/test.wav": "original media fixture",
+        "logging/nodes.json": '{"1999":false}',
+        "logging-nodes.json": '{"nodes":["1999"]}',
+        "announcements.ini": "[announcements]\nstate_dir=/etc/allmon3/audio\n",
+        "speech.ini": "[speech]\nengine=piper\n",
+        "addons.d/announcements.ini": "[addon]\nenabled=true\n",
+    }
+    for name, data in values.items():
+        (base / name).write_text(data)
+    db = base / "audio/audio.sqlite3"
+    with sqlite3.connect(db) as con:
+        con.execute("create table settings (name text primary key, value text)")
+        con.executemany("insert into settings values (?, ?)", [("audio_enabled", "0"), ("commands_enabled", "0")])
+    db.chmod(0o640)
+    original_owner = (db.stat().st_uid, db.stat().st_gid)
+    cache = env.root / "var/cache/allmon3"
+    cache.mkdir(parents=True)
+    (cache / "converted.ulaw").write_text("disposable")
+    a = await env.make()
+    made = await a.job("POST", "backups", {})
+    assert made["ok"], made
+    name = made["result"]["name"]
+    _, data = await a.call("GET", f"backups/local/{name}/download")
+    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+        names = tar.getnames()
+        assert all("etc/allmon3/" + n in names for n in values)
+        assert "etc/allmon3/audio/audio.sqlite3" in names
+        assert not any(n.startswith("var/cache/") or n.startswith("var/log/") for n in names)
+    for name_ in values:
+        (base / name_).write_text("changed")
+    with sqlite3.connect(db) as con:
+        con.execute("update settings set value='1'")
+    restored = await a.job("POST", f"backups/local/{name}/restore", {})
+    assert restored["ok"], restored
+    assert all((base / name_).read_text() == data for name_, data in values.items())
+    with sqlite3.connect(db) as con:
+        assert con.execute("select value from settings").fetchall() == [("0",), ("0",)]
+    assert db.stat().st_mode & 0o777 == 0o640
+    assert (db.stat().st_uid, db.stat().st_gid) == original_owner
+
+
+async def test_legacy_default_expands_but_custom_include_list_is_preserved(env):
+    from asl_web_ui_priv import commands
+    path = env.root / commands.INCLUDE_LIST.lstrip("/")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(commands.LEGACY_INCLUDE_LIST)
+    path.chmod(0o600)
+    a = await env.make()
+    _, shown = await a.call("GET", "backups/include-list")
+    assert "/etc/allmon3/favorites" in shown["content"]
+    assert path.read_text() == commands.LEGACY_INCLUDE_LIST  # read-only
+    assert (await a.job("POST", "backups", {}))["ok"]
+    assert path.read_text() == commands.DEFAULT_INCLUDE_LIST and path.stat().st_mode & 0o777 == 0o600
+    custom = "# operator policy: exclude media\n/etc/asterisk\n/etc/allmon3/favorites\n"
+    path.write_text(custom)
+    audio = env.root / "etc/allmon3/audio"
+    audio.mkdir()
+    (audio / "audio.sqlite3").write_text("excluded fixture")
+    _, shown = await a.call("GET", "backups/include-list")
+    assert shown["content"] == custom and shown["missing_allmon3"] == ["/etc/allmon3/audio"]
+    made = await a.job("POST", "backups", {})
+    assert made["ok"] and any("excludes Allmon3 data" in s for s in made["lines"])
+    assert path.read_text() == custom
+    _, data = await a.call("GET", f"backups/local/{made['result']['name']}/download")
+    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+        assert "etc/allmon3/audio/audio.sqlite3" not in tar.getnames()

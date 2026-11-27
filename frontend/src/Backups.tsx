@@ -199,6 +199,10 @@ function ThisServer({ list, reload }: { list: BackupList; reload: () => Promise<
           <Form onSubmit={(e) => { e.preventDefault(); void create(); }}>
             <Content component="p">
               Saves your node's configuration (the paths in the include list) in <code>{list.directory}</code>.
+              For Allmon3 add-ins, stop Allmon3 at idle before backup or restore and keep it stopped throughout.
+              Install the corresponding packages before restoring, then review restored schedules before restarting Allmon3.
+              Original audio can exceed the cloud backup limit ({size(list.cloud_max)}); retain a local copy.
+              Browser imports are limited to 64 MiB; larger archives need an administrator-managed restore.
             </Content>
             <Checkbox id="backup-upload" isChecked={upload} onChange={(_e, v) => setUpload(v)}
                       isDisabled={!list.cloud.configured}
@@ -390,8 +394,8 @@ function Settings() {
   const save = async () => {
     if (!include) return;
     try {
-      const res = await putIncludeList(text, include.hash);
-      setInclude({ ...include, content: text, hash: res.hash, exists: true });
+      await putIncludeList(text, include.hash);
+      await load();
       setState({ ok: "Saved." });
     } catch (err) {
       setState({ error: message(err) });
@@ -417,6 +421,11 @@ function Settings() {
                 One file or directory per line. Lines starting with <code>#</code> are comments. asl-backup-menu uses
                 the same list.
               </Content>
+              {!!include.missing_allmon3?.length && <Alert variant="warning" isInline title="Some Allmon3 data is not included in backups">
+                Your customized list is preserved. Add these paths below if you want to back them up:
+                <ul>{include.missing_allmon3.map((path) => <li key={path}><code>{path}</code></li>)}</ul>
+                Include any custom storage paths as well. Cache files and log history are separate.
+              </Alert>}
               <PlainTextArea aria-label="Include list" value={text} onChange={(_e, v) => setText(v)} rows={16}
                              className="asl-mono" resizeOrientation="vertical" />
               {state?.ok && <Alert variant="success" isInline isPlain title={state.ok} />}

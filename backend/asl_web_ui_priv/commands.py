@@ -64,7 +64,7 @@ MAX_ARCHIVE = 64 << 20
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+-]{0,100}\.tgz$")
 STAGED_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
-DEFAULT_INCLUDE_LIST = """\
+LEGACY_INCLUDE_LIST = """\
 #
 # ASL Backup
 # ==========
@@ -98,6 +98,20 @@ DEFAULT_INCLUDE_LIST = """\
 # the AllStarLink servers are limited in size, so list configuration only.
 #
 """
+
+# Specific persistent add-in paths, not all of /etc/allmon3 (which may contain
+# caches or unrelated local files). Existing customized lists stay authoritative.
+ALLMON3_BACKUP_PATHS = (
+    "/etc/allmon3/favorites", "/etc/allmon3/audio", "/etc/allmon3/logging",
+    "/etc/allmon3/logging-nodes.json", "/etc/allmon3/announcements.ini",
+    "/etc/allmon3/speech.ini", "/etc/allmon3/addons.d",
+)
+DEFAULT_INCLUDE_LIST = LEGACY_INCLUDE_LIST + (
+    "\n# Allmon3 persistent add-in settings and original media. Stop Allmon3 at idle\n"
+    "# before backup/restore; converted caches and /var/log history are excluded.\n"
+    + "\n".join(ALLMON3_BACKUP_PATHS) + "\n"
+)
+
 
 Output = Callable[[str], None]
 
@@ -167,7 +181,8 @@ def _atomic_write(path: str, data: bytes, mode: int, uid: int, gid: int) -> None
 
 def include_text() -> str:
     data = _read(_path(INCLUDE_LIST))
-    return data.decode("utf-8", "replace") if data is not None else DEFAULT_INCLUDE_LIST
+    text = data.decode("utf-8", "replace") if data is not None else DEFAULT_INCLUDE_LIST
+    return DEFAULT_INCLUDE_LIST if text == LEGACY_INCLUDE_LIST else text
 
 
 def include_paths(text: str | None = None) -> list[str]:
@@ -182,15 +197,21 @@ def include_paths(text: str | None = None) -> list[str]:
 
 def _ensure_include_list() -> None:
     path = _path(INCLUDE_LIST)
-    if not os.path.exists(path):
+    data = _read(path)
+    if data is None or data == LEGACY_INCLUDE_LIST.encode():
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        _atomic_write(path, DEFAULT_INCLUDE_LIST.encode(), 0o644, 0, 0)
+        st = os.stat(path) if data is not None else None
+        _atomic_write(path, DEFAULT_INCLUDE_LIST.encode(), stat.S_IMODE(st.st_mode) if st else 0o644,
+                      st.st_uid if st else 0, st.st_gid if st else 0)
 
 
 def read_include_list(args: dict, output: Output) -> dict:
     data = _read(_path(INCLUDE_LIST))
-    text = data.decode("utf-8", "replace") if data is not None else DEFAULT_INCLUDE_LIST
-    return {"content": text, "hash": _digest(data), "exists": data is not None}
+    text = include_text()
+    allowed = [p.lstrip("/") for p in include_paths(text)]
+    missing = [p for p in ALLMON3_BACKUP_PATHS if os.path.exists(_path(p)) and not _within(p.lstrip("/"), allowed)]
+    return {"content": text, "hash": _digest(data), "exists": data is not None,
+            "missing_allmon3": missing}
 
 
 def write_include_list(args: dict, output: Output) -> dict:
@@ -262,6 +283,9 @@ def _create(name: str) -> dict:
 
 
 def backup_create(args: dict, output: Output) -> dict:
+    missing = read_include_list({}, output)["missing_allmon3"]
+    if missing:
+        output("Warning: customized backup list excludes Allmon3 data: " + ", ".join(missing))
     return _create(_new_name())
 
 

@@ -21,7 +21,7 @@ export type JobState = {
   code: string | null;
 };
 export type Started = { job: string };
-export type IncludeList = { content: string; hash: string; exists: boolean };
+export type IncludeList = { missing_allmon3?: string[]; content: string; hash: string; exists: boolean };
 export type Credentials = { node?: string; password?: string };
 
 const enc = encodeURIComponent;

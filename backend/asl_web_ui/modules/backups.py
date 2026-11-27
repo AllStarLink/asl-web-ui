@@ -285,7 +285,7 @@ async def create_backup(request: web.Request) -> web.Response:
 
     async def work(job):
         job.output("Creating the backup…")
-        made = await _priv(request, "backup.create")
+        made = await _priv(request, "backup.create", on_output=job.output)
         job.output(f"Created {made['name']} ({made['size']} bytes).")
         _audit(request, "create backup", "done", [made["name"]])
         if upload:
